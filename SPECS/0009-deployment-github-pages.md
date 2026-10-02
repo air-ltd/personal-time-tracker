@@ -9,6 +9,32 @@ Deploy via a GitHub Actions workflow publishing to Pages. The requirements below
 are not specific to that choice, so a legacy build-and-push script would also
 satisfy them — the workflow is preferred for the reasons in CI2–CI4.
 
+### Pages must be set to GitHub Actions
+
+Added after this failure was hit in practice.
+
+**MP1** — The repository's Pages **Build and deployment → Source** MUST be
+**GitHub Actions**. It MUST NOT be "Deploy from a branch".
+
+With the legacy branch source, GitHub publishes the repository root and ignores
+the build output entirely. The site then serves the source `index.html`, which
+references `/src/main.tsx` — a path that exists only on disk, never in a
+published site. The result is a **partially working page that looks broken rather
+than a clean error**, which makes it slow to diagnose.
+
+**MP2** — In that misconfigured state the build output is not published at all,
+but the repository contents are. Source files, `package.json` and this `SPECS/`
+directory are all publicly fetchable. Switching to GitHub Actions publishes
+`dist/` only, which is the correct exposure for a tool holding personal data.
+
+**MP3** — `actions/configure-pages` fails with `Not Found` when the Pages site is
+not already configured for Actions. That failure is the symptom, not the cause;
+do not debug the workflow when it appears.
+
+**MP4** — This is a repository setting, not a file in the repository. It cannot be
+fixed in a pull request, and it does not revert when the branch is deleted. Verify
+it explicitly rather than assuming a green workflow implies a correct deployment.
+
 - **D1** — The build MUST produce a self-contained static tree: no server, no
   runtime config fetch, no external asset references (0011).
 - **D2** — Pages SHOULD be served from a GitHub Actions workflow over the
@@ -108,14 +134,21 @@ live. Nothing server-side persists.
 
 A deployment is not done until each of these is confirmed against the live URL:
 
+0. **Pages source is GitHub Actions, not a branch** (MP1). Check this first: every
+   other item is meaningless while it is wrong, and it fails silently.
 1. Root URL loads the app.
-2. A deep hash URL loads the app directly, not a 404.
-3. Reloading mid-timer resumes the running entry (0004 T5).
-4. Closing the tab mid-timer prompts, and the timer is still running afterwards
+2. A deep hash URL loads directly, not a 404.
+3. The served HTML references hashed assets under `/personal-time-tracker/`, not
+   `/src/`. A `/src/` reference means source is being served (MP1).
+4. No repository file outside `dist/` is reachable, for example
+   `/personal-time-tracker/package.json` returns 404 (MP2).
+5. The favicon resolves under the repository path, not the origin root.
+6. Reloading mid-timer resumes the running entry (0004 T5).
+7. Closing the tab mid-timer prompts, and the timer is still running afterwards
    (0004 W1, W3).
-5. Both themes render without a flash of the wrong one (0002 TH4).
-6. An export downloads, and importing it into a fresh browser profile restores
+8. Both themes render without a flash of the wrong one (0002 TH4).
+9. An export downloads, and importing it into a fresh browser profile restores
    state (0007 F-EXPORT-5).
-7. The app works with the network disabled after first load.
-8. No request leaves for an expected external origin other than the connected sync
-   provider (0011).
+10. The app works with the network disabled after first load.
+11. No request leaves for an expected external origin other than the connected
+    sync provider (0011).

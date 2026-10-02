@@ -3,6 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Declared rather than left to the browser's default probe. Without this the
+      browser requests /favicon.ico at the origin root, which for a project site
+      is outside the repository path and always 404s. Vite prefixes the base path
+      at build time, so this resolves under /personal-time-tracker/.
+    -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Time Tracker</title>
     <!--
       Apply the theme before first paint (0002 TH4).
