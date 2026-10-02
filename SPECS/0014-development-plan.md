@@ -71,6 +71,21 @@ more cheaply in the first hour than in the last.
 - CI runs green on a push, and deploys to Pages
 - Killing the network after first load leaves the app working
 
+**Status:** built and verified locally. Not yet deployed — that needs `main`, so
+the work has to reach it through a pull request first.
+
+Verified against the build output rather than assumed: `base` resolves to
+`/personal-time-tracker/`, `404.html` is emitted alongside `index.html` (0002 R4),
+no source maps are produced (0009 C4), and `vite preview` serves the base path and
+its assets with 200s. The pre-paint theme bootstrap is present in the served HTML.
+22 tests cover routing normalisation, the not-found case, and theme resolution.
+
+Outstanding for the gate itself, all of which need a merge to `main`:
+- Push, open a PR, and merge
+- Confirm the live URL and a deep hash URL on the deployed site
+- Confirm Pages repository settings point at the Actions deployment
+- Confirm the app works with the network disabled
+
 ---
 
 ### Phase 2A — Basic end-to-end

@@ -30,10 +30,37 @@ From 0001's non-goals, these are hard constraints rather than preferences:
 | Dates | Native `Date` + small helpers | At the confirmed volume a large date library earns nothing. Rendered via `Intl` (0006 DT5). |
 | Validation | Zod | Export/import and sync boundaries need runtime validation that types alone cannot give. |
 | Tests | Vitest + React Testing Library | Shares the Vite config; no second toolchain. |
-| Format / lint | Prettier + ESLint | Standard. |
+| Format / lint | Prettier + ESLint | Standard. Type-aware linting, since 0010 Q9 relies on it. |
 
-Confirmed as drafted. Deprioritised alternatives are recorded under
-"Considered and rejected" below.
+### Toolchain versions
+
+Pinned deliberately, and recorded here because a missing toolchain pin is how
+"works on my machine" starts.
+
+| Tool | Version | Why this version |
+| --- | --- | --- |
+| Node | 24 (`.nvmrc`) | Matches the `node24` devcontainer feature, so local, CI and the container agree. CI reads `.nvmrc` rather than repeating a literal (0009 CI). |
+| TypeScript | 6.0.3 | **Not** the npm `latest`, which is 7.x. `typescript-eslint` declares `typescript >=4.8.4 <6.1.0`, so TypeScript 7 breaks type-aware linting. 6.0.3 is the newest version the linter supports. Revisit when typescript-eslint widens its range. |
+| Vite | 8.x | Latest at time of writing. |
+| Vitest | 5.x | Requires Node 22.12+, which is why Node 24 is pinned rather than 20. |
+
+**TC1** — Every toolchain version MUST be pinned, and CI MUST read versions from
+committed files (`.nvmrc`, `package-lock.json`) rather than repeating them as
+literals in the workflow.
+
+**TC2** — A dependency upgrade that widens or narrows a peer range MUST be checked
+against the linter and the runtime, not applied because `npm outdated` says so.
+
+**TC3** — The container, CI and any local shell SHOULD resolve to the same Node
+major. A divergence here is a poor man's "works on my machine".
+
+**TC4** — Prose files (SPECS, docs, `.devcontainer`, root README) MUST be excluded
+from Prettier. Prettier pads markdown tables to align columns, which produces
+hundreds of lines of churn and makes spec diffs unreadable. Only application
+source is machine-formatted.
+
+Confirmed as drafted, with the two revisions recorded under "Considered and
+rejected" below.
 
 ## Routing
 

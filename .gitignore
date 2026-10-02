@@ -2,3 +2,11 @@ tmp
 .env
 .env.local
 .env.*.local
+
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# Local logs
+*.log
