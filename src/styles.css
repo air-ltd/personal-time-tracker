@@ -144,3 +144,253 @@ code {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------- Phase 2A */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.panel h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.timer-panel {
+  border-color: var(--accent);
+}
+
+.timer-elapsed {
+  font-size: 2.25rem;
+  font-weight: 600;
+  margin: 0.25rem 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.timer-idle {
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+.timer-started {
+  margin: 0 0 0.75rem;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.button {
+  display: inline-block;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.9rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: var(--accent);
+}
+
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+.button-danger {
+  color: var(--danger, #b3261e);
+  border-color: var(--danger, #b3261e);
+}
+
+:root[data-theme='dark'] {
+  --danger: #f2b8b5;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hint {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.day-group {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.day-group:first-child {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.day-header h3 {
+  font-size: 0.9rem;
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+.day-total {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.entry-rows {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.entry-row {
+  display: grid;
+  grid-template-columns: 9rem 5rem 1fr auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.4rem 0;
+  border-top: 1px dotted var(--border);
+}
+
+.entry-times {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.entry-duration {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.entry-note {
+  margin: 0;
+  grid-column: 3 / 5;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.entry-edit {
+  color: var(--accent);
+}
+
+.badge-running {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+}
+
+.entry-form .field {
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.entry-form label,
+.entry-form legend {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.entry-form input[type='text'],
+.entry-form input[type='datetime-local'],
+.entry-form textarea {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.entry-form fieldset {
+  border: none;
+  padding: 0;
+  margin: 0 0 0.9rem;
+}
+
+.radio-row {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.25rem;
+}
+
+.alert {
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.9rem;
+  font-size: 0.9rem;
+}
+
+.alert ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.alert-error {
+  border: 1px solid var(--danger, #b3261e);
+  color: var(--danger, #b3261e);
+}
+
+.alert-warning {
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.undo-bar {
+  position: fixed;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 0.6rem 1rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}

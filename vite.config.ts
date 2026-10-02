@@ -50,5 +50,13 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    env: {
+      // Pinned so the DST assertions mean the same thing everywhere. On a CI
+      // runner set to UTC, a spring-forward test would compare 24h against 24h
+      // and pass without ever exercising a transition (0006 DT3, 0010 Priority 1).
+      // Europe/London transitions at 01:00 GMT on the last Sunday of March and
+      // October, which the day-arithmetic tests target explicitly.
+      TZ: 'Europe/London',
+    },
   },
 })

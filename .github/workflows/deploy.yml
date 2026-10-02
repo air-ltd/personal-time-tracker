@@ -54,6 +54,36 @@ jobs:
       - name: Build
         run: npm run build
 
+  smoke:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    # Non-blocking on purpose. A real browser catches failures jsdom cannot, notably
+    # a wrong base path producing a blank page behind a green build — which is
+    # exactly how Phase 1 failed. Kept non-blocking so a browser download or flake
+    # cannot block a deploy; revisit once it proves stable on CI.
+    continue-on-error: true
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test
+        run: npm run test:e2e
+
   deploy:
     name: Deploy to GitHub Pages
     # 0009 CI2: deploy only from the default branch, and only after verify passes.
