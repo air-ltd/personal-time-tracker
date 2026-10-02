@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Time Tracker</title>
+    <!--
+      Apply the theme before first paint (0002 TH4).
+
+      IndexedDB cannot be read synchronously, so awaiting it would mean painting
+      with the wrong theme and flashing. This reads a deliberately narrow
+      localStorage mirror instead: a theme preference is not personal data, is
+      trivially reconstructible, and loses nothing if dropped. IndexedDB holds
+      the durable copy once the storage layer lands in Phase 2A.
+
+      Kept in sync with src/app/theme.ts — if the key or logic changes there,
+      change it here too.
+    -->
+    <script>
+      ;(function () {
+        try {
+          var KEY = 'tt:theme'
+          var stored = window.localStorage.getItem(KEY)
+          var pref =
+            stored === 'light' || stored === 'dark' || stored === 'system' ? stored : 'system'
+          var dark =
+            pref === 'dark' ||
+            (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (error) {
+          // Private browsing can throw on localStorage access. A wrong theme is
+          // cosmetic, so fall back rather than failing to render.
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

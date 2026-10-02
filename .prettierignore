@@ -1,0 +1,12 @@
+dist
+coverage
+node_modules
+package-lock.json
+
+# Prose is hand-formatted. Prettier pads markdown tables to align column widths,
+# which buries real edits under hundreds of lines of churn and makes spec
+# diffs unreadable. Only application source is formatted by this project.
+SPECS
+docs
+.devcontainer
+README.md

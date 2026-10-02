@@ -1,0 +1,6 @@
+{
+  "id": "node24",
+  "version": "1.0.0",
+  "name": "Node.js 24",
+  "description": "Install the Node.js 24 binary distribution and put it ahead of any preinstalled Node in the base image"
+}
