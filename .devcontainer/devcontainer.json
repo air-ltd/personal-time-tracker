@@ -1,0 +1,18 @@
+{
+  "name": "Base Image Dev Workspace",
+  "image": "ghcr.io/jaredchurch/base:v11@sha256:e97e16565dcd5ab61f00d2f86e46bb9639c484b21c74ee27d049aff024674397",
+//  "features": {
+//    "./features/opencode": {}
+//  },
+  "mounts": [
+    "type=tmpfs,destination=/tmp,tmpfs-size=100000000"
+  ],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "github.vscode-github-actions",
+        "ms-azuretools.vscode-docker" // Gives you a visual Docker extension inside VS Code
+      ]
+    }
+  }
+}
