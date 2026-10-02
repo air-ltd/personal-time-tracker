@@ -5,7 +5,7 @@
 //    "./features/opencode": {}
 //  },
   "mounts": [
-    "type=tmpfs,destination=/tmp,tmpfs-size=100000000"
+    "type=tmpfs,destination=/tmp,tmpfs-size=400000000"
   ],
   "customizations": {
     "vscode": {
