@@ -108,8 +108,8 @@ const MUTATIONS = [
     file: 'src/storage/snapshotRepo.ts',
     // Drops entries from the bridge's list of tables. The merge is table-agnostic, so the only
     // symptom would be that this entity never syncs, silently.
-    find: "  'entries',\n  'projects',",
-    replace: "  'projects',",
+    find: "const TABLES = ['entries', 'projects', 'clients', 'tags'] as const",
+    replace: "const TABLES = ['projects', 'clients', 'tags'] as const",
     test: 'src/storage/snapshotRepo.test.ts',
   },
   {

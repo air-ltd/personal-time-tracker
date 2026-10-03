@@ -30,10 +30,8 @@ beforeEach(async () => {
 describe('indexedDbTokenStore', () => {
   const tokens: DropboxTokens = {
     accessToken: 'sl-token',
-    refreshToken: 'refresh',
     expiresAt: 1_800_000_000_000,
     accountId: 'dbid:abc',
-    displayName: 'Someone',
   }
 
   it('round-trips a token', async () => {
@@ -79,15 +77,26 @@ describe('indexedDbTokenStore', () => {
   it('keeps only the fields it recognises, dropping anything unexpected', async () => {
     await db.secrets.put({
       key: 'dropbox-tokens',
-      value: { ...tokens, scopes: ['files.content.read'], evil: 'ignored' },
+      value: {
+        ...tokens,
+        scopes: ['files.content.read'],
+        // A refresh token from a build that stored one. Kept out of the type deliberately:
+        // there is no refresh flow, so carrying it would imply a capability the app does
+        // not have. A record written by an older build is still read without it.
+        refreshToken: 'legacy-refresh-token',
+        displayName: 'Someone',
+        evil: 'ignored',
+      },
     })
 
     const read = await indexedDbTokenStore.read()
 
     expect(read).toEqual(tokens)
-    // A field from a newer build is not carried forward into this one, so it cannot
-    // be acted on or displayed as though it were understood.
+    // A field this build does not understand is not carried forward, so it cannot be
+    // acted on or displayed as though it were.
     expect(read).not.toHaveProperty('scopes')
+    expect(read).not.toHaveProperty('refreshToken')
+    expect(read).not.toHaveProperty('displayName')
   })
 
   it('treats absent optional fields as absent rather than as undefined values', async () => {

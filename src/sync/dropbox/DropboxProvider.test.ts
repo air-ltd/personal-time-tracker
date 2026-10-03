@@ -163,7 +163,8 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
   })
 
   // Per Dropbox's own guidance, a pure client-side app uses short-lived tokens and
-  // re-authorises on expiry rather than holding a refresh token.
+  // re-authorises on expiry rather than holding a refresh token. Nothing here keeps one,
+  // so there is nothing to assert about it beyond the token being usable.
   it('accepts a response with no refresh token', async () => {
     fetchMock.mockResolvedValue(
       response({ status: 200, json: { access_token: 'tok-1', expires_in: 60 } }),
@@ -171,8 +172,29 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     await provider.beginAuth('state-refresh')
     await provider.completeAuth('code', 'state-refresh')
-    expect(store.tokens?.refreshToken).toBeUndefined()
     expect(await provider.hasUsableToken()).toBe(true)
+  })
+
+  /**
+   * A refresh token arriving from an older build, or from a provider that issues one.
+   *
+   * Dropped rather than stored. There is no refresh flow to use it, so keeping it would
+   * imply a capability the app does not have, and an expired token is recovered by
+   * asking the user to authorise again.
+   */
+  it('does not keep a refresh token even if one is issued', async () => {
+    fetchMock.mockResolvedValue(
+      response({
+        status: 200,
+        json: { access_token: 'tok-1', expires_in: 60, refresh_token: 'refresh-1' },
+      }),
+    )
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    await provider.beginAuth('state-refresh')
+    await provider.completeAuth('code', 'state-refresh')
+
+    // No account_id in this response, so nothing beyond the token and its expiry is kept.
+    expect(Object.keys(store.tokens ?? {})).toEqual(['accessToken', 'expiresAt'])
   })
 
   it('refuses to complete an authorisation that was never started', async () => {
@@ -251,7 +273,7 @@ describe('token state', () => {
   it('is not usable with no stored token', async () => {
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     expect(await provider.hasUsableToken()).toBe(false)
-    expect(await provider.status()).toEqual({ authenticated: false, account: null })
+    expect(await provider.status()).toEqual({ authenticated: false })
   })
 
   it('treats an expired token as unusable so the user is re-prompted', async () => {

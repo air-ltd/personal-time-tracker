@@ -53,7 +53,6 @@ export interface RemoteFile {
 
 export interface ProviderStatus {
   authenticated: boolean
-  account: string | null
 }
 
 export interface SyncProvider {

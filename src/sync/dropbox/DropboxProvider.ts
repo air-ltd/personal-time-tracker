@@ -15,13 +15,24 @@ import { DROPBOX, STRICT_CONFLICT } from './config'
  * second provider does not touch the engine.
  */
 
+/**
+ * The stored credential.
+ *
+ * Only what the app actually uses. A refresh token is deliberately absent: Dropbox issues
+ * one to confidential clients, and this is a public PKCE client with no secret, so there
+ * is nothing to refresh with — and even if one arrived, there is no refresh flow. An
+ * expired token is recovered by asking the user to authorise again, which the scheduler
+ * triggers by discarding the token it cannot use.
+ *
+ * `displayName` went for the same reason in the other direction: reading an account name
+ * needs the `account_info.read` scope, and requesting a third permission purely to show a
+ * label in the UI is a poor trade for a permission the user has to approve.
+ */
 export interface DropboxTokens {
   accessToken: string
-  /** Absent when the provider did not issue a refresh token (see config.ts). */
-  refreshToken?: string
+  /** Absent when the provider did not return an expiry. */
   expiresAt?: number
   accountId?: string
-  displayName?: string
 }
 
 export interface DropboxProviderOptions {
@@ -193,7 +204,6 @@ export class DropboxProvider implements SyncProvider {
       accessToken: json.access_token,
       // Present only if the provider issued one; not required for a pure client-side
       // app, and its absence is not an error.
-      ...(json.refresh_token ? { refreshToken: json.refresh_token } : {}),
       ...(json.expires_in !== undefined
         ? { expiresAt: this.now() + json.expires_in * 1000 }
         : { expiresAt: this.now() + TOKEN_TTL_FALLBACK_MS }),
@@ -276,9 +286,7 @@ export class DropboxProvider implements SyncProvider {
   }
 
   async status(): Promise<ProviderStatus> {
-    if (!(await this.hasUsableToken())) return { authenticated: false, account: null }
-    const tokens = await this.storage.read()
-    return { authenticated: true, account: tokens?.displayName ?? null }
+    return { authenticated: await this.hasUsableToken() }
   }
 
   async pull(path: string): Promise<RemoteFile | null> {

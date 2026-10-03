@@ -25,14 +25,8 @@ function toTokens(value: unknown): DropboxTokens | null {
 
   return {
     accessToken: candidate.accessToken,
-    ...(typeof candidate.refreshToken === 'string'
-      ? { refreshToken: candidate.refreshToken }
-      : {}),
     ...(typeof candidate.expiresAt === 'number' ? { expiresAt: candidate.expiresAt } : {}),
     ...(typeof candidate.accountId === 'string' ? { accountId: candidate.accountId } : {}),
-    ...(typeof candidate.displayName === 'string'
-      ? { displayName: candidate.displayName }
-      : {}),
   }
 }
 

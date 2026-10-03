@@ -18,16 +18,15 @@ import type { TimeEntry } from '../domain/entries/types'
  *
  * The list is therefore the only place table membership is declared. Adding a store to
  * `db.ts` without adding it here fails that test rather than passing.
+ *
+ * It lists only stores that exist. Listing one that does not yet is worse than leaving it
+ * out: the read skips it silently, so the entry reads as coverage that is not there, and
+ * nothing fails until the table appears and the omission becomes real. The envelope still
+ * carries empty arrays for the tables later phases introduce (0008 J2.1), so a backup
+ * written today remains a complete document rather than one missing sections.
  */
 
-const TABLES = [
-  'entries',
-  'projects',
-  'clients',
-  'tags',
-  'contractPeriods',
-  'nonWorkingDays',
-] as const
+const TABLES = ['entries', 'projects', 'clients', 'tags'] as const
 
 export async function readSnapshot(): Promise<Snapshot> {
   const db = getDb()
