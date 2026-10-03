@@ -1,4 +1,9 @@
-import { mergeSnapshots, repairReferences, type Snapshot } from '../domain/merge'
+import {
+  canonicalStringify,
+  mergeSnapshots,
+  repairReferences,
+  type Snapshot,
+} from '../domain/merge'
 import { parseEnvelope, serialiseEnvelope, toEnvelope } from '../export/envelope'
 import { SyncError, type RemoteFile, type SyncProvider } from './provider'
 
@@ -65,7 +70,11 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
     }
 
     const local = await deps.readLocal()
-    const lastRev = await deps.readLastRev()
+    // Read for diagnostics only. It deliberately does not decide whether to publish:
+    // a local-only change does not alter the remote revision, so the revision cannot
+    // distinguish "nothing happened anywhere" from "only this device changed", and
+    // treating them the same is what left deletions unpublished.
+    await deps.readLastRev()
 
     // 2. Pull. Null means the file does not exist, which is a first run.
     let remote: RemoteFile | null = null
@@ -98,25 +107,43 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
 
     const remoteSnapshot = parsed.snapshot
 
-    // 4. Remote unchanged since we last pushed: nothing to merge, just publish.
-    if (lastRev !== null && lastRev === remote.rev) {
-      return { status: 'up-to-date' }
-    }
-
-    // 5. Something changed remotely. Merge, persist locally, then publish.
+    // 4. Merge first, then decide what to publish.
     const outcome = mergeSnapshots(local, remoteSnapshot, deps.supportedSchemaVersion)
     if (!outcome.ok) {
-      const message = `Remote data uses schema ${outcome.remoteSchemaVersion}; this build understands ${outcome.supportedSchemaVersion}. Not syncing.`
+      const message = `Remote data uses schema ${outcome.remoteSchemaVersion}; this build understands ${deps.supportedSchemaVersion}. Not syncing.`
       log(deps, 'error', message)
       return { status: 'blocked', reason: 'unsupported-schema', message }
     }
 
+    // 5. Reconcile locally regardless, so this device always converges on the union
+    //    even when there is nothing to publish.
+    await deps.writeLocal(outcome.merged)
+
+    // 6. Publish only if the union differs from what the remote already holds.
+    //
+    //    The decision is by content, not by revision. A local edit, addition or
+    //    deletion leaves the remote revision untouched, so comparing revisions
+    //    concluded there was nothing to do — and local-only changes then never
+    //    reached the provider at all. That is why deleting an entry left it sitting
+    //    in Dropbox unchanged.
+    //
+    //    The merge is a union, so the result already contains everything the remote
+    //    holds. Equality therefore means the remote is current, and pushing would be
+    //    a no-op write that only mints a new revision.
+    if (canonicalStringify(outcome.merged) === canonicalStringify(remoteSnapshot)) {
+      await deps.writeLastRev(remote.rev)
+      log(deps, 'info', 'Local and remote are in agreement; nothing to publish.')
+      return { status: 'up-to-date' }
+    }
+
+    // 7. `repairReferences` mutates entries in place, and the merge hands back the
+    //    same object references it was given, so it must run after the comparison
+    //    above — otherwise repairing one side would silently alter the other.
     const merged = repairReferences(outcome.merged)
-    await deps.writeLocal(merged)
     const rev = await pushWithRetry(deps, merged, remote.rev)
     await deps.writeLastRev(rev)
 
-    log(deps, 'info', 'Merged remote changes and published local data.')
+    log(deps, 'info', 'Merged changes and published local data.')
     return { status: 'pushed', rev, merged: true }
   } catch (error) {
     const kind = error instanceof SyncError ? error.kind : 'unknown'

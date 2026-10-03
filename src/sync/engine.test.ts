@@ -179,7 +179,7 @@ describe('runSync — unchanged remote (0012 C4 step 4)', () => {
 })
 
 describe('runSync — merge (0012 C5, M1–M11)', () => {
-  it('pulls remote changes into local and republishes the union', async () => {
+  it('pulls remote changes into local without republishing them', async () => {
     const h = harness(snapshotOf([entry('a')]))
     await runSync(h.deps)
 
@@ -190,10 +190,14 @@ describe('runSync — merge (0012 C5, M1–M11)', () => {
     }
 
     const result = await runSync(h.deps)
-    expect(result).toMatchObject({ status: 'pushed', merged: true })
 
+    // Adopted locally...
     const ids = (h.local.entities['entries'] ?? []).map((e) => e.id)
     expect(ids).toEqual(['a', 'b'])
+    // ...but not pushed back. The union already equals what the remote holds, so a
+    // push would rewrite identical content and only mint a new revision.
+    expect(result).toMatchObject({ status: 'up-to-date' })
+    expect(h.provider.pushCount).toBe(1)
   })
 
   it('keeps the local version when it is newer', async () => {
@@ -266,7 +270,12 @@ describe('runSync — schema safety (0012 M9, C4)', () => {
 
 describe('runSync — concurrency (0012 C5)', () => {
   it('re-reads and merges when the remote changes mid-push', async () => {
-    const h = harness(snapshotOf([entry('a')]))
+    // A local deletion is what makes this cycle push at all: a remote-only change no
+    // longer publishes, since the union would equal the remote.
+    // Strictly newer than the remote copy, so last-write-wins picks the tombstone
+    // and the union genuinely differs from what the remote holds.
+    const deletedAt = '2026-10-13T10:00:00.000Z'
+    const h = harness(snapshotOf([{ ...entry('a', deletedAt), deletedAt }]))
     await runSync(h.deps)
     h.lastRev.value = 'rev-stale'
 
@@ -303,5 +312,70 @@ describe('runSync — tokens never leave the payload (0012 AU6)', () => {
     expect(body).not.toMatch(/access[_-]?token/i)
     expect(body).not.toMatch(/refresh[_-]?token/i)
     expect(body).not.toMatch(/secret/i)
+  })
+})
+
+/**
+ * Local-only changes must reach the provider (0012 C5).
+ *
+ * A local edit, addition or deletion leaves the remote revision untouched. Deciding
+ * "nothing to do" from the revision alone therefore concluded that local-only changes
+ * needed no publishing, and they silently never reached the provider. This was the
+ * deletion bug: delete an entry, sync, and the provider still held the live record.
+ */
+describe('runSync — local-only changes (0012 C5)', () => {
+  function tombstone(id: string, updatedAt: string): Mergeable {
+    return { ...entry(id, updatedAt), deletedAt: updatedAt }
+  }
+
+  function syncedOnce(local: Snapshot, remoteEntries: Mergeable[]) {
+    const h = harness(local)
+    h.provider.remote = {
+      rev: 'r1',
+      body: serialiseEnvelope(toEnvelope(snapshotOf(remoteEntries), T0)),
+    }
+    h.lastRev.value = 'r1'
+    return h
+  }
+
+  it('publishes a local deletion even though the remote revision is unchanged', async () => {
+    const h = syncedOnce(snapshotOf([tombstone('a', '2026-10-13T10:00:00.000Z')]), [
+      entry('a', '2026-10-13T09:00:00.000Z'),
+    ])
+
+    const result = await runSync(h.deps)
+
+    expect(result).toMatchObject({ status: 'pushed' })
+    const written = JSON.parse(h.provider.remote?.body ?? '{}') as Envelope
+    expect(written.data.entries[0]?.deletedAt).toBe('2026-10-13T10:00:00.000Z')
+  })
+
+  it('publishes a local edit even though the remote revision is unchanged', async () => {
+    const edited = { ...entry('a', '2026-10-13T10:00:00.000Z'), note: 'changed' } as Mergeable
+    const h = syncedOnce(snapshotOf([edited]), [entry('a')])
+
+    await runSync(h.deps)
+
+    const written = JSON.parse(h.provider.remote?.body ?? '{}') as Envelope
+    expect(written.data.entries[0]?.note).toBe('changed')
+  })
+
+  it('publishes a local addition even though the remote revision is unchanged', async () => {
+    const h = syncedOnce(snapshotOf([entry('a'), entry('b')]), [entry('a')])
+
+    const result = await runSync(h.deps)
+
+    expect(result).toMatchObject({ status: 'pushed' })
+    const written = JSON.parse(h.provider.remote?.body ?? '{}') as Envelope
+    expect(written.data.entries).toHaveLength(2)
+  })
+
+  it('does nothing when local and remote genuinely agree', async () => {
+    const h = syncedOnce(snapshotOf([entry('a')]), [entry('a')])
+
+    const result = await runSync(h.deps)
+
+    expect(result).toMatchObject({ status: 'up-to-date' })
+    expect(h.provider.pushCount).toBe(0)
   })
 })
