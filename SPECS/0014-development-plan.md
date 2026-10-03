@@ -285,6 +285,28 @@ Notes from implementation:
   exist. The script lists them as pending with the phase that introduces them, so the
   gap is visible rather than assumed away. Base path is covered by the browser smoke
   test, which loads the built site at `/personal-time-tracker/`.
+- **Coverage, measured rather than targeted.** `npm run test:coverage` reports 94%
+  statements / 81% branches over `domain/`, `export/`, `storage/` and `sync/`, with
+  `domain/merge.ts` at 100% statements. No threshold is configured, per 0010 Q6: a
+  number in CI rewards tests that execute lines without asserting behaviour. What the
+  measurement was actually good for was finding the places where low coverage meant
+  untested *risk* rather than untested trivia — see the three below.
+- **The credential store was 12% branch-covered.** `secretsRepo.ts` is where a Dropbox
+  token lives, and most of its lines are defensive parsing of a record that survives
+  schema migrations and may have been written by another build. Covered now, including
+  that a malformed record reads as "not connected" rather than throwing.
+- **`newId`'s fallback was 27% covered, and was wrong.** It only runs where
+  `crypto.randomUUID` is absent — a non-secure context, so a LAN `http` origin — which
+  is the environment a developer is least likely to be in. The version and variant
+  nibbles were applied the wrong way round, so the fallback emitted ids with version 8
+  and variant 4, neither valid. The comments were swapped too, which is the likeliest
+  reason it survived. `crypto.randomUUID` masks it everywhere else.
+- **The scheduler owned every sync trigger at 46% function coverage.** Most of its
+  surface is deciding *whether* a cycle runs, and a trigger that quietly stops firing
+  is indistinguishable from an app with nothing to sync — no error, no status change.
+  Testing them found that `stop()` cleared the pending timer but left `visibilitychange`
+  and `pagehide` attached and left `schedule()` armed, so a stopped scheduler kept
+  syncing. The method said one thing and did another; it now detaches and latches.
 - **Two existing fixtures were wrong, and both looked like product bugs.** `tombstone()`
   set `deletedAt` later than `updatedAt`, so it tied with the live record and lost the
   tiebreak, so three convergence tests failed reading as "the deletion did not stick".

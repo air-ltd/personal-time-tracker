@@ -118,3 +118,178 @@ describe('serialising cycles', () => {
     scheduler.stop()
   })
 })
+
+/**
+ * Triggers (0012 C1–C7).
+ *
+ * The scheduler owns when a sync happens, and almost none of it is reached by calling
+ * `syncNow` directly. These cover the paths that decide *whether* a cycle runs at all,
+ * since a trigger that silently stops firing looks exactly like an app that has nothing
+ * to sync: no error, no status change, just a device that quietly stops updating.
+ *
+ * Fake timers throughout, for the debounce window.
+ */
+describe('triggers', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  /** Counts cycles by wrapping the provider the scheduler actually holds. */
+  function counting() {
+    const built = build(null)
+    let pulls = 0
+    const original = built.provider.pull.bind(built.provider)
+    // The scheduler captured this object in its constructor, so replacing the method
+    // here is observed. Building a separate provider would not be.
+    built.provider.pull = () => {
+      pulls += 1
+      return original()
+    }
+    return { scheduler: built.scheduler, provider: built.provider, pulls: () => pulls }
+  }
+
+  it('syncs once when the app opens (C1)', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    expect(pulls()).toBe(1)
+    scheduler.stop()
+  })
+
+  it('does not sync again when start is called twice (C1)', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    await scheduler.start()
+    // A second mount-time sync would push a redundant revision on every remount.
+    expect(pulls()).toBe(1)
+    scheduler.stop()
+  })
+
+  it('coalesces a burst of edits into one cycle (C2)', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    // Several rapid edits, as typing into a note produces.
+    scheduler.schedule()
+    scheduler.schedule()
+    scheduler.schedule()
+    expect(pulls()).toBe(afterOpen)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(pulls()).toBe(afterOpen + 1)
+    scheduler.stop()
+  })
+
+  it('restarts the quiet period on each edit rather than firing on the first', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    // Each edit restarts the 5s quiet period rather than letting the first one fire.
+    scheduler.schedule()
+    await vi.advanceTimersByTimeAsync(4_000)
+    scheduler.schedule()
+    await vi.advanceTimersByTimeAsync(4_000)
+    // 8s has passed, but only 4s since the latest edit.
+    expect(pulls()).toBe(afterOpen)
+
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(pulls()).toBe(afterOpen + 1)
+    scheduler.stop()
+  })
+
+  it('syncs when the tab comes back into view', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(pulls()).toBe(afterOpen + 1)
+    scheduler.stop()
+  })
+
+  it('ignores a tab going hidden, which is not a reason to sync', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(pulls()).toBe(afterOpen)
+    scheduler.stop()
+  })
+
+  it('syncs on pagehide, the last chance before the tab goes (W7, C1)', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    window.dispatchEvent(new Event('pagehide'))
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(pulls()).toBe(afterOpen + 1)
+    scheduler.stop()
+  })
+
+  /**
+   * C6. A background interval would produce empty cycles and keep the device awake for
+   * no reason; it would also look identical to a working sync in the UI, since the
+   * status line updates either way.
+   */
+  it('never polls on a background interval (C6)', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+
+    expect(pulls()).toBe(afterOpen)
+    scheduler.stop()
+  })
+
+  it('stops without syncing, so teardown is not a write', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    scheduler.stop()
+    scheduler.schedule()
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(pulls()).toBe(afterOpen)
+  })
+
+  it('defers a cycle requested while one is in flight instead of running both (C3)', async () => {
+    const { scheduler, provider } = counting()
+    // A gate created before the cycle starts, so `pull` is well-defined whenever the
+    // engine reaches it rather than depending on when the test happens to look.
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    provider.pull = () => gate.then(() => null)
+
+    const first = scheduler.syncNow()
+    // A second cycle arriving mid-flight must not run in parallel; it is deferred.
+    const second = await scheduler.syncNow()
+    expect(second).toBeNull()
+
+    release()
+    await first
+    scheduler.stop()
+  })
+})

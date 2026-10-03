@@ -68,6 +68,9 @@ export class SyncScheduler {
   private readonly readLastSyncAt: () => Promise<string | null>
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
+  private onVisibilityChange: (() => void) | null = null
+  private onPageHide: (() => void) | null = null
+  private stopped = false
   private running = false
   private queuedWhileRunning = false
   private started = false
@@ -111,23 +114,41 @@ export class SyncScheduler {
 
     // Tab focus: the user has just come back, so this is the moment most likely to
     // want a fresh pull.
-    document.addEventListener('visibilitychange', () => {
+    this.onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void this.syncNow()
-    })
+    }
+    document.addEventListener('visibilitychange', this.onVisibilityChange)
 
     // W7 / 0012 C1: the last reliable hook before a tab is discarded. A best-effort
     // push here, never a blocking prompt.
-    window.addEventListener('pagehide', () => {
+    this.onPageHide = () => {
       void this.syncNow()
-    })
+    }
+    window.addEventListener('pagehide', this.onPageHide)
 
     await this.loadLastSyncAt()
     await this.syncNow()
   }
 
+  /**
+   * Stop scheduling.
+   *
+   * Detaches the listeners as well as clearing the pending timer. Clearing the timer
+   * alone left `visibilitychange` and `pagehide` attached and `schedule()` still armed,
+   * so a stopped scheduler kept syncing — the method said one thing and did another.
+   */
   stop(): void {
+    this.stopped = true
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = null
+    if (this.onVisibilityChange) {
+      document.removeEventListener('visibilitychange', this.onVisibilityChange)
+      this.onVisibilityChange = null
+    }
+    if (this.onPageHide) {
+      window.removeEventListener('pagehide', this.onPageHide)
+      this.onPageHide = null
+    }
   }
 
   /**
@@ -137,6 +158,9 @@ export class SyncScheduler {
    * editing continues, so an extended session still syncs (0012 C2).
    */
   schedule(): void {
+    // Ignored once stopped, so a late write cannot resurrect a scheduler the app has
+    // already torn down.
+    if (this.stopped) return
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null
