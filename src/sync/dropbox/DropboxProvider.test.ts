@@ -261,10 +261,24 @@ describe('pull', () => {
     expect(url).toBe(DROPBOX.downloadUrl)
     expect(init.method).toBe('POST')
     const headers = init.headers as Record<string, string>
-    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: 'data.json' })
+    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: '/data.json' })
   })
 
-  it('strips a leading slash so it addresses the app folder, not the root', async () => {
+  // The spec declares ReadPath/WritePath as `(/(.|\r\n)*)|(ns:...)` — the leading
+  // slash is part of the pattern. Omitting it fails validation and Dropbox returns
+  // its catch-all `other/` error, which is what made sync fail.
+  it('adds the leading slash the spec requires', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, body: '{}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+    await provider.pull('data.json')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: '/data.json' })
+  })
+
+  it('keeps a path that already has its leading slash', async () => {
     fetchMock.mockResolvedValue(response({ status: 200, body: '{}' }))
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     store.tokens = { accessToken: 'tok' }
@@ -272,7 +286,18 @@ describe('pull', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const headers = init.headers as Record<string, string>
-    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: 'data.json' })
+    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: '/data.json' })
+  })
+
+  it('never doubles the slash', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, body: '{}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+    await provider.pull('//data.json')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: '/data.json' })
   })
 
   it('returns null when Dropbox reports the file does not exist', async () => {

@@ -331,12 +331,21 @@ export class DropboxProvider implements SyncProvider {
 }
 
 /**
- * Dropbox paths are relative to the app folder and must not begin with a slash.
- * A leading slash addresses the Dropbox root instead, which is a different place,
- * and fails with App Folder access.
+ * Dropbox paths MUST begin with a slash.
+ *
+ * The spec declares `WritePath` and `ReadPath` as strings matching
+ * `(/(.|\r\n)*)|(ns:...)` — the leading slash is part of the pattern, not a
+ * convention. A path without one fails validation and Dropbox answers with its
+ * catch-all `other/` error, which says nothing useful.
+ *
+ * With App Folder access the slash is relative to the app folder, so `/data.json`
+ * resolves to `/apps/<app name>/data.json`. It does not address the account root.
  */
 function normalizePath(path: string): string {
-  return path.replace(/^\/+/, '')
+  // Collapse any run of leading slashes to one, so a path pasted or configured with
+  // extra slashes still addresses the intended file rather than a differently-named
+  // one.
+  return `/${path.trim().replace(/^\/+/, '')}`
 }
 
 interface FailureDetail {

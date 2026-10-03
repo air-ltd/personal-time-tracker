@@ -256,6 +256,11 @@ machine-readable spec):
 - `WriteMode` is a `union_closed`, so its void variants serialise as bare strings:
   `"overwrite"`, and `{"update": "<rev>"}` for the conditional write. There is no
   `.tag` discriminator — that form belongs to open unions.
+- `ReadPath` and `WritePath` are declared as strings matching
+  `(/(.|\r\n)*)|(ns:...)`. **The leading slash is part of the pattern**, so the
+  remote path is `/data.json`. With App Folder access that is relative to the app
+  folder, resolving to `/apps/<app name>/data.json` — it does not address the
+  account root. Omitting the slash produces Dropbox's catch-all `other/` error.
 
 **Not verified, and not currently relied upon:** rate limit thresholds. The retry
 and backoff in 0012 C5 is bounded and generous rather than tuned to a documented
