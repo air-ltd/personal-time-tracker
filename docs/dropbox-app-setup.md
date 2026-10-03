@@ -97,7 +97,7 @@ Register both of these:
 ```
 https://air-ltd.github.io/personal-time-tracker/
 
-http://localhost:5173/
+http://localhost:5173/personal-time-tracker/
 ```
 
 The first is derived from this repository's git remote
@@ -106,8 +106,13 @@ from once Phase 1 deploys. It does not work yet — nothing is deployed — but
 registering it now means the OAuth config is correct from the first deployment and
 does not need revisiting.
 
-The second is for local development, where the URL is `http`, not `https`, and
-includes a port. All three differences matter.
+The second is for local development, where the scheme is `http` and there is a
+port. Note the **path**: the app is served under `/personal-time-tracker/` locally
+too, because the build's base path applies in development as well as in production.
+The redirect URI the app actually sends is
+`${window.location.origin}${import.meta.env.BASE_URL}`, so registering
+`http://localhost:5173/` without the path will fail authorisation with no useful
+error.
 
 If the console normalises or strips your trailing slash, note what it actually
 stored and use that exact form. **[verify]**
@@ -196,7 +201,7 @@ somewhere unexpected, so it is worth being sure which access type you picked.
 - [ ] App exists, access type is **Scoped access**
 - [ ] Scopes: content read, content write, metadata read, account info — plus
       metadata **write** if step 3 indicates it is needed for conditional updates
-- [ ] Redirect URIs registered: deployed Pages URL, and `http://localhost:5173/`
+- [ ] Redirect URIs registered: deployed Pages URL, and `http://localhost:5173/personal-time-tracker/`
 - [ ] App key recorded into `.env`
 - [ ] App secret **not** recorded anywhere, not used
 - [ ] Remote path decided and written down

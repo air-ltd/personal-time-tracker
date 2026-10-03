@@ -6,3 +6,4 @@
    than a schema change.
 4. [x] Timer accuracy on front screen always to the second. Done in `phase-2b`: the
    running timer shows `H:MM:SS`.
+5. [ ] stop should just stop and save, not present another screen - give a method for modify entry after the fact.
