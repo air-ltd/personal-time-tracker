@@ -403,6 +403,23 @@ async function describeFailure(response: Response): Promise<FailureDetail> {
       error: new SyncError('conflict', `The remote file changed${detail}.`),
     }
   }
+  if (summary.startsWith('missing_scope')) {
+    // Dropbox names this precisely, so the fix is known rather than guessed: the token
+    // carries no file permissions. Authorisation succeeds without any — consent is
+    // given for whatever the app has ticked, and a new app has none — so it surfaces
+    // here, on the first file call.
+    return {
+      kind: 'auth',
+      error: new SyncError(
+        'auth',
+        'The Dropbox connection has no file permissions. Open the app in the Dropbox App ' +
+          'Console, go to Permissions, and tick files.content.read and files.content.write. ' +
+          'Then disconnect and reconnect here, so the new permissions are granted to the ' +
+          'connection.',
+      ),
+    }
+  }
+
   if (status === 400 || summary.startsWith('other')) {
     // `other/` is Dropbox's catch-all. In practice the overwhelmingly common cause is
     // a token that grants nothing: authorisation succeeds without any scopes, then the
