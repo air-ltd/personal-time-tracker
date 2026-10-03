@@ -217,7 +217,24 @@ async function main() {
       (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
     )
 
-    // 10. Backup is reachable and works on a real build (Phase 2B gate).
+    // 10. A narrow viewport must not clip an entry (0002 B7).
+    // Checked in a real browser because the failure is a layout overflow, which jsdom
+    // cannot compute: it has no layout engine, so every such assertion would pass there.
+    await page.setViewportSize({ width: 320, height: 640 })
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    const overflow = await page.evaluate(() => {
+      const row = document.querySelector('.entry-row')
+      if (!row) return { ok: true, reason: 'no rows' }
+      return {
+        ok: row.scrollWidth <= row.clientWidth + 1,
+        scrollWidth: row.scrollWidth,
+        clientWidth: row.clientWidth,
+      }
+    })
+    check('entry row fits a 320px viewport', overflow.ok, JSON.stringify(overflow))
+    await page.setViewportSize({ width: 1280, height: 800 })
+
+    // 11. Backup is reachable and works on a real build (Phase 2B gate).
     // Exercised in a browser because the download path uses an object URL, which
     // jsdom does not implement, so a unit test cannot cover the actual handoff.
     await page.goto(URL, { waitUntil: 'networkidle' })

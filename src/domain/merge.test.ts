@@ -398,3 +398,59 @@ describe('repairReferences (0012 M7, 0003 F1–F2)', () => {
     expect(countRecords(repairReferences(snapshot))).toBe(1)
   })
 })
+
+/**
+ * `repairReferences` must not modify what it is given.
+ *
+ * `mergeSnapshots` shares object identity with its arguments, so a repair that edited in
+ * place also rewrote the snapshot the caller still held. The sync engine did exactly
+ * that for a while: it compared the merge against the remote, repaired afterwards, and
+ * ended up writing one version locally while publishing another — so the two never
+ * matched and every following cycle pushed a redundant correction.
+ */
+describe('repairReferences is pure', () => {
+  const at = '2026-10-13T09:00:00.000Z'
+
+  function withDanglingRef(): Snapshot {
+    return snap(1, {
+      entries: [record('a', at, { projectId: 'ghost', tagIds: ['ghost-tag'] })],
+      projects: [record('p1', at)],
+      tags: [record('t1', at)],
+    })
+  }
+
+  it('leaves the input snapshot byte-identical', () => {
+    const input = withDanglingRef()
+    const before = canonicalStringify(input)
+
+    repairReferences(input)
+
+    expect(canonicalStringify(input)).toBe(before)
+  })
+
+  it('returns a different result from the input', () => {
+    const input = withDanglingRef()
+    expect(canonicalStringify(repairReferences(input))).not.toBe(canonicalStringify(input))
+  })
+
+  it('does not change entries it leaves alone', () => {
+    const input = snap(1, {
+      entries: [record('a', at, { projectId: 'p1' })],
+      projects: [record('p1', at)],
+      tags: [],
+    })
+    const repaired = repairReferences(input)
+
+    // Reusing the reference for an unrepaired record keeps the common case allocation-free
+    // and makes it obvious in a test when a record was genuinely touched.
+    expect((repaired.entities['entries'] as Mergeable[])[0]).toBe(
+      (input.entities['entries'] as Mergeable[])[0],
+    )
+  })
+
+  it('can be applied twice with the same answer', () => {
+    const input = withDanglingRef()
+    const once = repairReferences(input)
+    expect(canonicalStringify(repairReferences(once))).toBe(canonicalStringify(once))
+  })
+})

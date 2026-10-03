@@ -132,6 +132,19 @@ export function mergeSnapshots(
  * database predates an entity type — and the alternative would be entries carrying
  * a project id nothing can display (0003 F1, F2).
  */
+/**
+ * Drop references to records that exist in neither snapshot.
+ *
+ * After a union, references normally resolve, so this is close to a no-op. It matters
+ * when a table was lost outright — a hand-edited import, or a device whose database
+ * predates an entity type — and the alternative would be entries carrying a project id
+ * nothing can display (0003 F1, F2).
+ *
+ * Returns new objects for the entries it changes and reuses every other reference, so
+ * the input is never modified. That matters because `mergeSnapshots` shares object
+ * identity with its arguments: a repair that edited in place would silently rewrite the
+ * caller's snapshot.
+ */
 export function repairReferences(snapshot: Snapshot): Snapshot {
   const entities: EntityTable = { ...snapshot.entities }
 
@@ -147,29 +160,39 @@ export function repairReferences(snapshot: Snapshot): Snapshot {
         projectId?: string | null
         tagIds?: string[]
       }
-      let changed = false
 
-      // Only repair when the taxonomy tables are actually present; otherwise a
-      // Phase 2B snapshot with no projects table would have every projectId
-      // nulled by a check that has nothing to compare against.
-      if (
-        hasProjects &&
-        typeof record.projectId === 'string' &&
-        !projectIds.has(record.projectId)
-      ) {
-        record.projectId = null
-        changed = true
+      // Only repair when the taxonomy tables are actually present; otherwise a snapshot
+      // with no projects table would have every projectId nulled by a check that has
+      // nothing to compare against.
+      const danglingProject =
+        hasProjects && typeof record.projectId === 'string' && !projectIds.has(record.projectId)
+
+      const danglingTags =
+        hasTags && Array.isArray(record.tagIds)
+          ? record.tagIds.filter((id) => tagIds.has(id))
+          : null
+
+      if (!danglingProject && danglingTags === null) return entry
+      if (danglingProject && danglingTags === null) {
+        return { ...record, projectId: null }
       }
-      if (hasTags && Array.isArray(record.tagIds)) {
-        const kept = record.tagIds.filter((id) => tagIds.has(id))
-        if (kept.length !== record.tagIds.length) {
-          record.tagIds = kept
-          changed = true
-        }
+
+      /*
+       * New objects rather than mutation.
+       *
+       * This used to edit each entry in place, which meant the result shared object
+       * identity with the snapshot passed in — and `mergeSnapshots` hands back the very
+       * objects it was given. A caller that repaired after comparing, then compared
+       * again, was comparing a record against itself. That is not hypothetical: the sync
+       * engine wrote the unrepaired merge locally and published the repaired one, so
+       * the database and the remote held different data and every cycle afterwards
+       * pushed a redundant correction.
+       */
+      return {
+        ...record,
+        projectId: danglingProject ? null : record.projectId,
+        tagIds: danglingTags ?? record.tagIds,
       }
-      // Mutated in place above, so the same object reference is returned; keeping
-      // identity also means an unrepaired entry is passed through untouched.
-      return changed ? record : entry
     })
   }
 

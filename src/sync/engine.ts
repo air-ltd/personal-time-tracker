@@ -119,17 +119,19 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
       return { status: 'blocked', reason: 'unsupported-schema', message }
     }
 
-    // 5. Repair before anything is written or published.
+    // 5. Repair before anything is written or published, so local and remote hold the
+    //    same records. Writing the unrepaired merge locally and publishing the repaired
+    //    one left the database and the remote holding different data, so every
+    //    subsequent cycle found a difference and pushed it again — a redundant write on
+    //    every sync, indefinitely.
     //
-    //    `repairReferences` nulls references that resolve in neither snapshot. It has to
-    //    happen first so local and remote see the same records: writing the unrepaired
-    //    merge locally and publishing the repaired one left the database and the remote
-    //    holding different data, so every subsequent cycle found a difference and pushed
-    //    it again — a redundant write on every sync, indefinitely.
+    //    The comparison in step 7 runs against the repaired merge. Repair is idempotent,
+    //    so once the repaired version has been published both sides agree and the cycle
+    //    settles.
     //
-    //    The comparison in step 6 therefore runs against the repaired merge. Repair is
-    //    idempotent, so once the repaired version has been published both sides agree
-    //    and the cycle settles.
+    //    Ordering matters less than it used to: `repairReferences` no longer edits in
+    //    place, so it cannot silently alter the merge it was handed. It still goes
+    //    first, because there is no reason to write records we already know are wrong.
     const merged = repairReferences(outcome.merged)
 
     // 6. Reconcile locally regardless, so this device always converges on the union even

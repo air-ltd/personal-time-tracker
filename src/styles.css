@@ -492,3 +492,42 @@ code {
 .setup-scopes li {
   padding: 0.2rem 0;
 }
+
+/*
+ * Narrow screens.
+ *
+ * The row is a four-column grid sized in fixed units, which overflows a phone: 9rem plus
+ * 5rem plus the edit link is already most of a 320px viewport before the note has any
+ * room. Below this width the row becomes two lines — times and duration on one, note and
+ * edit on the next — which keeps every value visible rather than clipping the note, since
+ * a clipped note is the one thing a user cannot tell is truncated.
+ *
+ * Fixed column widths are kept rather than percentages so the times and durations stay
+ * aligned down the list, which is what makes a column of durations scannable.
+ */
+@media (max-width: 34rem) {
+  .entry-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.15rem;
+  }
+
+  /* The note and the edit link share the second line, note taking the remaining width. */
+  .entry-note {
+    grid-column: 1;
+  }
+
+  .entry-edit {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  /* The form is already a single column, so it only needs roomier tap targets. */
+  .app {
+    padding: 1rem 0.75rem;
+  }
+
+  .button-row {
+    flex-wrap: wrap;
+  }
+}
