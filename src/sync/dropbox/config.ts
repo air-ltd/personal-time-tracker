@@ -43,8 +43,18 @@ export const DROPBOX = {
    * `update` with a rev makes the write conditional: Dropbox rejects it unless the
    * file's current rev matches. That rejection is how a concurrent edit from another
    * device is detected instead of silently overwritten (0012 C5).
+   *
+   * The `.tag` discriminator is mandatory here. Dropbox permits a bare string only for
+   * a union's Void members, so `"mode": "overwrite"` and `"mode": "add"` are accepted
+   * while `update` — which carries a value — is not. Omitting the tag fails with
+   * `arg: mode: type: missing tag`, which says nothing about which argument is wrong.
    */
-  updateMode: (rev: string): Record<string, string> => ({ update: rev }),
+  updateMode: (rev: string): Record<string, string> => ({ '.tag': 'update', update: rev }),
+  /**
+   * `overwrite` is a Void member, so the bare-string shorthand Dropbox documents for
+   * those is valid. Spelled out here rather than inlined so both modes sit together
+   * and the asymmetry between them is visible.
+   */
   overwriteMode: 'overwrite' as const,
 } as const
 

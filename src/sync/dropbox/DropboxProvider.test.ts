@@ -430,8 +430,12 @@ describe('push', () => {
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const raw = (init.headers as Record<string, string>)['Dropbox-API-Arg'] ?? '{}'
     const args = JSON.parse(raw) as { mode: unknown; strict_conflict?: boolean }
-    // `update` carries the rev: {"update": "<rev>"}, not {".tag": "update", ...}.
-    expect(args.mode).toEqual({ update: 'rev-1' })
+    // `update` carries a value, so it needs the `.tag` discriminator. Dropbox allows a
+    // bare string only for a union's Void members, which is why `overwrite` may be
+    // `"overwrite"` but `update` may not be `"update"` or `{ "update": ... }`.
+    // This assertion previously locked in the untagged form, on the belief that the
+    // tag was unnecessary.
+    expect(args.mode).toEqual({ '.tag': 'update', update: 'rev-1' })
     // Without this a rev mismatch against a deleted file can pass unnoticed.
     expect(args.strict_conflict).toBe(true)
   })
@@ -454,5 +458,56 @@ describe('push', () => {
     await expect(provider.push('data.json', 'body', null)).rejects.toMatchObject({
       kind: 'auth',
     })
+  })
+})
+
+/** Read a header from the last fetch call, as a mock recorded it. */
+function headerOf(mock: ReturnType<typeof vi.fn>, name: string): string {
+  const init = mock.mock.calls.at(-1)?.[1] as RequestInit
+  const value = (init.headers as Record<string, string>)[name]
+  if (typeof value !== 'string') throw new Error(`header ${name} was not set`)
+  return value
+}
+
+describe('WriteMode wire format', () => {
+  /*
+   * Dropbox permits a bare string only for a union's Void members, so `overwrite` may
+   * be sent as a string while `update`, which carries a rev, must carry the `.tag`
+   * discriminator. Omitting it failed with `arg: mode: type: missing tag`, which names
+   * no argument and offers no fix.
+   */
+  it('tags the update mode, which is not a Void member', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { rev: 'r2' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+
+    await provider.push('data.json', 'body', 'rev-123')
+
+    const arg = JSON.parse(headerOf(fetchMock, 'Dropbox-API-Arg')) as {
+      mode: Record<string, string>
+    }
+    expect(arg.mode).toEqual({ '.tag': 'update', update: 'rev-123' })
+  })
+
+  it('uses the bare-string shorthand for overwrite, which is a Void member', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { rev: 'r2' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+
+    await provider.push('data.json', 'body', null)
+
+    const arg = JSON.parse(headerOf(fetchMock, 'Dropbox-API-Arg')) as { mode: unknown }
+    expect(arg.mode).toBe('overwrite')
+  })
+
+  it('sends a leading slash on the path', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { rev: 'r2' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+
+    await provider.push('data.json', 'body', null)
+
+    const arg = JSON.parse(headerOf(fetchMock, 'Dropbox-API-Arg')) as { path: string }
+    expect(arg.path).toBe('/data.json')
   })
 })
