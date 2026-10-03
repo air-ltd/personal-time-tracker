@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { AppDb, setDbForTests, SCHEMA_VERSION } from './db'
 import { getRevision, resetRevisionForTests, subscribe } from './events'
 import { readSnapshot, writeSnapshot } from './snapshotRepo'
-import type { Snapshot } from '../domain/merge'
+import type { Mergeable, Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
 
 let db: AppDb
@@ -31,6 +31,21 @@ function entry(id: string): TimeEntry {
     rateOverrideMinor: null,
     source: 'manual',
     createdAt: '2026-10-13T08:00:00.000Z',
+    updatedAt: '2026-10-13T09:00:00.000Z',
+    deletedAt: null,
+  }
+}
+
+function project(id: string, name: string) {
+  return {
+    id,
+    name,
+    clientId: null,
+    colour: '#000000',
+    defaultRateMinor: null,
+    currency: null,
+    archived: false,
+    createdAt: '2026-10-13T09:00:00.000Z',
     updatedAt: '2026-10-13T09:00:00.000Z',
     deletedAt: null,
   }
@@ -139,5 +154,90 @@ describe('every entity table is bridged', () => {
     // and syncing either would be a bug in its own right.
     expect(Object.keys(snapshot.entities)).not.toContain('meta')
     expect(Object.keys(snapshot.entities)).not.toContain('secrets')
+  })
+})
+
+/**
+ * Atomicity (0007 S6).
+ *
+ * A per-table transaction commits each table as it goes. A crash or quota error partway
+ * through would leave a mixture of two snapshots, and the next sync would merge and
+ * publish that mixture — losing whatever had not been written yet, with no error anywhere
+ * because every individual write did succeed.
+ */
+describe('writeSnapshot is atomic', () => {
+  it('writes every table in one go, not one transaction at a time', async () => {
+    await writeSnapshot({
+      schemaVersion: SCHEMA_VERSION,
+      entities: {
+        entries: [entry('e1')],
+        projects: [project('p1', 'New')],
+        tags: [
+          {
+            id: 't1',
+            name: 'research',
+            colour: '#000000',
+            createdAt: '2026-10-13T09:00:00.000Z',
+            updatedAt: '2026-10-13T09:00:00.000Z',
+            deletedAt: null,
+          } as unknown as Mergeable,
+        ],
+      },
+    })
+
+    // All three tables. A per-table loop would also satisfy this, so the rollback case
+    // below is what actually pins the behaviour down.
+    expect((await db.entries.toArray()).map((r) => r.id)).toEqual(['e1'])
+    expect((await db.projects.toArray()).map((r) => r.id)).toEqual(['p1'])
+    expect((await db.tags.toArray()).map((r) => r.id)).toEqual(['t1'])
+  })
+
+  it('rolls back every table when a later one fails', async () => {
+    await db.entries.put(entry('original'))
+
+    // Entries is written first and succeeds; projects then fails on an invalid primary
+    // key. If each table had its own transaction, 'e-new' would survive.
+    await expect(
+      writeSnapshot({
+        schemaVersion: SCHEMA_VERSION,
+        entities: {
+          entries: [entry('e-new')],
+          projects: [{ ...project('p1', 'New'), id: { invalid: true } } as never],
+        },
+      }),
+    ).rejects.toBeDefined()
+
+    // The successful write was rolled back with the failed one.
+    expect((await db.entries.toArray()).map((r) => r.id)).toEqual(['original'])
+    expect(await db.projects.count()).toBe(0)
+  })
+
+  it('leaves records the snapshot omits alone rather than clearing them', async () => {
+    await db.entries.put(entry('kept'))
+
+    await writeSnapshot({
+      schemaVersion: SCHEMA_VERSION,
+      entities: { entries: [entry('added')] },
+    })
+
+    // An upsert, not a replace. Both callers pass a merge result, which is a union and
+    // so contains everything; clearing first would make a truncated snapshot a way to
+    // delete a user's history.
+    expect((await db.entries.toArray()).map((r) => r.id).sort()).toEqual(['added', 'kept'])
+  })
+
+  it('writes nothing at all when the snapshot carries no known tables', async () => {
+    await db.entries.put(entry('keep-me'))
+    let notified = 0
+    subscribe(() => {
+      notified += 1
+    })
+
+    await writeSnapshot({ schemaVersion: SCHEMA_VERSION, entities: {} })
+
+    // Opening a transaction with an empty scope would throw, so an empty snapshot has to
+    // short-circuit — and must not report a change that did not happen.
+    expect((await db.entries.toArray()).map((r) => r.id)).toEqual(['keep-me'])
+    expect(notified).toBe(0)
   })
 })

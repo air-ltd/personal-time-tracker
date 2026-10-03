@@ -280,6 +280,11 @@ export async function deleteProject(id: string, now: Date): Promise<void> {
       .entries.filter((row) => row.projectId === id)
       .toArray()
     for (const row of entries) {
+      // Already-deleted entries are left exactly as they are. Bumping `updatedAt` on a
+      // tombstone makes it look newer than it is, so it would win a merge tie against a
+      // device that had genuinely restored the entry — and a deleted entry's projectId
+      // is irrelevant either way, since it appears in no report.
+      if (row.deletedAt !== null) continue
       // `updatedAt` moves so the orphaning wins the merge against a device that still
       // has this entry pointing at the project.
       await db().entries.put({ ...row, projectId: null, updatedAt: iso(now) })

@@ -14,7 +14,15 @@ import type { TimerState } from '../timer/useTimer'
  */
 export interface TimerPanelProps {
   timer: TimerState
-  onStopped: (id: string) => void
+  /**
+   * Called after the entry has been written, not before.
+   *
+   * The write is asynchronous, so navigating first races it: the edit route reads the
+   * entry back immediately, finds nothing, and renders "Entry not found" — and because
+   * the id does not change, the load never runs again and the message sticks even though
+   * the entry was saved a moment later.
+   */
+  onStopped: (id: string) => void | Promise<void>
 }
 
 export function TimerPanel({ timer, onStopped }: TimerPanelProps) {
@@ -26,9 +34,12 @@ export function TimerPanel({ timer, onStopped }: TimerPanelProps) {
     sessionKey: running?.id ?? null,
   })
 
-  const handleStop = () => {
-    if (running) onStopped(running.id)
-    stop()
+  const handleStop = async () => {
+    if (!running) return
+    // Awaited before navigating. The write is asynchronous, so navigating first races
+    // the read the edit route immediately performs.
+    await stop()
+    await onStopped(running.id)
   }
 
   return (
@@ -45,7 +56,11 @@ export function TimerPanel({ timer, onStopped }: TimerPanelProps) {
             Started <time dateTime={running.start}>{formatStart(running.start)}</time>
           </p>
           <div className="button-row">
-            <button type="button" className="button button-primary" onClick={handleStop}>
+            <button
+              type="button"
+              className="button button-primary"
+              onClick={() => void handleStop()}
+            >
               Stop
             </button>
             <button type="button" className="button" onClick={discard}>

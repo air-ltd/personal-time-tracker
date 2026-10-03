@@ -480,3 +480,59 @@ describe('timer interaction', () => {
     await stopTimer(running?.id as string, later)
   })
 })
+
+/**
+ * Deleting a project must not disturb entries that are already deleted.
+ *
+ * Bumping `updatedAt` on a tombstone makes it look newer than it is, so it would win a
+ * merge tie against a device that had genuinely restored the entry — a deletion
+ * resurrecting as a deletion. A tombstone's projectId is also irrelevant, since it
+ * appears in no report.
+ */
+describe('deleting a project leaves existing tombstones untouched', () => {
+  it('does not advance updatedAt on an already-deleted entry', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    const deletedAt = '2026-10-13T11:00:00.000Z'
+    await db.entries.put({
+      ...entry({ id: 'gone', projectId: project.id }),
+      deletedAt,
+      updatedAt: deletedAt,
+    })
+
+    await deleteProject(project.id, later)
+
+    const stored = await db.entries.get('gone')
+    expect(stored?.deletedAt).toBe(deletedAt)
+    expect(stored?.updatedAt).toBe(deletedAt)
+    // Left pointing at the deleted project, which is harmless and keeps the tombstone
+    // byte-identical to what another device already holds.
+    expect(stored?.projectId).toBe(project.id)
+  })
+
+  it('still orphans the entries that are not deleted', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    await db.entries.put({ ...entry({ id: 'live', projectId: project.id }) })
+    await db.entries.put({
+      ...entry({ id: 'gone', projectId: project.id }),
+      deletedAt: '2026-10-13T11:00:00.000Z',
+    })
+
+    await deleteProject(project.id, later)
+
+    expect((await db.entries.get('live'))?.projectId).toBeNull()
+    expect((await db.entries.get('gone'))?.projectId).toBe(project.id)
+  })
+
+  it('does not count tombstones in the impact shown before confirming', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    await db.entries.put({ ...entry({ id: 'live', projectId: project.id }) })
+    await db.entries.put({
+      ...entry({ id: 'gone', projectId: project.id }),
+      deletedAt: '2026-10-13T11:00:00.000Z',
+    })
+
+    // A count that included deleted entries would overstate what the user is about to
+    // change, since nothing happens to them.
+    expect((await projectDeleteImpact(project.id)).entryCount).toBe(1)
+  })
+})

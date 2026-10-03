@@ -66,3 +66,31 @@ describe('matchPath with parameters', () => {
     expect(matchPath('/entries/new', routes)?.route.path).toBe('/entries/new')
   })
 })
+
+/**
+ * A malformed escape in the hash (0002 R1).
+ *
+ * The hash is user-editable, so a bare `%` reaches the router. `decodeURIComponent`
+ * throws on that, and an uncaught throw during navigation takes down the whole app — so
+ * the not-found view is the right outcome, not a crash.
+ */
+const ROUTES = [{ path: '/' }, { path: '/entries/:id' }]
+
+describe('malformed percent-escapes', () => {
+  it.each(['%', '%zz', 'abc%', '%E0%A4%A'])('does not throw on %j', (segment) => {
+    expect(() => matchPath(`/entries/${segment}`, ROUTES)).not.toThrow()
+  })
+
+  it('matches with the raw segment, so the form reports not found', () => {
+    // Keeping the raw segment means the route still matches and the edit form resolves
+    // the id, finds nothing, and renders its "Entry not found" view with a way back.
+    // Dropping the route entirely would also be defensible; what matters is that neither
+    // path throws.
+    expect(matchPath('/entries/%zz', ROUTES)?.params['id']).toBe('%zz')
+  })
+
+  it('still decodes a valid escape', () => {
+    const match = matchPath('/entries/a%20b', ROUTES)
+    expect(match?.params['id']).toBe('a b')
+  })
+})

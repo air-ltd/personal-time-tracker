@@ -75,12 +75,24 @@ function EntryRow({ entry, now }: { entry: TimeEntry; now: Date }) {
   )
 }
 
+/**
+ * Day heading, or the raw key when it cannot be parsed.
+ *
+ * `localDayBounds` throws on a malformed key, and a key comes from a stored timestamp —
+ * so one corrupt `start` would throw during render and take down the whole list, hiding
+ * every other entry with it. Showing the key is unhelpful but honest, and keeps the rest
+ * of the day readable.
+ */
 function heading(key: string): string {
-  const { start } = localDayBounds(key)
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(start)
+  try {
+    const { start } = localDayBounds(key)
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(start)
+  } catch {
+    return key
+  }
 }

@@ -115,31 +115,39 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
       return { status: 'blocked', reason: 'unsupported-schema', message }
     }
 
-    // 5. Reconcile locally regardless, so this device always converges on the union
-    //    even when there is nothing to publish.
-    await deps.writeLocal(outcome.merged)
-
-    // 6. Publish only if the union differs from what the remote already holds.
+    // 5. Repair before anything is written or published.
     //
-    //    The decision is by content, not by revision. A local edit, addition or
-    //    deletion leaves the remote revision untouched, so comparing revisions
-    //    concluded there was nothing to do — and local-only changes then never
-    //    reached the provider at all. That is why deleting an entry left it sitting
-    //    in Dropbox unchanged.
+    //    `repairReferences` nulls references that resolve in neither snapshot. It has to
+    //    happen first so local and remote see the same records: writing the unrepaired
+    //    merge locally and publishing the repaired one left the database and the remote
+    //    holding different data, so every subsequent cycle found a difference and pushed
+    //    it again — a redundant write on every sync, indefinitely.
+    //
+    //    The comparison in step 6 therefore runs against the repaired merge. Repair is
+    //    idempotent, so once the repaired version has been published both sides agree
+    //    and the cycle settles.
+    const merged = repairReferences(outcome.merged)
+
+    // 6. Reconcile locally regardless, so this device always converges on the union even
+    //    when there is nothing to publish.
+    await deps.writeLocal(merged)
+
+    // 7. Publish only if the union differs from what the remote already holds.
+    //
+    //    The decision is by content, not by revision. A local edit, addition or deletion
+    //    leaves the remote revision untouched, so comparing revisions concluded there was
+    //    nothing to do — and local-only changes then never reached the provider at all.
+    //    That is why deleting an entry left it sitting in Dropbox unchanged.
     //
     //    The merge is a union, so the result already contains everything the remote
-    //    holds. Equality therefore means the remote is current, and pushing would be
-    //    a no-op write that only mints a new revision.
-    if (canonicalStringify(outcome.merged) === canonicalStringify(remoteSnapshot)) {
+    //    holds. Equality therefore means the remote is current, and pushing would be a
+    //    no-op write that only mints a new revision.
+    if (canonicalStringify(merged) === canonicalStringify(remoteSnapshot)) {
       await deps.writeLastRev(remote.rev)
       log(deps, 'info', 'Local and remote are in agreement; nothing to publish.')
       return { status: 'up-to-date' }
     }
 
-    // 7. `repairReferences` mutates entries in place, and the merge hands back the
-    //    same object references it was given, so it must run after the comparison
-    //    above — otherwise repairing one side would silently alter the other.
-    const merged = repairReferences(outcome.merged)
     const rev = await pushWithRetry(deps, merged, remote.rev)
     await deps.writeLastRev(rev)
 

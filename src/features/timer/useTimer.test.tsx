@@ -58,12 +58,14 @@ afterEach(() => {
  * previous state.
  */
 async function run(
-  action: () => void,
+  action: () => void | Promise<void>,
   expect?: () => boolean | Promise<boolean>,
   what = 'the change',
 ): Promise<void> {
   await act(async () => {
-    action()
+    // Awaited because `stop` now returns a promise, and the assertion below reads the
+    // write it performs.
+    await action()
     await tick()
   })
   if (expect) await waitUntil(expect, what)

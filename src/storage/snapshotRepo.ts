@@ -1,5 +1,6 @@
 import { getDb, SCHEMA_VERSION } from './db'
 import { bumpRevision } from './events'
+import type { Table } from 'dexie'
 import type { Mergeable, Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
 
@@ -58,27 +59,47 @@ export async function readSnapshot(): Promise<Snapshot> {
  */
 export async function writeSnapshot(snapshot: Snapshot): Promise<void> {
   const db = getDb()
-  let wrote = false
 
+  // Work out what will actually be written before opening the transaction, so the
+  // transaction can be given every table it needs rather than one at a time.
+  const writes: { table: Table; records: unknown[] }[] = []
   for (const name of TABLES) {
     const table = db.tables.find((candidate) => candidate.name === name)
     if (!table) continue
     const records = snapshot.entities[name]
     if (!Array.isArray(records)) continue
-
-    await db.transaction('rw', table, async () => {
-      // Bulk replace. `bulkPut` keeps existing rows' shape and avoids a delete-then-
-      // insert window in which a crash would empty the table.
-      await table.bulkPut(records as unknown[])
-    })
-    wrote = true
+    writes.push({ table, records })
   }
 
-  // Views subscribe to a revision counter rather than to IndexedDB, so a write that
-  // does not bump it is invisible until something else happens to re-render. A synced
-  // entry or a restored backup could sit on disk, correctly stored and correctly
-  // merged, while the list still showed the old contents.
-  if (wrote) bumpRevision()
+  if (writes.length === 0) return
+
+  // One transaction across every table (0007 S6).
+  //
+  // A per-table transaction commits each table as it goes, so a crash or a quota error
+  // partway through leaves the database holding a mixture of two snapshots. The next
+  // sync would then merge that mixture and publish it, quietly losing whatever was in
+  // the tables not yet written — with no error anywhere, because every individual write
+  // did succeed.
+  //
+  // `bulkPut` is an upsert, not a replace: records absent from the snapshot are left
+  // alone. That is safe here and deliberate. Both callers pass a merge result, which is
+  // a union containing every record that exists on either side, so there is nothing to
+  // remove; and clearing the table first would turn a truncated or hostile snapshot into
+  // a way to delete a user's history. Tombstones are retained by the merge in any case
+  // (0012 M6), so deletions arrive as records rather than as absences.
+  await db.transaction(
+    'rw',
+    writes.map((write) => write.table),
+    async () => {
+      for (const write of writes) await write.table.bulkPut(write.records)
+    },
+  )
+
+  // Views subscribe to a revision counter rather than to IndexedDB, so a write that does
+  // not bump it is invisible until something else re-renders. A synced entry or a
+  // restored backup could sit on disk, correctly stored and correctly merged, while the
+  // list still showed the old contents.
+  bumpRevision()
 }
 
 const LAST_REV_KEY = 'sync:lastRev'

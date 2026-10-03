@@ -14,7 +14,14 @@ export interface TimerState {
   /** Elapsed ms for the running entry, ticking once a second. Null when idle. */
   elapsedMs: number | null
   start: () => void
-  stop: () => void
+  /**
+   * Resolves once the entry is written.
+   *
+   * Awaitable because callers navigate on the strength of it. Stopping navigates to the
+   * entry, and that route reads the entry straight back; a fire-and-forget stop races
+   * that read and the user is told the entry does not exist.
+   */
+  stop: () => Promise<void>
   discard: () => void
 }
 
@@ -63,9 +70,9 @@ export function useTimer(): TimerState {
     void startTimer(new Date())
   }, [])
 
-  const stop = useCallback(() => {
+  const stop = useCallback(async () => {
     if (!running) return
-    void stopTimer(running.id, new Date())
+    await stopTimer(running.id, new Date())
   }, [running])
 
   const discard = useCallback(() => {

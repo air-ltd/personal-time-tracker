@@ -60,6 +60,14 @@ export interface RouteMatch {
  * An empty match is `undefined` rather than a route with empty params, so a bare
  * `/entries/` cannot accidentally open an entry whose id is "".
  */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
 export function matchPath(path: string, routes: readonly Route[]): RouteMatch | undefined {
   const segments = path.split('/').filter(Boolean)
   for (const route of routes) {
@@ -76,7 +84,12 @@ export function matchPath(path: string, routes: readonly Route[]): RouteMatch | 
           matched = false
           break
         }
-        params[part.slice(1)] = decodeURIComponent(actual)
+        // `decodeURIComponent` throws on a malformed escape such as a bare `%` or
+        // `%zz`. A hash is user-editable, so this is reachable input rather than a
+        // theoretical one, and an uncaught throw here would take down the whole app on
+        // navigation. The raw segment is a better outcome than a crash: the route simply
+        // will not match an entry, and the not-found view says so.
+        params[part.slice(1)] = decodeSegment(actual)
       } else if (part !== actual) {
         matched = false
         break

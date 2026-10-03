@@ -379,3 +379,87 @@ describe('runSync — local-only changes (0012 C5)', () => {
     expect(h.provider.pushCount).toBe(0)
   })
 })
+
+/**
+ * Local and remote must agree on what was stored (0012 M2).
+ *
+ * The engine writes the merge result locally and publishes it. If those two differ, every
+ * later cycle finds a difference, pushes it again, and never settles — a redundant write
+ * on every sync, with a new revision each time, and nothing reporting a problem.
+ */
+describe('repaired references reach both sides', () => {
+  /** This file's `entry` helper produces a `Mergeable`, so read the field explicitly. */
+  function projectIdOf(snapshot: Snapshot, id: string): string | null | undefined {
+    const records = snapshot.entities['entries'] ?? []
+    const record = records.find((candidate) => candidate.id === id) as
+      (Mergeable & { projectId?: string | null }) | undefined
+    return record?.projectId
+  }
+
+  /** A remote file already holding an entry whose project does not exist anywhere. */
+  function withDanglingRemote() {
+    // `entry` here produces a Mergeable, so the reference is added by assignment rather
+    // than in the literal, where TypeScript would reject it as an unknown field.
+    const dangling: Mergeable & { projectId: string } = { ...entry('a'), projectId: 'ghost' }
+    const local = snapshotOf([dangling])
+    const h = harness(local)
+    h.provider.remote = {
+      rev: 'r1',
+      body: serialiseEnvelope(toEnvelope(local, T0)),
+    }
+    return h
+  }
+
+  it('writes the same records locally as it publishes', async () => {
+    const h = withDanglingRemote()
+
+    const result = await runSync(h.deps)
+
+    expect(result).toMatchObject({ status: 'pushed' })
+    const written = JSON.parse(h.provider.remote?.body ?? '{}') as Envelope
+    expect(written.data.entries[0]?.projectId).toBeNull()
+
+    // Locally too. Writing the unrepaired merge and publishing the repaired one left
+    // the database and the remote holding different data, so they never matched.
+    expect(projectIdOf(h.local, 'a')).toBeNull()
+  })
+
+  it('settles after the first push rather than pushing on every cycle', async () => {
+    const h = withDanglingRemote()
+
+    await runSync(h.deps)
+    const afterFirst = h.provider.pushCount
+
+    await runSync(h.deps)
+
+    // A repair that reached only one side would make this 2, then 3, and so on: every
+    // cycle finds a difference and publishes it. Invisible without counting pushes.
+    expect(h.provider.pushCount).toBe(afterFirst)
+  })
+
+  it('keeps a resolvable reference rather than clearing it', async () => {
+    const project = {
+      id: 'p1',
+      name: 'Real',
+      clientId: null,
+      colour: '#000000',
+      defaultRateMinor: null,
+      currency: null,
+      archived: false,
+      createdAt: '2026-10-13T09:00:00.000Z',
+      updatedAt: '2026-10-13T09:00:00.000Z',
+      deletedAt: null,
+    }
+    // This file's `entry` helper takes (id, updatedAt), so the extra fields are added
+    // explicitly rather than through the shared fixtures helper.
+    const withProject: Mergeable & { projectId: string } = { ...entry('a'), projectId: 'p1' }
+    const h = harness({
+      schemaVersion: SUPPORTED,
+      entities: { entries: [withProject], projects: [project] },
+    })
+    await runSync(h.deps)
+
+    // Repair only drops references nothing can display.
+    expect(projectIdOf(h.local, 'a')).toBe('p1')
+  })
+})
