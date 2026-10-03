@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   APP_KEY_STORAGE_KEY,
+  BUILT_IN_KEYS,
   clearAppKey,
-  isKeyFromEnvironment,
+  describeKeySource,
+  environmentForHost,
   isValidAppKey,
   readAppKey,
+  selectBuiltInKey,
   writeAppKey,
 } from './appKey'
 
@@ -48,14 +51,14 @@ describe('reading the key', () => {
 
   // A build-time default must still work, so a configured deployment is unaffected by
   // this feature.
-  it('falls back to the environment when nothing is stored', () => {
-    // No VITE_DROPBOX_APP_KEY in the test environment, so the fallback is empty.
-    expect(readAppKey()).toBe('')
+  it('falls back to the built-in key for this host', () => {
+    // The test environment serves from localhost, which is not a production host.
+    expect(readAppKey()).toBe(BUILT_IN_KEYS.development)
   })
 
   it('ignores an empty stored value rather than reporting a blank key', () => {
     window.localStorage.setItem(APP_KEY_STORAGE_KEY, '   ')
-    expect(readAppKey()).toBe('')
+    expect(readAppKey()).toBe(BUILT_IN_KEYS.development)
   })
 })
 
@@ -77,22 +80,51 @@ describe('writing the key', () => {
 })
 
 describe('forgetting the key', () => {
-  it('removes it', () => {
+  it('removes it, reverting to the built-in key', () => {
     writeAppKey('1a2b3c4d5e6f7g8')
     clearAppKey()
     expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBeNull()
-    expect(readAppKey()).toBe('')
+    expect(readAppKey()).toBe(BUILT_IN_KEYS.development)
+  })
+})
+
+describe('environment selection', () => {
+  // The deployed site must use the production app, everything else the non-production
+  // one. Choosing by host rather than by build mode matters because
+  // `npm run preview` is a production build served from localhost, and it must not
+  // touch production data.
+  it.each([
+    ['air-ltd.github.io', 'production'],
+    ['sub.air-ltd.github.io', 'development'],
+    ['localhost', 'development'],
+    ['127.0.0.1', 'development'],
+    ['example.com', 'development'],
+    ['', 'development'],
+  ])('maps %s to the %s environment', (hostname, expected) => {
+    expect(environmentForHost(hostname)).toBe(expected)
+  })
+
+  it('gives each environment a different key', () => {
+    expect(selectBuiltInKey('air-ltd.github.io')).toBe(BUILT_IN_KEYS.production)
+    expect(selectBuiltInKey('localhost')).toBe(BUILT_IN_KEYS.development)
+    expect(BUILT_IN_KEYS.production).not.toBe(BUILT_IN_KEYS.development)
+  })
+
+  it('ships keys that pass validation', () => {
+    // A typo in a built-in key would only surface as a failed authorisation.
+    expect(isValidAppKey(BUILT_IN_KEYS.production)).toBe(true)
+    expect(isValidAppKey(BUILT_IN_KEYS.development)).toBe(true)
   })
 })
 
 describe('provenance', () => {
   it('reports a stored key as user-supplied', () => {
     writeAppKey('1a2b3c4d5e6f7g8')
-    expect(isKeyFromEnvironment()).toBe(false)
+    expect(describeKeySource().source).toBe('user')
   })
 
-  it('reports no key at all rather than blaming the environment', () => {
-    expect(isKeyFromEnvironment()).toBe(false)
+  it('reports the built-in key when nothing is stored', () => {
+    expect(describeKeySource()).toEqual({ source: 'builtin', environment: 'development' })
   })
 })
 

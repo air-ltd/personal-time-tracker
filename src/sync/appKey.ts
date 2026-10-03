@@ -19,6 +19,46 @@
 export const APP_KEY_STORAGE_KEY = 'tt:dropbox-app-key'
 
 /**
+ * Hosts where the deployed, production app is served.
+ *
+ * The key is chosen by *where the app is running*, not by whether this is a
+ * production build: `npm run preview` is a production build served from localhost
+ * and should not touch production data.
+ */
+export const PRODUCTION_HOSTS = ['air-ltd.github.io'] as const
+
+/**
+ * Built-in client ids.
+ *
+ * Both are OAuth *client ids*, which are public identifiers rather than
+ * credentials: under PKCE there is no client secret, and the id ships in the bundle
+ * whichever way it is supplied. Keeping both here means the deployed site works with
+ * no build configuration at all.
+ *
+ * Two separate Dropbox apps is the point, not a side effect. They have separate app
+ * folders, so local testing writes to a different file from the deployed site and
+ * cannot overwrite production data.
+ */
+export const BUILT_IN_KEYS = {
+  production: 'gh3s5cqaz4n30ah',
+  development: '5k94zo8ymchm1ge',
+} as const
+
+export type Environment = keyof typeof BUILT_IN_KEYS
+
+/** Pure, so the host-to-environment mapping can be tested directly. */
+export function environmentForHost(hostname: string): Environment {
+  return (PRODUCTION_HOSTS as readonly string[]).includes(hostname)
+    ? 'production'
+    : 'development'
+}
+
+/** Pure. Returns the built-in client id for a host, before any override. */
+export function selectBuiltInKey(hostname: string): string {
+  return BUILT_IN_KEYS[environmentForHost(hostname)]
+}
+
+/**
  * Loose shape check.
  *
  * Dropbox app keys are short lowercase alphanumeric strings. This catches the
@@ -39,26 +79,45 @@ function envKey(): string {
   return (env['VITE_DROPBOX_APP_KEY'] ?? '').trim()
 }
 
-/** The stored key wins, so a user can override a build-time default. */
+/**
+ * Resolve the client id, in precedence order:
+ *
+ *   1. a key the user entered in the Sync panel — an explicit override always wins,
+ *      so it works identically on the deployed site and locally;
+ *   2. `VITE_DROPBOX_APP_KEY`, for a build-time override;
+ *   3. the built-in key for whichever environment this is running in.
+ *
+ * (1) beats (3) deliberately: someone who pasted a key wants that key, not the one
+ * the hostname would pick.
+ */
 export function readAppKey(): string {
   try {
     const stored = window.localStorage.getItem(APP_KEY_STORAGE_KEY)
     if (typeof stored === 'string' && stored.trim() !== '') return stored.trim()
   } catch {
-    // localStorage throws under strict privacy settings. Fall through to the env.
+    // localStorage throws under strict privacy settings. Fall through.
   }
-  return envKey()
+
+  const fromEnv = envKey()
+  if (fromEnv !== '') return fromEnv
+
+  return selectBuiltInKey(window.location.hostname)
 }
 
-/** True when the key came from the environment rather than the user. */
-export function isKeyFromEnvironment(): boolean {
+/** Where the effective key came from, for display in the Sync panel. */
+export type KeySource = 'user' | 'environment' | 'builtin'
+
+export function describeKeySource(): { source: KeySource; environment: Environment } {
+  const environment = environmentForHost(window.location.hostname)
   try {
     const stored = window.localStorage.getItem(APP_KEY_STORAGE_KEY)
-    if (typeof stored === 'string' && stored.trim() !== '') return false
+    if (typeof stored === 'string' && stored.trim() !== '')
+      return { source: 'user', environment }
   } catch {
-    // Treated as environment-supplied.
+    // Treated as not user-supplied.
   }
-  return envKey() !== ''
+  if (envKey() !== '') return { source: 'environment', environment }
+  return { source: 'builtin', environment }
 }
 
 export function writeAppKey(value: string): boolean {

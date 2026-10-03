@@ -6,7 +6,7 @@ import {
   REMOTE_PATH,
 } from '../../sync/providerFactory'
 import { DropboxSetup } from './DropboxSetup'
-import { readAppKey } from '../../sync/appKey'
+import { describeKeySource, readAppKey } from '../../sync/appKey'
 import { beginAuthCallback, takeAuthError } from '../../sync/oauthCallback'
 
 /**
@@ -26,6 +26,7 @@ export function SyncPanel() {
   // Read at runtime rather than from a module constant: the app key can be entered
   // in the browser, which is the point of item 6 in SPECS/todo.md.
   const [hasKey, setHasKey] = useState(() => readAppKey() !== '')
+  const keyInfo = describeKeySource()
   // Read once at mount: a one-shot value left behind by the redirect, consumed here
   // rather than in an effect so it does not cause a cascading render.
   const [authError] = useState<string | null>(() => takeAuthError())
@@ -117,7 +118,22 @@ export function SyncPanel() {
 
   return (
     <section className="panel" aria-labelledby="sync-heading">
-      <h2 id="sync-heading">Sync</h2>
+      <h2 id="sync-heading">
+        Sync{' '}
+        <span
+          className={`badge badge-${keyInfo.environment}`}
+          data-testid="sync-environment"
+          title={
+            keyInfo.source === 'user'
+              ? 'Using the key entered in this browser'
+              : keyInfo.source === 'environment'
+                ? 'Using the key from the build configuration'
+                : 'Using the built-in key for this site'
+          }
+        >
+          {keyInfo.environment === 'production' ? 'production' : 'non-production'}
+        </span>
+      </h2>
 
       <div className="button-row">
         {connection === 'connected' ? (

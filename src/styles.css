@@ -459,3 +459,13 @@ code {
   padding: 0.25rem 0;
   overflow-wrap: anywhere;
 }
+
+.badge-production {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge-development {
+  border-color: var(--border);
+  color: var(--fg-muted);
+}

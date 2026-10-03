@@ -69,6 +69,12 @@ actually calls.
 
 The spec's provider interface needs:
 
+### Do this for the testing app too
+
+The non-production Dropbox app is a separate app with its own configuration. It
+needs the **same two redirect URIs** registered (step 4), or local authorisation
+will fail with a URI mismatch.
+
 **Only two scopes are needed.** Verified against Dropbox's machine-readable API
 spec (`dropbox/dropbox-api-spec`, `files.stone`), which declares a required scope per
 route:
@@ -158,33 +164,37 @@ design. This is also why it is fine to commit to the repository.
 
 ---
 
-## 6. Wire it into the project
+## 6. Which key the app uses
 
-The key belongs in a Vite environment variable. `.env` files that Vite loads are
-bundled into the client, which is correct and intended for this value.
+**You do not need to configure anything.** Two Dropbox apps are registered and their
+keys are built in, selected by where the app is served:
 
-Create `.env.example` and commit it:
+| Served from | Uses | Dropbox app |
+| --- | --- | --- |
+| `air-ltd.github.io` | production key | the production app |
+| anywhere else | non-production key | the testing app |
 
-```
-# Dropbox OAuth client id. Public by design under PKCE — not a secret.
-# No Dropbox app secret belongs in any VITE_ variable.
-VITE_DROPBOX_APP_KEY=
-```
+Because they are two separate Dropbox apps, they have **separate app folders** and
+therefore separate `data.json` files. Local testing cannot overwrite production
+data — which is the main reason for splitting them.
 
-Then create a local `.env` (git-ignored) with your App key, and add `.env*` to
-`.gitignore` while keeping `.env.example` tracked.
+The Sync panel shows which environment is active, so there is never any doubt
+about which one you are pointed at.
 
-```bash
-cp .env.example .env
-# edit .env and paste the App key
-```
+### If you entered a key by hand
+
+A key saved in the browser **overrides** this selection. If you pasted a key before
+the built-in ones existed, press **Forget key** in the Sync panel to return to
+automatic selection.
+
+### Optional override
+
+`VITE_DROPBOX_APP_KEY` in a `.env` file takes precedence over the built-in key for a
+particular build. Rarely needed; useful when testing a third app. See
+`.env.example`.
 
 **Never put the app secret in any `VITE_` variable.** Anything prefixed `VITE_`
 is embedded in the shipped JavaScript and is readable by anyone loading the page.
-
-**[verify]** Confirm the intended variable name matches what you implement. This
-document's `VITE_DROPBOX_APP_KEY` is a suggestion, not something the specs
-mandate.
 
 ---
 
