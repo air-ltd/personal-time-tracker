@@ -39,7 +39,7 @@ export function TimerPanel({ timer, onStopped }: TimerPanelProps) {
         <>
           <p className="timer-elapsed" data-testid="timer-elapsed">
             <span className="visually-hidden">Elapsed </span>
-            {formatDuration(elapsedMs)}
+            {formatDuration(elapsedMs, { seconds: true })}
           </p>
           <p className="timer-started">
             Started <time dateTime={running.start}>{formatStart(running.start)}</time>

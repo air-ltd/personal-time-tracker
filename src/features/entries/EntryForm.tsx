@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { navigate } from '../../app/router'
 import type { TimeEntry } from '../../domain/entries/types'
 import {
+  formatDuration,
   fromDurationInputValue,
   fromLocalInputValue,
   toDurationInputValue,
@@ -194,7 +195,8 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
 
       {durationPreview !== null && (
         <p className="hint" data-testid="duration-preview">
-          That is {Math.round(durationPreview / 60000)} minutes.
+          That is {formatDuration(durationPreview, { seconds: true })}
+          {durationPreview < 3_600_000 && ` (${Math.round(durationPreview / 60000)} minutes)`}
         </p>
       )}
 

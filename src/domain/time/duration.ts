@@ -30,6 +30,17 @@ export function entryDurationMs(entry: TimeEntry, now: Date): number | null {
 
 const MINUTE = 60_000
 
+export interface DurationFormat {
+  /**
+   * Show seconds, as `H:MM:SS`.
+   *
+   * For anything the user watches or is about to commit: a running timer, and the
+   * save form's preview. A live timer rounded to whole minutes looks stuck, and a
+   * duration previewed as `1h 30m` hides the seconds the user is about to record.
+   */
+  seconds?: boolean
+}
+
 /**
  * Shared duration formatting (0008 F1–F3).
  *
@@ -40,13 +51,19 @@ const MINUTE = 60_000
  * Sub-minute spans show seconds rather than `0m`: rounding 45 seconds to zero
  * makes a real entry look like a mistake (0006 RD1).
  */
-export function formatDuration(ms: number | null): string {
+export function formatDuration(ms: number | null, options: DurationFormat = {}): string {
   if (ms === null) return '—'
   const negative = ms < 0
   const abs = Math.abs(ms)
 
   let out: string
-  if (abs === 0) {
+  if (options.seconds) {
+    const totalSeconds = Math.round(abs / 1000)
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    out = `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  } else if (abs === 0) {
     out = '0m'
   } else if (abs < MINUTE) {
     out = `${Math.round(abs / 1000)}s`

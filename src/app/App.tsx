@@ -13,6 +13,7 @@ import { useUnloadWarning } from '../features/timer/useUnloadWarning'
 import { EntryList } from '../features/entries/EntryList'
 import { EntryForm } from '../features/entries/EntryForm'
 import { UndoBar, type PendingDelete } from '../features/entries/UndoBar'
+import { SyncPanel } from '../features/sync/SyncPanel'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
 import type { TimeEntry } from '../domain/entries/types'
@@ -122,6 +123,7 @@ export function App() {
               </div>
               <EntryList now={now} />
             </div>
+            <SyncPanel />
           </>
         )}
 

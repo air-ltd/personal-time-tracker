@@ -48,12 +48,12 @@ Then:
 | --- | --- | --- |
 | **Access type** | **Scoped access** | Full Dropbox access is for legacy apps. Scoped access is what you want — the app only ever touches one file. |
 | **App name** | `personal-time-tracker` | Shown to you in the consent screen. Anything recognisable. |
-| **Access** | **My Dropbox** (or *Full Dropbox*, depending on console version) | Not an App Folder. App Folder access pins the app inside `/Apps/<name>`, which is also fine — see §7. |
+| **Access** | **App Folder** | This app writes exactly one file, and Dropbox's own guidance is to ask for the least access required. App Folder confines the app to `/apps/<app name>/`. "Full Dropbox" grants reach over the whole account and is not needed. |
 
-**[verify]** The access-type wording differs between console versions. Scoped
-access with "My Dropbox" is what the spec assumes, where paths are relative to
-your Dropbox root. If you pick App Folder instead, note the path change — the
-remote path constant in the implementation will need it.
+The console offers two content-access options: **App Folder** and **Full
+Dropbox**. Choose **App Folder**. Because of it, the remote path is relative to the
+app folder, so the sync file lives at `/apps/<app name>/data.json` and the
+implementation's path constant is just `data.json`.
 
 ---
 
@@ -71,21 +71,18 @@ The spec's provider interface needs:
 | File metadata | `files.metadata.read` | Reading the revision identifier |
 | Account info | `account_info.read` | Showing which account is connected (`status()`) |
 
-**[verify]** These scope names are the long-standing Dropbox names and are
-expected to be correct, but check them against the console's own list, which is
-the authority. If a scope is offered under a different name, use the console's
-name.
+**[verify]** These are the long-standing Dropbox scope names. They could not be
+confirmed from this machine — `docs.dropboxapi.com` was unreachable — so treat the
+console's own list as the authority and use its names if they differ.
 
-**Two things worth knowing:**
+Two things worth knowing:
 
-- **`files.metadata.write` may also be needed.** The sync engine detects concurrent
-  modification using a revision value and passes it as an expected revision when
-  writing (0012 C5). Dropbox implements this as a conditional update, and it is
-  worth checking in the console whether that requires a metadata *write* scope
-  rather than only a read. If so, add it. Without it, concurrent edits from two
-  devices would clobber each other instead of conflicting cleanly.
-- **Scope changes take effect on re-authorisation.** If you add or remove a scope
-  later, you must disconnect and reconnect the app, or the change will not apply.
+- **`files.metadata.write` may also be needed.** The engine detects a concurrent
+  edit by sending the file's revision as a conditional update (0012 C5). If the
+  console says that needs a metadata *write* scope, add it. Without it, two devices
+  editing at once would overwrite each other instead of conflicting and merging.
+- **Scope changes only take effect on re-authorisation.** If you add or remove a
+  scope later, disconnect and reconnect the app or the change will not apply.
 
 ---
 
@@ -130,8 +127,13 @@ Record the **App key**. You need it.
 The **App secret is not needed** and must not be used. The app is a public client
 using PKCE (0012 AU2), so there is no secret to keep — and there is nowhere safe to
 put one anyway, since the app is a static site with every byte shipped to the
-browser (0012 AR6). If you find yourself wanting to use the secret, that is the
-signal something has gone wrong with the flow choice.
+browser (0012 AR6).
+
+Dropbox's OAuth guide states this case explicitly: a client-side web application in
+pure JavaScript should use the code flow with short-lived tokens and PKCE, **and no
+refresh token**. On expiry the app re-authorises, which is normally silent, because
+your approval persists until you revoke it. So there is no refresh token to store and
+no long-lived credential to leak — a smaller thing to get wrong.
 
 The App key is **not** sensitive. It ships in the JavaScript bundle and that is by
 design. This is also why it is fine to commit to the repository.
@@ -173,22 +175,19 @@ mandate.
 Decide and record the path of the sync file inside Dropbox, and keep it constant
 (0012 FL1 — one user, one file).
 
-The default the implementation should use, assuming "My Dropbox" access from step 2:
+With **App Folder** access from step 2, the path is relative to the app folder, so
+the implementation's constant is just:
 
 ```
-/personal-time-tracker/data.json
+data.json
 ```
 
-If you chose App Folder access instead, it becomes relative to `/Apps/<app-name>/`,
-so:
+which resolves to `/apps/<app-name>/data.json`. The code already uses this
+(`src/sync/dropbox/config.ts`). If you chose Full Dropbox instead it becomes
+`/personal-time-tracker/data.json`, and that constant needs changing.
 
-```
-/data.json
-```
-
-Write down which one you chose and which path you are going with. The
-implementation needs a single constant, and getting this wrong shows up as a
-sync that silently succeeds while writing somewhere unexpected.
+Getting this wrong shows up as a sync that silently succeeds while writing
+somewhere unexpected, so it is worth being sure which access type you picked.
 
 ---
 
@@ -215,16 +214,29 @@ the implementation must follow is in [0012 AU1–AU8](../SPECS/0012-sync.md):
 - Tokens go in IndexedDB, never `localStorage`, and never into an export file.
 - Declining or abandoning authorisation leaves a fully working local-only app.
 
-### Verify against Dropbox's documentation during implementation
+### Verify against Dropbox's documentation
 
-[0012 SY10](../SPECS/0012-sync.md) already requires this. Confirm specifically:
+**Already confirmed** from Dropbox's OAuth guide:
 
-- PKCE is supported for the authorization code flow, and whether a refresh token
-  is issued for a public client
-- The exact conditional-update mechanism for detecting concurrent writes, and
-  which scope it needs
+- PKCE is supported, and is explicitly recommended for single-page applications
+  in pure JavaScript
+- The authorization code flow is the recommended flow
+- The redirect URI must match a registered value exactly
+- Content access is a choice between App Folder and Full Dropbox
+- A pure client-side app should use short-lived tokens with **no** refresh token,
+  re-authorising on expiry
+
+**Still unconfirmed** — `docs.dropboxapi.com` was unreachable from the build
+environment, so these come from long-standing knowledge of the API rather than
+current documentation. All of them are isolated in
+`src/sync/dropbox/config.ts` so there is one place to correct:
+
+- Endpoint paths for upload, download and token exchange
+- The scope strings listed in step 3
+- The conditional-update mode flag used to detect a concurrent write
 - Whether revisions come from a metadata read or the write response
 - Rate limit behaviour, to size the retry and backoff in 0012 C5
 
-None of these should be taken from this file or from the specs. They are
-provider-specific and change without notice.
+These are worth checking before relying on sync against a real account. Nothing in
+the test suite covers them: the engine is tested against a fake provider, so the
+tests pass regardless of whether these values are right.

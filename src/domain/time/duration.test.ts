@@ -88,6 +88,33 @@ describe('formatDuration', () => {
 
   it('shows an unknown duration as an em dash, not zero', () => {
     expect(formatDuration(null)).toBe('—')
+    expect(formatDuration(null, { seconds: true })).toBe('—')
+  })
+
+  // SPECS/todo.md items 1 and 4: second-level precision where the user watches a
+  // timer or is about to save a duration.
+  describe('second precision', () => {
+    it.each([
+      [0, '0:00:00'],
+      [1000, '0:00:01'],
+      [45_000, '0:00:45'],
+      [60_000, '0:01:00'],
+      [90_000, '0:01:30'],
+      [3_600_000, '1:00:00'],
+      [3_723_000, '1:02:03'],
+      [26 * 3_600_000, '26:00:00'],
+    ])('formats %ims as %s', (ms, expected) => {
+      expect(formatDuration(ms, { seconds: true })).toBe(expected)
+    })
+
+    it('is unaffected by the compact form, which stays for reports', () => {
+      expect(formatDuration(3_723_000)).toBe('1h 2m')
+    })
+
+    it('rounds to the nearest second', () => {
+      expect(formatDuration(1499, { seconds: true })).toBe('0:00:01')
+      expect(formatDuration(1500, { seconds: true })).toBe('0:00:02')
+    })
   })
 })
 
