@@ -7,7 +7,20 @@
  */
 
 export type SyncErrorKind =
-  'auth' | 'rate-limited' | 'not-found' | 'conflict' | 'network' | 'unknown'
+  | 'auth'
+  /**
+   * The token carries no file permissions.
+   *
+   * Distinct from plain `auth` because the recovery is known rather than guessed: the
+   * stored token is provably unusable, so discarding it is safe, and it turns a dead
+   * end into a single reconnect rather than a message explaining what to do.
+   */
+  | 'scope-missing'
+  | 'rate-limited'
+  | 'not-found'
+  | 'conflict'
+  | 'network'
+  | 'unknown'
 
 /**
  * Normalised error (0012 SY8).

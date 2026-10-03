@@ -1,4 +1,10 @@
-import { SyncError, type ProviderStatus, type RemoteFile, type SyncProvider } from '../provider'
+import {
+  SyncError,
+  type ProviderStatus,
+  type RemoteFile,
+  type SyncErrorKind,
+  type SyncProvider,
+} from '../provider'
 import { DROPBOX, STRICT_CONFLICT } from './config'
 
 /**
@@ -356,7 +362,7 @@ function normalizePath(path: string): string {
 }
 
 interface FailureDetail {
-  kind: 'not-found' | 'conflict' | 'auth' | 'rate-limited' | 'unknown'
+  kind: SyncErrorKind
   error: SyncError
 }
 
@@ -409,13 +415,12 @@ async function describeFailure(response: Response): Promise<FailureDetail> {
     // given for whatever the app has ticked, and a new app has none — so it surfaces
     // here, on the first file call.
     return {
-      kind: 'auth',
+      kind: 'scope-missing',
       error: new SyncError(
-        'auth',
-        'The Dropbox connection has no file permissions. Open the app in the Dropbox App ' +
-          'Console, go to Permissions, and tick files.content.read and files.content.write. ' +
-          'Then disconnect and reconnect here, so the new permissions are granted to the ' +
-          'connection.',
+        'scope-missing',
+        'The Dropbox connection was made before this app had file permissions, so it ' +
+          'grants none. Reconnect to grant them — and on the Dropbox App Console, confirm ' +
+          'files.content.read and files.content.write are ticked under Permissions.',
       ),
     }
   }
