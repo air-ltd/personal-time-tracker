@@ -80,10 +80,16 @@ export function entry(overrides: EntryOverrides = {}): TimeEntry {
   }
 }
 
-/** A deleted entry: a tombstone, which is what sync actually propagates. */
+/**
+ * A deleted entry: a tombstone, which is what sync actually propagates.
+ *
+ * `updatedAt` is advanced to match `deletedAt`. Deleting is a write, so both move
+ * together; leaving `updatedAt` behind produces a record that ties with the live
+ * version and then loses the tiebreak, which reads as "the deletion did not stick".
+ */
 export function tombstone(overrides: EntryOverrides = {}): TimeEntry {
   const deletedAt = overrides.deletedAt ?? new Date('2026-10-13T10:00:00.000Z')
-  return entry({ ...overrides, deletedAt })
+  return entry({ ...overrides, deletedAt, updatedAt: overrides.updatedAt ?? deletedAt })
 }
 
 /** A running entry: `end` is null, so its duration is only known now. */
