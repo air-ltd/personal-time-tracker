@@ -259,6 +259,38 @@ schema versions, duplicate ids, `end` before `start`.
 **Gate**
 - The suite catches each silent failure below when that failure is deliberately
   introduced and then reverted
+
+Notes from implementation:
+
+- **The silent-failure gate is a script, not a habit.** `scripts/check-silent-failures.mjs`
+  introduces each failure as a single-token mutation, runs the narrowest suite that
+  should notice, and requires that run to fail. Restoring from the bytes read beforehand
+  rather than by reversing the edit, so an interrupted run cannot leave a mutated file
+  behind. Run it with `npm run check:silent`.
+  The claim worth testing is not "we have tests" but "the suite would notice if these
+  bugs came back" — a green suite is equally consistent with correct code and with code
+  nobody asserted.
+- **Deliberately not part of `npm run verify`.** It rewrites source files and runs the
+  suite eleven times, which is too slow and too risky for the ordinary loop. It is a
+  gate to run on purpose, and it will report `stale` when a mutation no longer matches
+  the code, which is itself the signal to update it.
+- **First run found a real gap and two dead mutations.** Nothing caught a table added
+  to the schema and forgotten in the snapshot bridge — the silent failure being 0012 M2
+  itself. Two further mutations had drifted out of date and were silently passing,
+  which is worse than not having them: they looked like coverage. The bridge now has a
+  test deriving its expected tables from the live schema, so the next table cannot be
+  added without it failing.
+- **Six failures cannot be checked yet.** Rounding, float drift, utilisation, weekday
+  off-by-one, reconciliation and CSV quoting are all Phase 6 arithmetic that does not
+  exist. The script lists them as pending with the phase that introduces them, so the
+  gap is visible rather than assumed away. Base path is covered by the browser smoke
+  test, which loads the built site at `/personal-time-tracker/`.
+- **Two existing fixtures were wrong, and both looked like product bugs.** `tombstone()`
+  set `deletedAt` later than `updatedAt`, so it tied with the live record and lost the
+  tiebreak, so three convergence tests failed reading as "the deletion did not stick".
+  `runningEntry()` defaulted `source` to `manual`, describing a running entry the app
+  could never have created. Both are recorded because a failing test is only as
+  trustworthy as the data it is handed.
 - Round-trip identity holds
 - `domain/` coverage is reported and reviewed
 

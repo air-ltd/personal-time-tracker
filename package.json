@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "verify": "npm run typecheck && npm run format:check && npm run lint && npm run test && npm run build",
-    "test:e2e": "node e2e/smoke.mjs"
+    "test:e2e": "node e2e/smoke.mjs",
+    "check:silent": "node scripts/check-silent-failures.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",

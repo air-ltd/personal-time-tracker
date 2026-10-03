@@ -99,3 +99,41 @@ describe('writeSnapshot', () => {
     expect(restored?.deletedAt).toBe('2026-10-13T10:00:00.000Z')
   })
 })
+
+/**
+ * The bridge must cover every entity table the schema has.
+ *
+ * A table added to the schema and forgotten here would simply never sync: the merge is
+ * table-agnostic, so nothing downstream complains, and the data is quietly absent from
+ * every other device with no warning (0012 M2). Deriving the expectation from the live
+ * schema means the next table cannot be added without this failing.
+ */
+describe('every entity table is bridged', () => {
+  const INTERNAL = new Set(['meta', 'secrets'])
+
+  it('reads and writes all of them', async () => {
+    const entityTables = db.tables.map((t) => t.name).filter((name) => !INTERNAL.has(name))
+    expect(entityTables.length).toBeGreaterThan(0)
+
+    for (const name of entityTables) {
+      await db
+        .table(name)
+        .put({ id: `${name}-1`, updatedAt: '2026-10-13T09:00:00.000Z', deletedAt: null })
+
+      const snapshot = await readSnapshot()
+      expect(Object.keys(snapshot.entities), `${name} was not read`).toContain(name)
+
+      await db.table(name).clear()
+      await writeSnapshot(snapshot)
+      expect(await db.table(name).count(), `${name} was not written back`).toBe(1)
+    }
+  })
+
+  it('excludes the internal stores, which are not entities', async () => {
+    const snapshot = await readSnapshot()
+    // meta holds sync bookkeeping and secrets holds the token. Neither is user data,
+    // and syncing either would be a bug in its own right.
+    expect(Object.keys(snapshot.entities)).not.toContain('meta')
+    expect(Object.keys(snapshot.entities)).not.toContain('secrets')
+  })
+})
