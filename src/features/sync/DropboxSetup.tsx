@@ -1,15 +1,24 @@
 import { useState } from 'react'
-import { APP_KEY_STORAGE_KEY, clearAppKey, isValidAppKey, writeAppKey } from '../../sync/appKey'
+import {
+  clearAppKey,
+  describeKeySource,
+  hasLegacyStoredKey,
+  readAppKey,
+} from '../../sync/appKey'
 import { currentRedirectUri } from '../../sync/oauthCallback'
 import { SCOPES as REQUIRED_SCOPES } from '../../sync/dropbox/config'
 
 /**
- * In-browser Dropbox setup (item 6 of `SPECS/todo.md`).
+ * Dropbox configuration display and setup instructions.
  *
- * The app key is an OAuth client id, not a secret, so it can be entered here rather
- * than baked into a build (0012 AU3, AR6). Instructions live alongside the field
- * because the console's wording changes and the redirect URI in particular is easy
- * to get subtly wrong — a mismatch fails authorisation with no useful error.
+ * Read-only by design. The app key used to be entered here and saved to
+ * localStorage, but a saved key silently overrode the host-based selection and then
+ * paired with the wrong Dropbox app's redirect URI — which Dropbox rejects as
+ * "Invalid redirect_uri" without saying which half is wrong. Two built-in keys cover
+ * both environments, so there is nothing left to enter.
+ *
+ * Showing the key and the redirect URI side by side is what makes that class of
+ * mismatch diagnosable: the two must be registered on the same app.
  */
 
 interface Props {
@@ -17,92 +26,90 @@ interface Props {
 }
 
 export function DropboxSetup({ onConfigured }: Props) {
-  const [value, setValue] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<'key' | 'redirect' | 'scopes' | null>(null)
+  const [legacyCleared, setLegacyCleared] = useState(false)
 
+  const { source, environment } = describeKeySource()
+  const key = readAppKey()
   const redirectUri = currentRedirectUri()
+  const hasLegacy = hasLegacyStoredKey()
 
-  function onSave() {
-    const trimmed = value.trim()
-    if (!trimmed) {
-      setError('Paste the App key from the Dropbox App Console.')
-      return
-    }
-    if (!isValidAppKey(trimmed)) {
-      setError(
-        'That does not look like an App key. It is a short lowercase alphanumeric string — paste the App key field, not the App secret or a URL.',
-      )
-      return
-    }
-    if (!writeAppKey(trimmed)) {
-      // Stored for this session only; private browsing can block localStorage.
-      setError(
-        'Could not save the key. It will work for this session but not survive a reload.',
-      )
-    } else {
-      setError(null)
-    }
-    // No success message: a valid key makes the parent swap this panel for the
-    // Connect controls, and that swap is the confirmation. An on-screen "saved"
-    // notice here would be unreachable in the real app.
-    onConfigured()
-  }
-
-  async function onCopyScopes() {
+  async function copy(value: string, which: 'key' | 'redirect' | 'scopes') {
     try {
-      await navigator.clipboard.writeText(REQUIRED_SCOPES.join('\n'))
-      setCopied(true)
+      await navigator.clipboard.writeText(value)
+      setCopied(which)
     } catch {
-      // Clipboard blocked. The scopes are listed on screen, so no action is needed.
-      setCopied(false)
+      // Clipboard blocked. Everything needed is on screen, so this is not an error.
+      setCopied(null)
     }
   }
 
-  function onForget() {
+  const sourceLabel: Record<typeof source, string> = {
+    environment: 'from build configuration',
+    builtin: `built in for the ${environment} environment`,
+  }
+
+  function onClearLegacy() {
     clearAppKey()
-    setValue('')
-    setError(null)
+    setLegacyCleared(true)
     onConfigured()
   }
 
   return (
     <div className="sync-setup">
-      <div className="field">
-        <label htmlFor="dropbox-app-key">Dropbox App key</label>
-        <input
-          id="dropbox-app-key"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="e.g. 1a2b3c4d5e6f7g8"
-          value={value}
-          onChange={(e) => {
-            setValue(e.target.value)
-            setError(null)
-          }}
-          aria-describedby="dropbox-app-key-hint dropbox-app-key-error"
-        />
-        <p id="dropbox-app-key-hint" className="hint">
-          Public identifier, not a password. Stored only in this browser, and never included in
-          an export.
+      <div className="sync-current" data-testid="sync-current">
+        <h3>In use right now</h3>
+        <dl>
+          <dt>App key</dt>
+          <dd>
+            <code data-testid="current-app-key">{key}</code>
+            <span className="hint"> — {sourceLabel[source]}</span>
+          </dd>
+          <dt>Redirect URI</dt>
+          <dd>
+            <code data-testid="current-redirect-uri">{redirectUri}</code>
+          </dd>
+        </dl>
+        <p className="hint">
+          These two must be registered on the <em>same</em> Dropbox app. A mismatch is reported
+          only as &ldquo;Invalid redirect_uri&rdquo;, so compare them when that appears.
         </p>
+        <div className="button-row">
+          <button type="button" className="button" onClick={() => void copy(key, 'key')}>
+            Copy app key
+          </button>
+          <button
+            type="button"
+            className="button"
+            onClick={() => void copy(redirectUri, 'redirect')}
+          >
+            Copy redirect URI
+          </button>
+        </div>
+        {copied && (
+          <span className="hint" role="status">
+            Copied
+          </span>
+        )}
       </div>
 
-      <div className="button-row">
-        <button type="button" className="button button-primary" onClick={onSave}>
-          Save key
-        </button>
-        <button type="button" className="button" onClick={onForget}>
-          Forget key
-        </button>
-      </div>
-
-      {error && (
-        <p className="alert alert-error" role="alert" data-testid="app-key-error">
-          {error}
+      {hasLegacy && !legacyCleared && (
+        <div className="alert alert-warning" data-testid="legacy-key-notice">
+          <p>
+            An earlier version saved a Dropbox key in this browser. It is{' '}
+            <strong>ignored</strong> — the key above is used — but you can remove it.
+          </p>
+          <button type="button" className="button" onClick={onClearLegacy}>
+            Remove saved key
+          </button>
+        </div>
+      )}
+      {legacyCleared && (
+        <p className="hint" role="status" data-testid="legacy-key-cleared">
+          Saved key removed.
         </p>
       )}
+
       <details className="sync-setup-instructions">
         <summary>How to get an App key from Dropbox</summary>
         <ol className="setup-steps">
@@ -122,11 +129,8 @@ export function DropboxSetup({ onConfigured }: Props) {
             writes a single file, and App Folder is the least access required.
           </li>
           <li>
-            On the <strong>Permissions</strong> tab, enable: <code>files.content.read</code>,{' '}
-            <code>files.content.write</code>, <code>files.metadata.read</code>,{' '}
-            <code>account_info.read</code>. If the console offers{' '}
-            <code>files.metadata.write</code>, enable it too — it is what makes a concurrent
-            edit conflict instead of overwriting.
+            On the <strong>Permissions</strong> tab, tick exactly the two scopes below. Nothing
+            else is needed.
           </li>
           <li>
             Add <strong>both</strong> redirect URIs below, then save. A mismatch fails with no
@@ -139,10 +143,6 @@ export function DropboxSetup({ onConfigured }: Props) {
         </ol>
 
         <h3>Scopes to enable</h3>
-        <p className="hint">
-          Tick exactly these two. A scope the app does not have will make Dropbox refuse the
-          authorisation with &ldquo;No scope requested can be granted for this app&rdquo;.
-        </p>
         <ul className="setup-scopes">
           {REQUIRED_SCOPES.map((scope) => (
             <li key={scope}>
@@ -150,14 +150,13 @@ export function DropboxSetup({ onConfigured }: Props) {
             </li>
           ))}
         </ul>
-        <button type="button" className="button" onClick={() => void onCopyScopes()}>
+        <button
+          type="button"
+          className="button"
+          onClick={() => void copy(REQUIRED_SCOPES.join('\n'), 'scopes')}
+        >
           Copy scopes
         </button>
-        {copied && (
-          <span className="hint" role="status" data-testid="scopes-copied">
-            Copied
-          </span>
-        )}
 
         <h3>Redirect URIs to register</h3>
         <ul className="setup-uris">
@@ -170,11 +169,10 @@ export function DropboxSetup({ onConfigured }: Props) {
         </ul>
         <p className="hint">
           The trailing slash matters. Without it Dropbox reports only that the URI does not
-          match, with nothing to go on.
+          match, with nothing to go on. Each app needs both URIs if you want to authorise it
+          from either place.
         </p>
       </details>
     </div>
   )
 }
-
-export { APP_KEY_STORAGE_KEY }

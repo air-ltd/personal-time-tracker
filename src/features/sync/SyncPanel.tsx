@@ -124,11 +124,9 @@ export function SyncPanel() {
           className={`badge badge-${keyInfo.environment}`}
           data-testid="sync-environment"
           title={
-            keyInfo.source === 'user'
-              ? 'Using the key entered in this browser'
-              : keyInfo.source === 'environment'
-                ? 'Using the key from the build configuration'
-                : 'Using the built-in key for this site'
+            keyInfo.source === 'environment'
+              ? 'Using the key from the build configuration'
+              : `Using the key built in for the ${keyInfo.environment} environment`
           }
         >
           {keyInfo.environment === 'production' ? 'production' : 'non-production'}

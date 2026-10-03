@@ -3,94 +3,112 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DropboxSetup } from './DropboxSetup'
 import { APP_KEY_STORAGE_KEY, readAppKey } from '../../sync/appKey'
+import { BUILT_IN_KEYS } from '../../sync/appKey'
 
+/**
+ * The panel is read-only now.
+ *
+ * It used to collect and save a key, which silently overrode host selection and then
+ * paired with the other Dropbox app's redirect URI — reported by Dropbox only as
+ * "Invalid redirect_uri". Showing the key and the redirect URI together is what makes
+ * that class of mismatch diagnosable.
+ */
 beforeEach(() => {
   window.localStorage.clear()
 })
 
-describe('in-browser Dropbox setup (SPECS/todo.md item 6)', () => {
-  it('saves a key so no rebuild is needed', async () => {
-    const user = userEvent.setup()
-    const onConfigured = vi.fn()
-    render(<DropboxSetup onConfigured={onConfigured} />)
-
-    await user.type(screen.getByLabelText('Dropbox App key'), '1a2b3c4d5e6f7g8')
-    await user.click(screen.getByRole('button', { name: 'Save key' }))
-
-    expect(readAppKey()).toBe('1a2b3c4d5e6f7g8')
-    // Confirmation is the parent swapping in the Connect controls, not a message:
-    // a "saved" notice in this component is unreachable once that swap happens.
-    expect(onConfigured).toHaveBeenCalled()
-  })
-
-  it('rejects a pasted URL with a message naming the mistake', async () => {
-    const user = userEvent.setup()
+describe('what is in use', () => {
+  it('shows the key and the redirect URI together', () => {
     render(<DropboxSetup onConfigured={() => {}} />)
 
-    await user.type(screen.getByLabelText('Dropbox App key'), 'https://console.dropbox.com')
-    await user.click(screen.getByRole('button', { name: 'Save key' }))
+    expect(screen.getByTestId('current-app-key')).toHaveTextContent(BUILT_IN_KEYS.development)
+    // Asserted against runtime values, not a hardcoded URL: jsdom uses a different
+    // port and vitest does not apply the build's base path. What matters is that the
+    // URI shown is the one the OAuth request actually sends, which is what has to be
+    // registered with Dropbox.
+    expect(screen.getByTestId('current-redirect-uri')).toHaveTextContent(
+      `${window.location.origin}/`,
+    )
+  })
 
-    const error = await screen.findByTestId('app-key-error')
-    expect(error).toHaveTextContent(/App key field, not the App secret or a URL/)
+  it('says where the key came from', () => {
+    render(<DropboxSetup onConfigured={() => {}} />)
+    expect(screen.getByText(/built in for the development environment/i)).toBeInTheDocument()
+  })
+
+  it('warns that the two must be registered on the same app', () => {
+    render(<DropboxSetup onConfigured={() => {}} />)
+    expect(screen.getByText(/must be registered on the/i)).toBeInTheDocument()
+  })
+
+  it('offers copies of both values', () => {
+    render(<DropboxSetup onConfigured={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Copy app key' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy redirect URI' })).toBeInTheDocument()
+  })
+})
+
+describe('a key saved by an earlier version', () => {
+  it('is announced as ignored rather than silently affecting behaviour', () => {
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
+    render(<DropboxSetup onConfigured={() => {}} />)
+
+    const notice = screen.getByTestId('legacy-key-notice')
+    expect(notice).toHaveTextContent(/ignored/i)
+    // And it genuinely does not change what is used.
+    expect(readAppKey()).toBe(BUILT_IN_KEYS.development)
+  })
+
+  it('can be removed, and the notice goes with it', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
+    render(<DropboxSetup onConfigured={() => {}} />)
+
+    await user.click(screen.getByRole('button', { name: 'Remove saved key' }))
     expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBeNull()
+    expect(await screen.findByTestId('legacy-key-cleared')).toBeInTheDocument()
   })
 
-  it('rejects an empty submission', async () => {
-    const user = userEvent.setup()
+  it('offers no removal when there is nothing to remove', () => {
     render(<DropboxSetup onConfigured={() => {}} />)
-
-    await user.click(screen.getByRole('button', { name: 'Save key' }))
-    expect(await screen.findByTestId('app-key-error')).toHaveTextContent(/Paste the App key/)
-  })
-
-  it('forgets a stored key', async () => {
-    const user = userEvent.setup()
-    window.localStorage.setItem(APP_KEY_STORAGE_KEY, '1a2b3c4d5e6f7g8')
-    render(<DropboxSetup onConfigured={() => {}} />)
-
-    await user.click(screen.getByRole('button', { name: 'Forget key' }))
-    expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Remove saved key' })).not.toBeInTheDocument()
   })
 
   it('notifies the caller so the provider is rebuilt', async () => {
     const user = userEvent.setup()
-    let calls = 0
-    render(
-      <DropboxSetup
-        onConfigured={() => {
-          calls += 1
-        }}
-      />,
-    )
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
+    const onConfigured = vi.fn()
+    render(<DropboxSetup onConfigured={onConfigured} />)
 
-    await user.type(screen.getByLabelText('Dropbox App key'), '1a2b3c4d5e6f7g8')
-    await user.click(screen.getByRole('button', { name: 'Save key' }))
-    expect(calls).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'Remove saved key' }))
+    expect(onConfigured).toHaveBeenCalled()
   })
+})
 
-  // The instructions live in the app because the console's wording changes and the
-  // redirect URI is the part people get wrong.
-  it('shows the instructions in the browser', () => {
+describe('instructions', () => {
+  // The console's wording changes and the redirect URI is the part people get wrong,
+  // so the steps live in the app rather than only in a file.
+  it('shows the setup steps', () => {
     render(<DropboxSetup onConfigured={() => {}} />)
     expect(screen.getByText('How to get an App key from Dropbox')).toBeInTheDocument()
-    expect(screen.getByText('Redirect URIs to register')).toBeInTheDocument()
   })
 
-  it('shows the deployed URI and the current one, both with trailing slashes', () => {
+  it('lists exactly the two scopes needed', () => {
     render(<DropboxSetup onConfigured={() => {}} />)
-    const uris = screen.getAllByText(/https?:\/\/.+\/$/).map((el) => el.textContent ?? '')
+    expect(screen.getByText('files.content.read')).toBeInTheDocument()
+    expect(screen.getByText('files.content.write')).toBeInTheDocument()
+    expect(screen.getByText(/exactly the two scopes below/i)).toBeInTheDocument()
+  })
+
+  it('shows both redirect URIs with trailing slashes', () => {
+    render(<DropboxSetup onConfigured={() => {}} />)
+    const uris = screen.getAllByText(/^https?:\/\/.+\/$/).map((el) => el.textContent ?? '')
     expect(uris).toContain('https://air-ltd.github.io/personal-time-tracker/')
-    expect(uris.some((uri) => uri.includes('/personal-time-tracker/'))).toBe(true)
     expect(uris.every((uri) => uri.endsWith('/'))).toBe(true)
   })
 
   it('warns that the App secret is not needed', () => {
     render(<DropboxSetup onConfigured={() => {}} />)
     expect(screen.getByText(/Ignore the App secret entirely/i)).toBeInTheDocument()
-  })
-
-  it('says the key is public rather than implying it is a secret', () => {
-    render(<DropboxSetup onConfigured={() => {}} />)
-    expect(screen.getByText(/Public identifier, not a password/i)).toBeInTheDocument()
   })
 })

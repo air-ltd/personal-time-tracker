@@ -5,10 +5,10 @@ import {
   clearAppKey,
   describeKeySource,
   environmentForHost,
+  hasLegacyStoredKey,
   isValidAppKey,
   readAppKey,
   selectBuiltInKey,
-  writeAppKey,
 } from './appKey'
 
 beforeEach(() => {
@@ -44,11 +44,6 @@ describe('app key validation', () => {
 })
 
 describe('reading the key', () => {
-  it('returns the stored key when there is one', () => {
-    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'storedkey1234')
-    expect(readAppKey()).toBe('storedkey1234')
-  })
-
   // A build-time default must still work, so a configured deployment is unaffected by
   // this feature.
   it('falls back to the built-in key for this host', () => {
@@ -62,29 +57,31 @@ describe('reading the key', () => {
   })
 })
 
-describe('writing the key', () => {
-  it('stores a valid key and reports success', () => {
-    expect(writeAppKey('1a2b3c4d5e6f7g8')).toBe(true)
-    expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBe('1a2b3c4d5e6f7g8')
-  })
-
-  it('trims before storing, so a pasted newline is not kept', () => {
-    writeAppKey('  1a2b3c4d5e6f7g8\n')
-    expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBe('1a2b3c4d5e6f7g8')
-  })
-
-  it('refuses to store an invalid key', () => {
-    expect(writeAppKey('not a key')).toBe(false)
-    expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBeNull()
-  })
-})
-
-describe('forgetting the key', () => {
-  it('removes it, reverting to the built-in key', () => {
-    writeAppKey('1a2b3c4d5e6f7g8')
-    clearAppKey()
-    expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBeNull()
+describe('a key saved by an earlier version', () => {
+  // Regression: the saved key used to win over host selection, then pair with the
+  // other Dropbox app's redirect URI. Dropbox reported that only as
+  // "Invalid redirect_uri", naming neither half of the mismatch.
+  it('is ignored when resolving the key', () => {
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
     expect(readAppKey()).toBe(BUILT_IN_KEYS.development)
+  })
+
+  it('does not change the reported source', () => {
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
+    expect(describeKeySource().source).toBe('builtin')
+  })
+
+  it('is reported as leftover so it can be cleaned up', () => {
+    expect(hasLegacyStoredKey()).toBe(false)
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
+    expect(hasLegacyStoredKey()).toBe(true)
+  })
+
+  it('can be removed', () => {
+    window.localStorage.setItem(APP_KEY_STORAGE_KEY, 'somelegacykey1')
+    clearAppKey()
+    expect(hasLegacyStoredKey()).toBe(false)
+    expect(window.localStorage.getItem(APP_KEY_STORAGE_KEY)).toBeNull()
   })
 })
 
@@ -118,12 +115,7 @@ describe('environment selection', () => {
 })
 
 describe('provenance', () => {
-  it('reports a stored key as user-supplied', () => {
-    writeAppKey('1a2b3c4d5e6f7g8')
-    expect(describeKeySource().source).toBe('user')
-  })
-
-  it('reports the built-in key when nothing is stored', () => {
+  it('reports the built-in key', () => {
     expect(describeKeySource()).toEqual({ source: 'builtin', environment: 'development' })
   })
 })
@@ -131,18 +123,14 @@ describe('provenance', () => {
 describe('the key is a public value (0011 R5, 0012 AU3, AR6)', () => {
   // This is the justification for extending the localStorage allowlist beyond the
   // theme key: the value is an OAuth client id that ships in the bundle regardless.
-  it('is stored under a single documented key', () => {
-    writeAppKey('1a2b3c4d5e6f7g8')
-    const keys = Object.keys(window.localStorage)
-    expect(keys).toContain(APP_KEY_STORAGE_KEY)
+  it('uses a single documented storage key', () => {
     expect(APP_KEY_STORAGE_KEY).toBe('tt:dropbox-app-key')
   })
 
-  it('never lands in the secrets store, which holds tokens', () => {
-    // Token and key are different things: the key is public and lives in
-    // localStorage; tokens are credentials and live in IndexedDB. Keeping them
-    // separate is what makes the export exclusion structural.
-    writeAppKey('1a2b3c4d5e6f7g8')
+  it('keeps no credentials in localStorage', () => {
+    // Token and key are different things: the key is public; tokens are credentials
+    // and live in IndexedDB. Keeping them separate makes the export exclusion
+    // structural rather than a thing to remember.
     expect(JSON.stringify(window.localStorage)).not.toMatch(/access_token|refresh_token/)
   })
 })

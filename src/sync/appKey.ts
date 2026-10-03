@@ -80,62 +80,57 @@ function envKey(): string {
 }
 
 /**
- * Resolve the client id, in precedence order:
+ * Resolve the client id.
  *
- *   1. a key the user entered in the Sync panel — an explicit override always wins,
- *      so it works identically on the deployed site and locally;
- *   2. `VITE_DROPBOX_APP_KEY`, for a build-time override;
- *   3. the built-in key for whichever environment this is running in.
+ * The built-in key for this host wins. A key saved in the browser is deliberately
+ * NOT consulted: it silently overrode the host selection and then paired with
+ * whichever redirect URI that other app had registered, so authorising locally used
+ * the production app's key against the production app's redirect — and Dropbox
+ * rejected it with "Invalid redirect_uri", naming nothing useful.
  *
- * (1) beats (3) deliberately: someone who pasted a key wants that key, not the one
- * the hostname would pick.
+ * Two built-in keys cover both environments, which is what the in-browser entry was
+ * originally for (`SPECS/todo.md` item 6), so nothing is lost. A genuinely
+ * different Dropbox app is still possible via `VITE_DROPBOX_APP_KEY`, an explicit
+ * deploy-time decision rather than hidden browser state.
+ *
+ * Storage is deliberately synchronous: the OAuth redirect handler reads this before
+ * the app renders.
  */
 export function readAppKey(): string {
-  try {
-    const stored = window.localStorage.getItem(APP_KEY_STORAGE_KEY)
-    if (typeof stored === 'string' && stored.trim() !== '') return stored.trim()
-  } catch {
-    // localStorage throws under strict privacy settings. Fall through.
-  }
-
   const fromEnv = envKey()
   if (fromEnv !== '') return fromEnv
-
   return selectBuiltInKey(window.location.hostname)
 }
 
-/** Where the effective key came from, for display in the Sync panel. */
-export type KeySource = 'user' | 'environment' | 'builtin'
+export type KeySource = 'environment' | 'builtin'
 
 export function describeKeySource(): { source: KeySource; environment: Environment } {
-  const environment = environmentForHost(window.location.hostname)
-  try {
-    const stored = window.localStorage.getItem(APP_KEY_STORAGE_KEY)
-    if (typeof stored === 'string' && stored.trim() !== '')
-      return { source: 'user', environment }
-  } catch {
-    // Treated as not user-supplied.
-  }
-  if (envKey() !== '') return { source: 'environment', environment }
-  return { source: 'builtin', environment }
-}
-
-export function writeAppKey(value: string): boolean {
-  const trimmed = value.trim()
-  if (!isValidAppKey(trimmed)) return false
-  try {
-    window.localStorage.setItem(APP_KEY_STORAGE_KEY, trimmed)
-    return true
-  } catch {
-    // Cannot persist. The key still works for this session only.
-    return false
+  return {
+    source: envKey() === '' ? 'builtin' : 'environment',
+    environment: environmentForHost(window.location.hostname),
   }
 }
 
+/**
+ * Remove a key saved by an earlier version.
+ *
+ * Retained so the leftover can be cleaned up. `readAppKey` ignores it either way, so
+ * this is hygiene rather than behaviour.
+ */
 export function clearAppKey(): void {
   try {
     window.localStorage.removeItem(APP_KEY_STORAGE_KEY)
   } catch {
     // Nothing to do.
+  }
+}
+
+/** True if an earlier version left a key behind. */
+export function hasLegacyStoredKey(): boolean {
+  try {
+    const stored = window.localStorage.getItem(APP_KEY_STORAGE_KEY)
+    return typeof stored === 'string' && stored.trim() !== ''
+  } catch {
+    return false
   }
 }

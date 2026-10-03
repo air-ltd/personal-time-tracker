@@ -403,13 +403,19 @@ async function describeFailure(response: Response): Promise<FailureDetail> {
       error: new SyncError('conflict', `The remote file changed${detail}.`),
     }
   }
-  if (status === 400) {
-    // Malformed arguments or insufficient scopes both land here.
+  if (status === 400 || summary.startsWith('other')) {
+    // `other/` is Dropbox's catch-all. In practice the overwhelmingly common cause is
+    // a token that grants nothing: authorisation succeeds without any scopes, then the
+    // first file call fails. The message names that explicitly rather than guessing
+    // between scopes and redirect URI, which send different errors anyway.
     return {
       kind: 'unknown',
       error: new SyncError(
         'unknown',
-        `Dropbox rejected the request${detail}. Check the app's scopes and the redirect URI.`,
+        `Dropbox rejected the request${detail}. ` +
+          'Most likely the Dropbox app has no permissions ticked: on the app, open ' +
+          'Permissions and enable files.content.read and files.content.write, then ' +
+          'disconnect and reconnect in this app so the new permissions are granted.',
       ),
     }
   }
