@@ -105,12 +105,11 @@ const MUTATIONS = [
   {
     id: 'entity-table-forgotten',
     failure: 'New entity type added, forgotten in merge — that data never syncs (0012 M2)',
-    // Narrows the bridge to entries only. The merge is table-agnostic, so this is where
-    // a forgotten entity type is actually lost: the data is never read, so it is never
-    // synced, and nothing warns.
     file: 'src/storage/snapshotRepo.ts',
-    find: "if (db.tables.some((table) => table.name === 'entries')) {",
-    replace: "if (db.tables.some((table) => table.name === 'entryz')) {",
+    // Drops entries from the bridge's list of tables. The merge is table-agnostic, so the only
+    // symptom would be that this entity never syncs, silently.
+    find: "  'entries',\n  'projects',",
+    replace: "  'projects',",
     test: 'src/storage/snapshotRepo.test.ts',
   },
   {

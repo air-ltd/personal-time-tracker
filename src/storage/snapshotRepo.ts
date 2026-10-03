@@ -1,6 +1,6 @@
 import { getDb, SCHEMA_VERSION } from './db'
 import { bumpRevision } from './events'
-import type { Snapshot } from '../domain/merge'
+import type { Mergeable, Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
 
 /**
@@ -9,10 +9,14 @@ import type { TimeEntry } from '../domain/entries/types'
  * `merge` operates on plain records and knows nothing about Dexie, while the engine
  * knows nothing about the schema. This is the seam.
  *
- * Only tables that exist in the schema are included. An engine merging a snapshot
- * that contains a table the database does not have would try to write records into
- * nowhere, so the two lists are derived from one source of truth rather than
- * maintained separately.
+ * `TABLES` and the Dexie schema are two lists that must agree, and the merge is
+ * table-agnostic — so a table added to one and forgotten in the other is the quietest
+ * possible bug: the data simply never syncs, with nothing anywhere reporting it (0012
+ * M2). `snapshotRepo.test.ts` derives its expectation from the live schema, which is
+ * what makes the next table impossible to add silently.
+ *
+ * The list is therefore the only place table membership is declared. Adding a store to
+ * `db.ts` without adding it here fails that test rather than passing.
  */
 
 const TABLES = [
@@ -28,11 +32,17 @@ export async function readSnapshot(): Promise<Snapshot> {
   const db = getDb()
   const entities: Snapshot['entities'] = {}
 
-  // `secrets` is intentionally excluded: credentials must never travel in a sync
-  // payload or a backup file (0012 AU6, 0008 S2).
-  if (db.tables.some((table) => table.name === 'entries')) {
-    entities['entries'] = await db.entries.toArray()
+  for (const name of TABLES) {
+    const table = db.tables.find((candidate) => candidate.name === name)
+    if (!table) continue
+    // Dexie's `toArray` is typed `any[]`; the tables here are all taxonomy entities,
+    // which is exactly the mergeable shape the snapshot declares.
+    entities[name] = (await table.toArray()) as Mergeable[]
   }
+
+  // `meta` and `secrets` are deliberately absent from TABLES: credentials must never
+  // travel in a sync payload or a backup file (0012 AU6, 0008 S2), and `meta` is sync
+  // bookkeeping rather than user data.
   return { schemaVersion: SCHEMA_VERSION, entities }
 }
 

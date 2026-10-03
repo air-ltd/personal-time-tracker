@@ -1,5 +1,6 @@
 import Dexie from 'dexie'
 import type { TimeEntry } from '../domain/entries/types'
+import type { Client, Project, Tag } from '../domain/taxonomy/types'
 
 /**
  * Database schema (0003 V1, 0007 S1–S4).
@@ -13,12 +14,13 @@ import type { TimeEntry } from '../domain/entries/types'
  * Version history:
  *   1 — entries, meta
  *   2 — secrets, for sync credentials (Phase 2B)
+ *   3 — projects, clients, tags, for the taxonomy (Phase 4)
  *
  * Adding a store needs no backfill: absent rows correctly mean "no contract
  * configured" and "not connected", so there is no data to invent (0003 V2).
  */
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface MetaRecord {
   key: string
@@ -42,6 +44,9 @@ export class AppDb extends Dexie {
   entries!: Dexie.Table<TimeEntry, string>
   meta!: Dexie.Table<MetaRecord, string>
   secrets!: Dexie.Table<SecretRecord, string>
+  projects!: Dexie.Table<Project, string>
+  clients!: Dexie.Table<Client, string>
+  tags!: Dexie.Table<Tag, string>
 
   constructor(name = 'personal-time-tracker') {
     super(name)
@@ -60,6 +65,19 @@ export class AppDb extends Dexie {
       entries: 'id, start, projectId, end, deletedAt',
       meta: 'key',
       secrets: 'key',
+    })
+    // v3: additive only, like v2. No existing row is rewritten, so there is nothing to
+    // lose; the tables simply start empty and their absence correctly means "nothing
+    // configured yet" (0003 V2). `deletedAt` is indexed so tombstones can be found
+    // without scanning, and `name` is not indexed because uniqueness is enforced in the
+    // domain layer against a case-folded comparison that IndexedDB cannot express.
+    this.version(3).stores({
+      entries: 'id, start, projectId, end, deletedAt',
+      meta: 'key',
+      secrets: 'key',
+      projects: 'id, clientId, archived, deletedAt',
+      clients: 'id, archived, deletedAt',
+      tags: 'id, deletedAt',
     })
   }
 }

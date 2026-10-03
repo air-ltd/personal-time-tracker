@@ -9,9 +9,13 @@ import type { TimeEntry } from '../domain/entries/types'
 let db: AppDb
 let counter = 0
 
-beforeEach(() => {
+beforeEach(async () => {
   db = new AppDb(`snapshot-${(counter += 1)}`)
   setDbForTests(db)
+  // Await the open so the schema upgrade chain has committed before the first
+  // query. See useTimer.test.tsx: without this a query can arrive mid-upgrade and
+  // Dexie reports an unhandled PrematureCommitError with no failing assertion.
+  await db.open()
   resetRevisionForTests()
 })
 

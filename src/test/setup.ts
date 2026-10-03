@@ -12,6 +12,10 @@ import 'fake-indexeddb/auto'
  * themselves; this default reports light.
  */
 function stubMatchMedia(matches: boolean): void {
+  // A test may opt into the node environment to read a file from disk, and there is no
+  // `window` there. Stubbing is a DOM concern, so skip it rather than failing.
+  if (typeof window === 'undefined') return
+
   Object.defineProperty(window, 'matchMedia', {
     writable: true,
     configurable: true,
