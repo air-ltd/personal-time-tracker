@@ -75,9 +75,13 @@ The non-production Dropbox app is a separate app with its own configuration. It
 needs the **same two redirect URIs** registered (step 4), or local authorisation
 will fail with a URI mismatch.
 
-**Only two scopes are needed.** Verified against Dropbox's machine-readable API
-spec (`dropbox/dropbox-api-spec`, `files.stone`), which declares a required scope per
-route:
+**Only two scopes are needed, and both must be ticked or Dropbox refuses the
+authorisation** with `No scope requested can be granted for this app`. That error
+means the Permissions tab does not grant everything the app asks for — not that the
+request was malformed.
+
+Verified against Dropbox's machine-readable API spec (`dropbox/dropbox-api-spec`,
+`files.stone`), which declares a required scope per route:
 
 | Scope | Required by | Why |
 | --- | --- | --- |
@@ -102,6 +106,10 @@ only these two.
 **Scope changes only take effect on re-authorisation.** If you change the scopes in
 the console, disconnect and reconnect the app in the Sync panel, or the change will
 not take effect.
+
+The app sends both scopes as a single space-separated `scope` parameter, which is
+what Dropbox expects. Note that the Permissions tab starts with nothing ticked for a
+new app, so this step cannot be skipped.
 
 ---
 

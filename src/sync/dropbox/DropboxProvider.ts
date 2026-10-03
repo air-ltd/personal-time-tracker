@@ -120,9 +120,11 @@ export class DropboxProvider implements SyncProvider {
     url.searchParams.set('code_challenge_method', 'S256')
     url.searchParams.set('code_challenge', base64Url(await sha256(verifier)))
     url.searchParams.set('state', state)
-    // App Folder scope is implied by app configuration; scopes are still requested
-    // explicitly so a scope added later does not require a console change.
-    for (const scope of DROPBOX.scopes) url.searchParams.set('scope', scope)
+    // Dropbox takes multiple scopes as ONE space-separated `scope` parameter.
+    // Setting the key repeatedly overwrites it, so only the last scope would ever be
+    // sent — and requesting a scope the app has not enabled produces
+    // "No scope requested can be granted for this app".
+    url.searchParams.set('scope', DROPBOX.scopes.join(' '))
     return { url: url.toString() }
   }
 

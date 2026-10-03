@@ -67,6 +67,28 @@ beforeEach(() => {
 })
 
 describe('PKCE authorisation (0012 AU1–AU2)', () => {
+  // Regression: setting the `scope` key once per scope overwrites it, so only the
+  // last was ever sent. Dropbox takes one space-separated value.
+  it('sends every scope as one space-separated parameter', async () => {
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    const { url } = await provider.beginAuth('state')
+
+    const parsed = new URL(url)
+    expect(parsed.searchParams.getAll('scope')).toHaveLength(1)
+    expect(parsed.searchParams.get('scope')).toBe('files.content.read files.content.write')
+  })
+
+  it('requests only the scopes the app actually needs', async () => {
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    const { url } = await provider.beginAuth('state')
+    const scopes = (new URL(url).searchParams.get('scope') ?? '').split(' ').filter(Boolean)
+
+    // Nothing beyond content read/write. The revision arrives in the download
+    // response header and the account is read from the stored token, so no metadata
+    // or account scope is used.
+    expect(scopes.sort()).toEqual(['files.content.read', 'files.content.write'])
+  })
+
   it('builds an authorisation URL with S256 and the exact redirect URI', async () => {
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     const { url } = await provider.beginAuth('state-abc')

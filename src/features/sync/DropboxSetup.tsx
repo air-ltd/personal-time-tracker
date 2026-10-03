@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { APP_KEY_STORAGE_KEY, clearAppKey, isValidAppKey, writeAppKey } from '../../sync/appKey'
 import { currentRedirectUri } from '../../sync/oauthCallback'
+import { SCOPES as REQUIRED_SCOPES } from '../../sync/dropbox/config'
 
 /**
  * In-browser Dropbox setup (item 6 of `SPECS/todo.md`).
@@ -18,6 +19,7 @@ interface Props {
 export function DropboxSetup({ onConfigured }: Props) {
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const redirectUri = currentRedirectUri()
 
@@ -45,6 +47,16 @@ export function DropboxSetup({ onConfigured }: Props) {
     // Connect controls, and that swap is the confirmation. An on-screen "saved"
     // notice here would be unreachable in the real app.
     onConfigured()
+  }
+
+  async function onCopyScopes() {
+    try {
+      await navigator.clipboard.writeText(REQUIRED_SCOPES.join('\n'))
+      setCopied(true)
+    } catch {
+      // Clipboard blocked. The scopes are listed on screen, so no action is needed.
+      setCopied(false)
+    }
   }
 
   function onForget() {
@@ -125,6 +137,27 @@ export function DropboxSetup({ onConfigured }: Props) {
             secret entirely — this app uses PKCE and has no secret to keep.
           </li>
         </ol>
+
+        <h3>Scopes to enable</h3>
+        <p className="hint">
+          Tick exactly these two. A scope the app does not have will make Dropbox refuse the
+          authorisation with &ldquo;No scope requested can be granted for this app&rdquo;.
+        </p>
+        <ul className="setup-scopes">
+          {REQUIRED_SCOPES.map((scope) => (
+            <li key={scope}>
+              <code>{scope}</code>
+            </li>
+          ))}
+        </ul>
+        <button type="button" className="button" onClick={() => void onCopyScopes()}>
+          Copy scopes
+        </button>
+        {copied && (
+          <span className="hint" role="status" data-testid="scopes-copied">
+            Copied
+          </span>
+        )}
 
         <h3>Redirect URIs to register</h3>
         <ul className="setup-uris">
