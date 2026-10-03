@@ -5,7 +5,7 @@ import {
   hasLegacyStoredKey,
   readAppKey,
 } from '../../sync/appKey'
-import { currentRedirectUri } from '../../sync/oauthCallback'
+import { currentRedirectUri } from '../../sync/redirect'
 import { SCOPES as REQUIRED_SCOPES } from '../../sync/dropbox/config'
 
 /**

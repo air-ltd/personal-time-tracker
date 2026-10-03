@@ -18,6 +18,21 @@ import process from 'node:process'
 import { chromium } from 'playwright'
 
 const PORT = 4173
+/**
+ * Seconds from an `H:MM:SS` elapsed string.
+ *
+ * Comparing the strings directly is lexicographic, which is right until the hour digit
+ * changes: `"10:00:00" >= "9:59:59"` is false, because `"1"` sorts before `"9"`. The
+ * assertion would then be testing the clock rather than the timer, and would start
+ * failing — or passing for the wrong reason — once a session ran long enough.
+ */
+function elapsedSeconds(text) {
+  const match = /(\d+):(\d{2}):(\d{2})/.exec(text)
+  if (!match) return Number.NaN
+  const [, hours, minutes, seconds] = match
+  return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)
+}
+
 const BASE = `/personal-time-tracker/`
 // Bound and dialled over IPv4 explicitly. Vite's preview server defaults to
 // binding `localhost`, which on this image resolves to `[::1]` only, so a fetch to
@@ -135,7 +150,7 @@ async function main() {
     )
     check(
       'elapsed does not go backwards across reload',
-      elapsedAfter >= elapsedBefore,
+      elapsedSeconds(elapsedAfter) >= elapsedSeconds(elapsedBefore),
       `${elapsedBefore} -> ${elapsedAfter}`,
     )
 

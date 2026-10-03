@@ -1,5 +1,3 @@
-import { DROPBOX } from './dropbox/config'
-
 /**
  * OAuth redirect handling.
  *
@@ -83,10 +81,12 @@ export function takeAuthError(): string | null {
   }
 }
 
-export const DROPBOX_REDIRECT_PATH = DROPBOX.defaultRemotePath
-
-/** The redirect URI this deployment must have registered with Dropbox. */
-export function currentRedirectUri(): string {
-  const env = import.meta.env as unknown as Record<string, string | undefined>
-  return `${window.location.origin}${env['BASE_URL'] ?? '/'}`
-}
+/**
+ * The redirect URI this deployment must have registered with Dropbox.
+ *
+ * Re-exported so existing importers keep working, but defined in `redirect.ts` so there
+ * is exactly one definition. It previously lived here alongside an unused export named
+ * `DROPBOX_REDIRECT_PATH` that was assigned the remote *file* path rather than a redirect
+ * — a name that read as though it were the thing Dropbox matches on, which it is not.
+ */
+export { currentRedirectUri } from './redirect'

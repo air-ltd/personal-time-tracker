@@ -2,6 +2,7 @@ import { DropboxProvider } from './dropbox/DropboxProvider'
 import { DROPBOX } from './dropbox/config'
 import { indexedDbTokenStore } from '../storage/secretsRepo'
 import { readAppKey } from './appKey'
+import { currentRedirectUri } from './redirect'
 
 /**
  * Provider construction.
@@ -16,12 +17,11 @@ function build(): DropboxProvider {
   // second instance would carry its own PKCE verifier and so could not complete an
   // authorisation the first one began (0012 AU8).
   const clientId = readAppKey()
-  // Read through a declared shape: `import.meta.env` is untyped outside a
-  // Vite-aware module and yields `any`.
-  const env = import.meta.env as unknown as Record<string, string | undefined>
   return new DropboxProvider({
     clientId,
-    redirectUri: `${window.location.origin}${env['BASE_URL'] ?? '/'}`,
+    // From the shared definition rather than rebuilt here, so the URI the provider sends
+    // and the one the setup panel tells the user to register cannot drift apart.
+    redirectUri: currentRedirectUri(),
     storage: indexedDbTokenStore,
   })
 }

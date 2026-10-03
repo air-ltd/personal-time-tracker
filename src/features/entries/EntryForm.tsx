@@ -28,6 +28,13 @@ type InputMode = 'duration' | 'end'
 export interface EntryFormProps {
   /** Absent for a new entry. */
   entry?: TimeEntry
+  /**
+   * The instant to validate against and to stamp the entry with.
+   *
+   * Passed in rather than read from the clock (0002 A2) so validation is testable: the
+   * future-start and long-entry rules are relative to now, and a test that cannot fix
+   * "now" can only test them by being slow or by being wrong.
+   */
   now: Date
   onDelete?: (entry: TimeEntry) => void
 }
@@ -96,7 +103,9 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
       return
     }
 
-    const result = validateEntry({ start, end, note }, new Date())
+    // `now` rather than a fresh clock read: this is the instant the entry is judged
+    // against and stamped with, and the form already receives it.
+    const result = validateEntry({ start, end, note }, now)
     setIssues(result.issues)
     if (!result.ok) return
 
@@ -106,10 +115,10 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
         await updateEntry(
           entry.id,
           { start: start.toISOString(), end: end.toISOString(), note },
-          new Date(),
+          now,
         )
       } else {
-        await createManualEntry({ start, end, note, now: new Date() })
+        await createManualEntry({ start, end, note, now })
       }
       navigate('/')
     } finally {
