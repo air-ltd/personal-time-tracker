@@ -81,4 +81,58 @@ Per `0014-development-plan.md`. Not started.
    lists them as pending with the phase that introduces them. Run
    `npm run check:silent` after touching anything in `domain/`, `storage/` or `sync/`.
 2. [ ] `npm run test:e2e` is **not** part of `npm run verify`. It needs a built site and a
-   browser, so it has to be run deliberately.
+   browser, so it has to be run deliberately. Playwright's browsers need installing once
+   with `npx playwright install chromium`.
+
+# External review
+
+A review by another agent, working without knowledge of recent work, found 25 issues.
+Every claim was checked against the code before acting; all of them were real.
+
+## Fixed
+
+1. [x] `dexie` was a devDependency although imported at runtime, so `npm ci --omit=dev`
+   could not build a production site.
+2. [x] `writeSnapshot` opened one transaction per table while its comment claimed a
+   single one. A partial write would have left a mixture of two snapshots for the next
+   sync to publish.
+3. [x] The sync engine wrote locally before repairing references, so the database and the
+   remote never matched and every later cycle pushed a redundant correction.
+4. [x] Stopping the timer navigated before the write landed, rendering "Entry not found"
+   permanently for an entry that had in fact been saved.
+5. [x] `useEntries` reported loading on every write, flashing "Loading…" over a correct
+   list.
+6. [x] `EntryForm` took `now` as a prop and ignored it, reading the clock three times
+   instead — so time-relative validation was not testable.
+7. [x] `decodeURIComponent` threw on a malformed hash escape, crashing the app.
+8. [x] Deleting a project advanced `updatedAt` on already-deleted entries, letting a
+   tombstone win a merge tie it should have lost.
+9. [x] `EntryList`'s day heading threw on a corrupt day key, taking down the whole list.
+10. [x] `scheduler.log()` hardcoded `level: 'warn'`.
+11. [x] The engine called `readLastRev()` each cycle and discarded the result.
+12. [x] `DROPBOX_REDIRECT_PATH` was exported, misnamed, dead, and the redirect URI was
+    built in two places.
+13. [x] The browser suite compared elapsed times lexicographically, which breaks at ten
+    hours.
+14. [x] `repairReferences` mutated its input, which is how issue 3 happened.
+15. [x] The entry row overflowed a 320px viewport.
+16. [x] The setup docs and `.env.example` described app-key precedence the code no longer
+    implements.
+17. [x] The README still said "No code yet".
+18. [x] `refreshToken` and `displayName` were stored but never used.
+19. [x] The snapshot bridge listed two tables that do not exist.
+20. [x] Vitest's globals were in the app tsconfig, putting `describe` and `expect` in
+    scope for production code.
+21. [x] The deployed redirect URI was written out in full, so a rename would have left the
+    setup panel telling users to register a URI that no longer existed.
+22. [x] A duplicate step number in the browser suite, introduced here rather than by the
+    reviewer.
+
+## Accepted rather than changed
+
+1. [ ] `listEntries` loads all rows and filters in JavaScript. IndexedDB cannot index
+   `null`, so the obvious index is unavailable for the active-entry query, and a full scan
+   is imperceptible at the confirmed volume. Revisit if entry counts reach tens of
+   thousands, where the exit is an indexed numeric flag.
+2. [ ] The production Dropbox app has still never been used. Nothing in the repository can
+   change that; it needs the permissions ticked and an authorisation.
