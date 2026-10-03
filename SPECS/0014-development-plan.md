@@ -115,6 +115,34 @@ export. An entry can be uncategorised, which 0003 E1 permits.
 - Closing the tab prompts, and the timer is still running afterwards
 - Deleting an entry is undoable
 
+**Status: complete.** 121 unit and integration tests, plus a 21-check browser
+smoke test. Full gate verified, including all five Phase 2A conditions.
+
+Deliberately excluded, as planned: projects, clients, tags, reports, charts,
+capacity, export, sync. An entry is explicitly uncategorised, which 0003 E1 permits.
+
+Notes from implementation:
+
+- **IndexedDB cannot index `null`.** Verified empirically rather than assumed:
+  Dexie rejects `null` as a key. So the `end` index cannot find the running entry,
+  and `findRunningEntry` scans instead. Correct at the confirmed volume; the exit
+  path is an indexed numeric flag, not a different database.
+- **The timezone is pinned to Europe/London in the Vitest config.** Without it, a
+  CI runner set to UTC reads a spring-forward day as 24 hours and the DST
+  assertions compare 24h against 24h — passing while testing nothing. Confirmed by
+  running the same assertions under UTC and watching 23h and 25h become 24h.
+- **Entries store the full 0003 shape** even though Phase 2A populates part of it,
+  so adding projects in Phase 4 needs no migration.
+- **Two duration-formatting bugs were caught by tests**: 60 minutes rendered as
+  `"0h 1m"`, and zero rendered as `"0s"`. Both were wrong in the UI and neither was
+  visible without an assertion.
+- **The browser smoke test found a real ordering hazard**: the undo bar unmounts
+  synchronously on click while the restore is asynchronous, so anything observing
+  "the bar disappeared" as proof of restoration races the write.
+- **Browser smoke test runs in CI, non-blocking** (`continue-on-error`). A real
+  browser catches the blank-page failure class that jsdom cannot; it should not be
+  able to block a deploy until it is proven stable on CI.
+
 ---
 
 ### Phase 2B — Sync
