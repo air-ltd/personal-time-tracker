@@ -26,17 +26,23 @@ export function makeEntry(input: {
   note?: string
   source: EntrySource
   now: Date
+  projectId?: string | null
+  tagIds?: string[]
+  billable?: boolean
+  rateOverrideMinor?: number | null
 }): TimeEntry {
   return {
     id: newId(),
-    // Phase 2A has no project taxonomy; entries are explicitly uncategorised.
-    projectId: null,
-    tagIds: [],
+    // Null and empty are the defaults, not placeholders: uncategorised is a legitimate
+    // state with its own report bucket (0005 U1), and an entry must never be blocked on
+    // inventing a project first (0005 P1).
+    projectId: input.projectId ?? null,
+    tagIds: input.tagIds ?? [],
     start: iso(input.start),
     end: input.end === null ? null : iso(input.end),
     note: input.note ?? '',
-    billable: false,
-    rateOverrideMinor: null,
+    billable: input.billable ?? false,
+    rateOverrideMinor: input.rateOverrideMinor ?? null,
     source: input.source,
     createdAt: iso(input.now),
     updatedAt: iso(input.now),
@@ -131,17 +137,33 @@ export async function discardTimer(id: string, now: Date): Promise<void> {
   bumpRevision()
 }
 
+/**
+ * Create a completed manual entry.
+ *
+ * `projectId` and `tagIds` are optional so a caller that does not care about taxonomy
+ * need not know about it, and an uncategorised entry stays a legitimate first-class state
+ * rather than requiring a project to be invented before anything can be recorded
+ * (0005 U1, 0003 E1).
+ */
 export async function createManualEntry(input: {
   start: Date
   end: Date
   note: string
   now: Date
+  projectId?: string | null
+  tagIds?: string[]
+  billable?: boolean
+  rateOverrideMinor?: number | null
 }): Promise<TimeEntry> {
   return putEntry(
     makeEntry({
       start: input.start,
       end: input.end,
       note: input.note,
+      projectId: input.projectId ?? null,
+      tagIds: input.tagIds ?? [],
+      billable: input.billable ?? false,
+      rateOverrideMinor: input.rateOverrideMinor ?? null,
       source: 'manual',
       now: input.now,
     }),
