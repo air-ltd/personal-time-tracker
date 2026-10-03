@@ -22,8 +22,17 @@ export interface SyncDeps {
   readLocal: () => Promise<Snapshot>
   /** Replace local data with a merged snapshot. */
   writeLocal: (snapshot: Snapshot) => Promise<void>
-  /** The last revision this device pushed or observed, for optimistic concurrency. */
-  readLastRev: () => Promise<string | null>
+  /**
+   * Record the revision this device has published.
+   *
+   * There is deliberately no reader here. An earlier version compared this against the
+   * pulled revision to decide whether to publish, which could not distinguish "nothing
+   * happened anywhere" from "only this device changed" — a local-only change leaves the
+   * remote revision untouched — so local edits and deletions silently never synced.
+   * The engine now compares merged content instead. The revision is still recorded
+   * because it is a useful fact to be able to report; the scheduler reads it once at
+   * startup and exposes it in its status rather than paying for a read per cycle.
+   */
   writeLastRev: (rev: string | null) => Promise<void>
   now: () => Date
   onLog?: (event: SyncLogEntry) => void
@@ -70,11 +79,6 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
     }
 
     const local = await deps.readLocal()
-    // Read for diagnostics only. It deliberately does not decide whether to publish:
-    // a local-only change does not alter the remote revision, so the revision cannot
-    // distinguish "nothing happened anywhere" from "only this device changed", and
-    // treating them the same is what left deletions unpublished.
-    await deps.readLastRev()
 
     // 2. Pull. Null means the file does not exist, which is a first run.
     let remote: RemoteFile | null = null

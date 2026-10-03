@@ -223,11 +223,16 @@ data — which is the main reason for splitting them.
 The Sync panel shows which environment is active, so there is never any doubt
 about which one you are pointed at.
 
-### If you entered a key by hand
+### A key saved in an older build
 
-A key saved in the browser **overrides** this selection. If you pasted a key before
-the built-in ones existed, press **Forget key** in the Sync panel to return to
-automatic selection.
+Earlier versions let you paste a key into the Sync panel, and it took precedence over
+the built-in selection. **It no longer does.** Both Dropbox apps are built in, so the
+stored key had no purpose except to avoid a rebuild — and keeping it let a stale value
+pair with whichever redirect URI a *different* Dropbox app had registered, which is what
+caused `invalid_redirect_uri`.
+
+A key left over from an earlier version is ignored and reported as ignored in the Sync
+panel, which also offers to remove it. Nothing reads it.
 
 ### Optional override
 

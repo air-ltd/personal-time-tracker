@@ -138,7 +138,6 @@ function harness(initial: Snapshot, provider = new FakeProvider()): Harness {
         state.local = snapshot
         return Promise.resolve()
       },
-      readLastRev: () => Promise.resolve(lastRev.value),
       writeLastRev: (rev) => {
         lastRev.value = rev
         return Promise.resolve()

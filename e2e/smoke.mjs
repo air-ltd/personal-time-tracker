@@ -202,7 +202,7 @@ async function main() {
       (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
     )
 
-    // 6. Backup is reachable and works on a real build (Phase 2B gate).
+    // 10. Backup is reachable and works on a real build (Phase 2B gate).
     // Exercised in a browser because the download path uses an object URL, which
     // jsdom does not implement, so a unit test cannot cover the actual handoff.
     await page.goto(URL, { waitUntil: 'networkidle' })

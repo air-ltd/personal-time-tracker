@@ -45,6 +45,14 @@ export interface SyncStatus {
   state: 'idle' | 'syncing' | 'error' | 'disabled'
   lastOutcome: SyncOutcome | null
   lastSyncAt: string | null
+  /**
+   * The remote revision this device last published.
+   *
+   * Reported rather than branched on. It is the quickest way to answer "are these two
+   * devices looking at the same file?" when a sync problem has to be diagnosed, and it
+   * costs nothing to keep — but nothing may decide behaviour from it (see `SyncDeps`).
+   */
+  lastRev: string | null
   message: string | null
 }
 
@@ -75,6 +83,7 @@ export class SyncScheduler {
   private queuedWhileRunning = false
   private started = false
   private status: SyncStatus = {
+    lastRev: null,
     state: 'idle',
     lastOutcome: null,
     lastSyncAt: null,
@@ -96,8 +105,13 @@ export class SyncScheduler {
     this.readLastSyncAt = config.readLastSyncAt ?? readLastSyncAt
   }
 
-  private log(message: string): void {
-    this.logSink?.({ at: this.now().toISOString(), level: 'warn', message })
+  /**
+   * Level defaults to `info` because most scheduler messages are ordinary lifecycle
+   * notes — a cycle starting, nothing to publish. Previously hardcoded to `warn`, which
+   * made every routine message look like a problem in the log.
+   */
+  private log(message: string, level: SyncLogEntry['level'] = 'info'): void {
+    this.logSink?.({ at: this.now().toISOString(), level, message })
   }
 
   private emit(patch: Partial<SyncStatus>): void {
@@ -127,6 +141,10 @@ export class SyncScheduler {
     window.addEventListener('pagehide', this.onPageHide)
 
     await this.loadLastSyncAt()
+    // Once per app start, not per cycle: the revision is a reportable fact, not an input
+    // to any decision.
+    // Emitted rather than assigned, so the panel sees it like any other status change.
+    this.emit({ lastRev: await this.readLastRev() })
     await this.syncNow()
   }
 
@@ -190,7 +208,8 @@ export class SyncScheduler {
         supportedSchemaVersion: SCHEMA_VERSION,
         readLocal: this.readLocal,
         writeLocal: this.writeLocal,
-        readLastRev: this.readLastRev,
+        // The engine records the revision but never reads it; the scheduler reads it
+        // once at startup for the status line.
         writeLastRev: this.writeLastRev,
         now: this.now,
         onLog: (entry: SyncLogEntry) => {
@@ -205,7 +224,7 @@ export class SyncScheduler {
       // untouched by sign-out) and turns a dead end into a single reconnect, rather
       // than an error message explaining that disconnecting is the fix.
       if (outcome.status === 'failed' && isAuthFailure(outcome.kind)) {
-        this.log('Dropbox rejected the saved token; discarded it so you can reconnect.')
+        this.log('Dropbox rejected the saved token; discarded it so you can reconnect.', 'warn')
         await this.provider.signOut()
       }
 

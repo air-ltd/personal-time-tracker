@@ -293,3 +293,66 @@ describe('triggers', () => {
     scheduler.stop()
   })
 })
+
+/**
+ * The recorded revision is reported, never branched on.
+ *
+ * An earlier version compared it against the pulled revision to skip publishing, which
+ * could not tell "nothing happened anywhere" from "only this device changed" — so local
+ * edits and deletions silently never synced. It is now a fact for diagnostics, read once
+ * at startup rather than on every cycle.
+ */
+describe('the last observed revision', () => {
+  it('is reported in the status', async () => {
+    const statuses: SyncStatus[] = []
+    const scheduler = new SyncScheduler({
+      provider: new StubProvider(),
+      path: 'data.json',
+      now: () => new Date('2026-10-13T09:00:00.000Z'),
+      onStatus: (status) => statuses.push(status),
+      onLog: () => {},
+      readLocal: () => Promise.resolve({ schemaVersion: 1, entities: { entries: [] } }),
+      writeLocal: () => Promise.resolve(),
+      // What a previous cycle would have recorded.
+      readLastRev: () => Promise.resolve('rev-42'),
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+    })
+
+    await scheduler.start()
+
+    expect(statuses.at(-1)?.lastRev).toBe('rev-42')
+    scheduler.stop()
+  })
+
+  it('is read once at startup, not on every cycle', async () => {
+    let reads = 0
+    const provider = new StubProvider()
+    const scheduler = new SyncScheduler({
+      provider,
+      path: 'data.json',
+      now: () => new Date('2026-10-13T09:00:00.000Z'),
+      onStatus: () => {},
+      onLog: () => {},
+      readLocal: () => Promise.resolve({ schemaVersion: 1, entities: { entries: [] } }),
+      writeLocal: () => Promise.resolve(),
+      readLastRev: () => {
+        reads += 1
+        return Promise.resolve(null)
+      },
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+    })
+
+    await scheduler.start()
+    await scheduler.syncNow()
+    await scheduler.syncNow()
+
+    // Three cycles, one read. Reading per cycle would be an IndexedDB hit to obtain a
+    // value nothing consults.
+    expect(reads).toBe(1)
+    scheduler.stop()
+  })
+})
