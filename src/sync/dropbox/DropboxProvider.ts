@@ -299,7 +299,10 @@ export class DropboxProvider implements SyncProvider {
       return { body, rev: rev ? parseRev(rev) : 'unknown' }
     }
 
-    const detail = await describeFailure(response)
+    const detail = await describeFailure(response, {
+      op: `download ${normalizePath(path)}`,
+      args: { path: normalizePath(path) },
+    })
     if (detail.kind === 'not-found') return null
     throw detail.error
   }
@@ -329,7 +332,7 @@ export class DropboxProvider implements SyncProvider {
       return { rev: json.rev ?? 'unknown' }
     }
 
-    const detail = await describeFailure(response)
+    const detail = await describeFailure(response, { op: `upload ${args.path}`, args })
     if (detail.kind === 'conflict') {
       throw new SyncError('conflict', 'The remote file changed before this write landed.')
     }
@@ -374,29 +377,45 @@ interface FailureDetail {
  * exactly what went wrong. Discarding it and reporting only "upload failed (409)"
  * is what makes a real failure undiagnosable from the app.
  */
-async function describeFailure(response: Response): Promise<FailureDetail> {
+async function describeFailure(
+  response: Response,
+  call: { op: string; args: unknown },
+): Promise<FailureDetail> {
   const status = response.status
+
+  // Read once, as text. `response.json()` consumed the body on the failure paths that
+  // turned out to be non-JSON, and an unreadable body left the error with no detail at
+  // all — which is what forced a guess about the cause.
+  const raw = (await response.text()).trim()
+
   let summary = ''
   try {
-    const body = (await response.json()) as { error_summary?: string; error?: unknown }
-    summary = body.error_summary ?? ''
-    if (!summary && body.error) summary = JSON.stringify(body.error)
+    const body = JSON.parse(raw) as { error_summary?: string; error?: unknown }
+    summary = body.error_summary ?? (body.error ? JSON.stringify(body.error) : '')
   } catch {
-    // Not JSON, or no body. The status alone still classifies most cases.
+    // Not JSON. Dropbox answers some malformed requests with an empty or plain-text
+    // body, so the status and the raw text are all there is to go on.
   }
 
-  const detail = summary === '' ? '' : ` (${summary})`
+  // Everything known about the failure, in one string. A response with no usable body
+  // is the case that matters most and previously carried the least information, so
+  // the raw text is included rather than discarded.
+  const detail =
+    `\nHTTP ${status} on ${call.op}` +
+    `\nargs: ${JSON.stringify(call.args)}` +
+    (summary ? `\nDropbox said: ${summary}` : '') +
+    (raw && !summary ? `\nbody: ${raw.slice(0, 300)}` : '')
 
   if (status === 401) {
     return {
       kind: 'auth',
-      error: new SyncError('auth', `Dropbox rejected the token${detail}.`),
+      error: new SyncError('auth', `Dropbox rejected the token.${detail}`),
     }
   }
   if (status === 429) {
     return {
       kind: 'rate-limited',
-      error: new SyncError('rate-limited', `Dropbox rate limit reached${detail}.`),
+      error: new SyncError('rate-limited', `Dropbox rate limit reached.${detail}`),
     }
   }
   if (status === 409) {
@@ -406,7 +425,7 @@ async function describeFailure(response: Response): Promise<FailureDetail> {
     }
     return {
       kind: 'conflict',
-      error: new SyncError('conflict', `The remote file changed${detail}.`),
+      error: new SyncError('conflict', `The remote file changed.${detail}`),
     }
   }
   if (summary.startsWith('missing_scope')) {
@@ -418,32 +437,21 @@ async function describeFailure(response: Response): Promise<FailureDetail> {
       kind: 'scope-missing',
       error: new SyncError(
         'scope-missing',
-        'The Dropbox connection was made before this app had file permissions, so it ' +
-          'grants none. Reconnect to grant them — and on the Dropbox App Console, confirm ' +
-          'files.content.read and files.content.write are ticked under Permissions.',
+        `The Dropbox connection has no file permissions.${detail}`,
       ),
     }
   }
 
-  if (status === 400 || summary.startsWith('other')) {
-    // `other/` is Dropbox's catch-all. In practice the overwhelmingly common cause is
-    // a token that grants nothing: authorisation succeeds without any scopes, then the
-    // first file call fails. The message names that explicitly rather than guessing
-    // between scopes and redirect URI, which send different errors anyway.
-    return {
-      kind: 'unknown',
-      error: new SyncError(
-        'unknown',
-        `Dropbox rejected the request${detail}. ` +
-          'Most likely the Dropbox app has no permissions ticked: on the app, open ' +
-          'Permissions and enable files.content.read and files.content.write, then ' +
-          'disconnect and reconnect in this app so the new permissions are granted.',
-      ),
-    }
-  }
+  // No specific case for the remainder, so report what came back instead of guessing
+  // at a cause. A previous version asserted the most common cause — that no
+  // permissions were ticked — which was wrong once they were, and sent the debugging
+  // in the wrong direction while hiding the status and body that would have shown it.
   return {
     kind: 'unknown',
-    error: new SyncError('unknown', `Dropbox request failed (${status})${detail}.`),
+    error: new SyncError(
+      'unknown',
+      `Dropbox rejected the request without saying why.${detail}`,
+    ),
   }
 }
 
