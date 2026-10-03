@@ -37,6 +37,16 @@ function response(options: {
   } as unknown as Response
 }
 
+function jsonResponse(status: number, payload: unknown): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers(),
+    text: () => Promise.resolve(JSON.stringify(payload)),
+    json: () => Promise.resolve(payload),
+  } as unknown as Response
+}
+
 function makeProvider(store: MemoryTokenStore, fetchImpl: typeof fetch): DropboxProvider {
   return new DropboxProvider({
     clientId: CLIENT_ID,
@@ -238,14 +248,50 @@ describe('token state', () => {
 })
 
 describe('pull', () => {
-  it('returns null on a 409, which is a missing file rather than an error', async () => {
-    fetchMock.mockResolvedValue(response({ status: 409 }))
+  // `download` is `style = "download"` with a DownloadArg struct, so the argument
+  // goes in the Dropbox-API-Arg header on a POST. Sending it in the URL with a GET
+  // does not match the endpoint.
+  it('POSTs with the path in Dropbox-API-Arg, not in the URL', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, body: '{}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+    await provider.pull('data.json')
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(DROPBOX.downloadUrl)
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: 'data.json' })
+  })
+
+  it('strips a leading slash so it addresses the app folder, not the root', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, body: '{}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+    await provider.pull('/data.json')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(JSON.parse(headers['Dropbox-API-Arg'] ?? '{}')).toEqual({ path: 'data.json' })
+  })
+
+  it('returns null when Dropbox reports the file does not exist', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(409, { error_summary: 'path/not_found/...' }))
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     store.tokens = { accessToken: 'tok' }
     expect(await provider.pull('data.json')).toBeNull()
   })
 
-  it('returns the body and the revision', async () => {
+  // A 409 that is not a missing file is a different problem and must not be
+  // mistaken for a first run.
+  it('does not treat a non-not-found 409 as a missing file', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(409, { error_summary: 'path/conflict/file' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+    await expect(provider.pull('data.json')).rejects.toBeInstanceOf(SyncError)
+  })
+
+  it('returns the body and the revision from the result header', async () => {
     fetchMock.mockResolvedValue(
       response({
         status: 200,
@@ -260,15 +306,26 @@ describe('pull', () => {
     expect(result).toEqual({ body: '{"hello":"world"}', rev: 'rev-9' })
   })
 
-  it('maps an expired session to an auth error', async () => {
-    fetchMock.mockResolvedValue(response({ status: 401 }))
+  it('explains an invalid token rather than just the status', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(401, { error_summary: 'invalid_access_token/...' }),
+    )
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     store.tokens = { accessToken: 'tok' }
-    await expect(provider.pull('data.json')).rejects.toMatchObject({ kind: 'auth' })
+    await expect(provider.pull('data.json')).rejects.toThrow(/invalid_access_token/)
+  })
+
+  it('surfaces the error summary, which is what makes a failure diagnosable', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(400, { error_summary: 'insufficient_permissions/...' }),
+    )
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    store.tokens = { accessToken: 'tok' }
+    await expect(provider.pull('data.json')).rejects.toThrow(/insufficient_permissions/)
   })
 
   it('maps a rate limit to a retryable error', async () => {
-    fetchMock.mockResolvedValue(response({ status: 429 }))
+    fetchMock.mockResolvedValue(jsonResponse(429, { error_summary: 'too_many_requests/...' }))
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     store.tokens = { accessToken: 'tok' }
     await expect(provider.pull('data.json')).rejects.toMatchObject({
@@ -284,9 +341,8 @@ describe('pull', () => {
     await provider.pull('data.json')
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect((init.headers as Record<string, string>)['Authorization']).toBe(
-      'Bearer secret-token',
-    )
+    const headers = init.headers as Record<string, string>
+    expect(headers['Authorization']).toBe('Bearer secret-token')
   })
 })
 
@@ -301,8 +357,9 @@ describe('push', () => {
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const raw = (init.headers as Record<string, string>)['Dropbox-API-Arg'] ?? '{}'
-    const args = JSON.parse(raw) as { mode: { '.tag': string } }
-    expect(args.mode['.tag']).toBe('overwrite')
+    const args = JSON.parse(raw) as { mode: unknown }
+    // union_closed: a void variant is a bare string, with no `.tag` discriminator.
+    expect(args.mode).toBe('overwrite')
   })
 
   // C5: the whole point of sending the revision is to detect a concurrent write.
@@ -314,15 +371,17 @@ describe('push', () => {
     await provider.push('data.json', 'body', 'rev-1')
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const raw = (init.headers as Record<string, string>)['Dropbox-API-Arg'] ?? '{}'
-    const args = JSON.parse(raw) as { mode: { '.tag': string; update?: string } }
-    expect(args.mode['.tag']).toBe('update')
-    expect(args.mode.update).toBe('rev-1')
+    const args = JSON.parse(raw) as { mode: unknown; strict_conflict?: boolean }
+    // `update` carries the rev: {"update": "<rev>"}, not {".tag": "update", ...}.
+    expect(args.mode).toEqual({ update: 'rev-1' })
+    // Without this a rev mismatch against a deleted file can pass unnoticed.
+    expect(args.strict_conflict).toBe(true)
   })
 
   // 409 on upload is a conflict, which must trigger re-read and merge, never a
   // blind retry of the same write.
-  it('maps a 409 to a retryable conflict', async () => {
-    fetchMock.mockResolvedValue(response({ status: 409 }))
+  it('maps a conflict 409 to a retryable conflict', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(409, { error_summary: 'path/conflict/file' }))
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     store.tokens = { accessToken: 'tok' }
 

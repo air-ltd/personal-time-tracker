@@ -1,24 +1,28 @@
 /**
- * Dropbox endpoints, scopes and mode flags.
+ * Dropbox endpoints, scopes and argument shapes.
  *
- * VERIFIED against Dropbox's OAuth guide: PKCE is supported and explicitly
- * recommended for single-page applications in pure JavaScript; the code flow is
- * the recommended flow; a redirect URI must match a registered value exactly;
- * content access is a choice between "App Folder" and "Full Dropbox"; and for a
- * client-side web app the documented recommendation is short-lived tokens with *no*
- * refresh token, re-authorising on expiry (which is usually silent, because the
- * user's approval persists).
+ * VERIFIED against `dropbox/dropbox-api-spec` (`files.stone`, the authoritative
+ * machine-readable spec) and Dropbox's OAuth guide:
  *
- * NOT VERIFIED: the endpoint paths, the scope strings and the conditional-update
- * mode flag below. `docs.dropboxapi.com` was unreachable from the build
- * environment, so these come from long-standing knowledge of the API rather than
- * from current documentation. 0012 SY10 requires checking them before relying on
- * this against a real account, and they are collected here so there is exactly one
- * place to correct.
+ * - `upload` and `download` are both `host = "content"`, i.e.
+ *   `content.dropboxapi.com`, and both set `allow_app_folder_app = true`, so App
+ *   Folder access is valid.
+ * - `download` requires `files.content.read`; `upload` requires
+ *   `files.content.write`. Both are `auth = "user"`, so a bearer token is right.
+ * - `download` is `style = "download"` with a `DownloadArg` struct, so its
+ *   arguments travel in the `Dropbox-API-Arg` header, not the URL.
+ * - `WriteMode` is a `union_closed`. Its void variants serialise as bare strings,
+ *   so `overwrite` is the string `"overwrite"` and `update` is `{"update": "<rev>"}`.
+ *   There is no `.tag` discriminator — that form is for open unions.
  *
- * They are also not used by any test: the engine is tested against a fake provider,
- * so nothing here can pass while the real API silently differs.
+ * A pure client-side app should use short-lived tokens with no refresh token,
+ * re-authorising on expiry, which is usually silent because the user's approval
+ * persists.
  */
+
+/** Scopes this app actually uses. Least privilege, as Dropbox's guide advises. */
+export const SCOPES = ['files.content.read', 'files.content.write'] as const
+
 export const DROPBOX = {
   authorizeUrl: 'https://www.dropbox.com/oauth2/authorize',
   tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
@@ -26,24 +30,30 @@ export const DROPBOX = {
   downloadUrl: 'https://content.dropboxapi.com/2/files/download',
 
   /**
-   * Least privilege, as Dropbox's own guide advises. App Folder access confines the
-   * app to `/apps/<app name>/`, which is the right choice for an app that writes
-   * exactly one file.
+   * Relative to the app folder. With App Folder access the file lives at
+   * `/apps/<app name>/data.json`.
    */
   defaultRemotePath: 'data.json',
 
-  scopes: [
-    'files.content.read',
-    'files.content.write',
-    'files.metadata.read',
-    'account_info.read',
-  ],
+  scopes: SCOPES,
 
   /**
-   * Conditional write: fail rather than overwrite if the file changed since it was
-   * read. This is what lets the engine detect a concurrent edit (0012 C5) instead of
-   * silently clobbering the other device's work.
+   * `WriteMode`, as a `union_closed` serialises it.
+   *
+   * `update` with a rev makes the write conditional: Dropbox rejects it unless the
+   * file's current rev matches. That rejection is how a concurrent edit from another
+   * device is detected instead of silently overwritten (0012 C5).
    */
-  updateMode: (rev: string) => ({ '.tag': 'update', update: rev }) as unknown as object,
-  overwriteMode: { '.tag': 'overwrite' },
+  updateMode: (rev: string): Record<string, string> => ({ update: rev }),
+  overwriteMode: 'overwrite' as const,
 } as const
+
+/**
+ * Whether to pass a `strict_conflict` flag on writes.
+ *
+ * From the spec: with `mode = update`, a rev mismatch is only *always* an error when
+ * `strict_conflict` is set — without it, a mismatch against a file that has since
+ * been deleted can pass unnoticed. For a sync file, "the file changed under me"
+ * must never be silent, so this is on.
+ */
+export const STRICT_CONFLICT = true

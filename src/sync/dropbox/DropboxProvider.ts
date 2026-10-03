@@ -1,5 +1,5 @@
 import { SyncError, type ProviderStatus, type RemoteFile, type SyncProvider } from '../provider'
-import { DROPBOX } from './config'
+import { DROPBOX, STRICT_CONFLICT } from './config'
 
 /**
  * Dropbox provider (0012 SY9).
@@ -270,31 +270,35 @@ export class DropboxProvider implements SyncProvider {
 
   async pull(path: string): Promise<RemoteFile | null> {
     const tokens = await this.requireToken()
-    const response = await this.fetchImpl(`${DROPBOX.downloadUrl}/${encodePath(path)}`, {
-      headers: { Authorization: `Bearer ${tokens.accessToken}` },
+    // POST with the argument in the header: `download` is `style = "download"` with a
+    // DownloadArg struct, so the path does not belong in the URL.
+    const response = await this.fetchImpl(DROPBOX.downloadUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${tokens.accessToken}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: normalizePath(path) }),
+      },
     })
 
-    if (response.status === 409) {
-      // Dropbox returns 409 with a path-not-found error for a missing file, which
-      // is a normal first-run state rather than a failure.
-      return null
+    if (response.ok) {
+      const rev = response.headers.get('dropbox-api-result')
+      const body = await response.text()
+      return { body, rev: rev ? parseRev(rev) : 'unknown' }
     }
-    if (response.status === 401) throw new SyncError('auth', 'Dropbox session expired.')
-    if (response.status === 429) throw new SyncError('rate-limited', 'Dropbox rate limit.')
-    if (!response.ok) throw new SyncError('unknown', `Download failed (${response.status}).`)
 
-    const rev = response.headers.get('dropbox-api-result')
-    const body = await response.text()
-    return { body, rev: rev ? parseRev(rev) : 'unknown' }
+    const detail = await describeFailure(response)
+    if (detail.kind === 'not-found') return null
+    throw detail.error
   }
 
   async push(path: string, body: string, expectedRev: string | null): Promise<{ rev: string }> {
     const tokens = await this.requireToken()
     const args = {
-      path: encodePath(path),
+      path: normalizePath(path),
       mode: expectedRev ? DROPBOX.updateMode(expectedRev) : DROPBOX.overwriteMode,
       autorename: false,
       mute: true,
+      strict_conflict: STRICT_CONFLICT,
     }
 
     const response = await this.fetchImpl(DROPBOX.uploadUrl, {
@@ -307,17 +311,16 @@ export class DropboxProvider implements SyncProvider {
       body,
     })
 
-    if (response.status === 409) {
-      // A conflict here means the file moved on since the pull. The engine treats
-      // this as a signal to re-read and merge, never to retry the same write.
+    if (response.ok) {
+      const json = (await response.json()) as { rev?: string }
+      return { rev: json.rev ?? 'unknown' }
+    }
+
+    const detail = await describeFailure(response)
+    if (detail.kind === 'conflict') {
       throw new SyncError('conflict', 'The remote file changed before this write landed.')
     }
-    if (response.status === 401) throw new SyncError('auth', 'Dropbox session expired.')
-    if (response.status === 429) throw new SyncError('rate-limited', 'Dropbox rate limit.')
-    if (!response.ok) throw new SyncError('unknown', `Upload failed (${response.status}).`)
-
-    const json = (await response.json()) as { rev?: string }
-    return { rev: json.rev ?? 'unknown' }
+    throw detail.error
   }
 
   private async requireToken(): Promise<DropboxTokens> {
@@ -327,8 +330,77 @@ export class DropboxProvider implements SyncProvider {
   }
 }
 
-function encodePath(path: string): string {
+/**
+ * Dropbox paths are relative to the app folder and must not begin with a slash.
+ * A leading slash addresses the Dropbox root instead, which is a different place,
+ * and fails with App Folder access.
+ */
+function normalizePath(path: string): string {
   return path.replace(/^\/+/, '')
+}
+
+interface FailureDetail {
+  kind: 'not-found' | 'conflict' | 'auth' | 'rate-limited' | 'unknown'
+  error: SyncError
+}
+
+/**
+ * Turn a failed response into a classified, explained error.
+ *
+ * Dropbox returns a JSON body containing `error_summary` — values such as
+ * `path/not_found/`, `path/conflict/file` or `invalid_access_token` — which say
+ * exactly what went wrong. Discarding it and reporting only "upload failed (409)"
+ * is what makes a real failure undiagnosable from the app.
+ */
+async function describeFailure(response: Response): Promise<FailureDetail> {
+  const status = response.status
+  let summary = ''
+  try {
+    const body = (await response.json()) as { error_summary?: string; error?: unknown }
+    summary = body.error_summary ?? ''
+    if (!summary && body.error) summary = JSON.stringify(body.error)
+  } catch {
+    // Not JSON, or no body. The status alone still classifies most cases.
+  }
+
+  const detail = summary === '' ? '' : ` (${summary})`
+
+  if (status === 401) {
+    return {
+      kind: 'auth',
+      error: new SyncError('auth', `Dropbox rejected the token${detail}.`),
+    }
+  }
+  if (status === 429) {
+    return {
+      kind: 'rate-limited',
+      error: new SyncError('rate-limited', `Dropbox rate limit reached${detail}.`),
+    }
+  }
+  if (status === 409) {
+    if (summary.includes('not_found')) {
+      // A missing file is a normal first-run state, not a failure.
+      return { kind: 'not-found', error: new SyncError('not-found', 'File not found.') }
+    }
+    return {
+      kind: 'conflict',
+      error: new SyncError('conflict', `The remote file changed${detail}.`),
+    }
+  }
+  if (status === 400) {
+    // Malformed arguments or insufficient scopes both land here.
+    return {
+      kind: 'unknown',
+      error: new SyncError(
+        'unknown',
+        `Dropbox rejected the request${detail}. Check the app's scopes and the redirect URI.`,
+      ),
+    }
+  }
+  return {
+    kind: 'unknown',
+    error: new SyncError('unknown', `Dropbox request failed (${status})${detail}.`),
+  }
 }
 
 function parseRev(header: string): string {

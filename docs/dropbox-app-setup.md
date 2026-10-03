@@ -69,25 +69,33 @@ actually calls.
 
 The spec's provider interface needs:
 
-| Capability | Expected scope | Used for |
+**Only two scopes are needed.** Verified against Dropbox's machine-readable API
+spec (`dropbox/dropbox-api-spec`, `files.stone`), which declares a required scope per
+route:
+
+| Scope | Required by | Why |
 | --- | --- | --- |
-| Read file content | `files.content.read` | `pull()` in the provider |
-| Write file content | `files.content.write` | `push()` in the provider |
-| File metadata | `files.metadata.read` | Reading the revision identifier |
-| Account info | `account_info.read` | Showing which account is connected (`status()`) |
+| `files.content.read` | `download` | Fetching the sync file |
+| `files.content.write` | `upload` | Writing it |
 
-**[verify]** These are the long-standing Dropbox scope names. They could not be
-confirmed from this machine — `docs.dropboxapi.com` was unreachable — so treat the
-console's own list as the authority and use its names if they differ.
+That is the whole list. Earlier drafts of this file suggested
+`files.metadata.read`, `files.metadata.write` and `account_info.read` as well; they
+are **not** needed:
 
-Two things worth knowing:
+- The file's revision comes back in the response header of `download`, which already
+  requires only `files.content.read`.
+- The conditional write (`mode: {"update": "<rev>"}`) is part of the upload argument,
+  so it is covered by `files.content.write` — no metadata write scope involved.
+- The connected account is read from the stored token, not from the API, so
+  `account_info.read` is unused.
 
-- **`files.metadata.write` may also be needed.** The engine detects a concurrent
-  edit by sending the file's revision as a conditional update (0012 C5). If the
-  console says that needs a metadata *write* scope, add it. Without it, two devices
-  editing at once would overwrite each other instead of conflicting and merging.
-- **Scope changes only take effect on re-authorisation.** If you add or remove a
-  scope later, disconnect and reconnect the app or the change will not apply.
+Enabling only what is used is Dropbox's own advice, and it keeps the consent screen
+short. If you have already enabled extra scopes that is harmless — the app requests
+only these two.
+
+**Scope changes only take effect on re-authorisation.** If you change the scopes in
+the console, disconnect and reconnect the app in the Sync panel, or the change will
+not take effect.
 
 ---
 
@@ -224,29 +232,35 @@ the implementation must follow is in [0012 AU1–AU8](../SPECS/0012-sync.md):
 - Tokens go in IndexedDB, never `localStorage`, and never into an export file.
 - Declining or abandoning authorisation leaves a fully working local-only app.
 
-### Verify against Dropbox's documentation
+### Verification status
 
-**Already confirmed** from Dropbox's OAuth guide:
+**Confirmed** against Dropbox's OAuth guide:
 
-- PKCE is supported, and is explicitly recommended for single-page applications
-  in pure JavaScript
+- PKCE is supported and explicitly recommended for single-page applications in pure
+  JavaScript
 - The authorization code flow is the recommended flow
 - The redirect URI must match a registered value exactly
 - Content access is a choice between App Folder and Full Dropbox
 - A pure client-side app should use short-lived tokens with **no** refresh token,
   re-authorising on expiry
 
-**Still unconfirmed** — `docs.dropboxapi.com` was unreachable from the build
-environment, so these come from long-standing knowledge of the API rather than
-current documentation. All of them are isolated in
-`src/sync/dropbox/config.ts` so there is one place to correct:
+**Confirmed** against `dropbox/dropbox-api-spec` (`files.stone`, the authoritative
+machine-readable spec):
 
-- Endpoint paths for upload, download and token exchange
-- The scope strings listed in step 3
-- The conditional-update mode flag used to detect a concurrent write
-- Whether revisions come from a metadata read or the write response
-- Rate limit behaviour, to size the retry and backoff in 0012 C5
+- `upload` and `download` are both `host = "content"`, i.e.
+  `content.dropboxapi.com`
+- Both set `allow_app_folder_app = true`, so App Folder access is valid
+- `download` requires `files.content.read`; `upload` requires `files.content.write`
+- `download` is `style = "download"` with a `DownloadArg` struct, so it is a **POST**
+  with the path in the `Dropbox-API-Arg` header — not a GET with the path in the URL
+- `WriteMode` is a `union_closed`, so its void variants serialise as bare strings:
+  `"overwrite"`, and `{"update": "<rev>"}` for the conditional write. There is no
+  `.tag` discriminator — that form belongs to open unions.
 
-These are worth checking before relying on sync against a real account. Nothing in
-the test suite covers them: the engine is tested against a fake provider, so the
-tests pass regardless of whether these values are right.
+**Not verified, and not currently relied upon:** rate limit thresholds. The retry
+and backoff in 0012 C5 is bounded and generous rather than tuned to a documented
+limit, which is the safe direction.
+
+The endpoint paths, scopes and argument shapes are collected in
+`src/sync/dropbox/config.ts` with the verification noted, so there is one place to
+look. The tests assert the exact request shapes, so a regression would be caught.
