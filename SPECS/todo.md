@@ -7,3 +7,7 @@
 4. [x] Timer accuracy on front screen always to the second. Done in `phase-2b`: the
    running timer shows `H:MM:SS`.
 5. [ ] stop should just stop and save, not present another screen - give a method for modify entry after the fact.
+6. [x] Dropbox key given in the browser, with the setup instructions in-app. Done in
+   `phase-2b`: `src/sync/appKey.ts` resolves the key from `localStorage` first and the
+   build-time variable second, and `src/features/sync/DropboxSetup.tsx` collects it and
+   shows the console steps plus both redirect URIs inline.

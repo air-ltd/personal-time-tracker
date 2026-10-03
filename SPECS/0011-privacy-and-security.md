@@ -81,11 +81,25 @@ in a cookie readable by script beyond what is needed, and never in the export
 the Clipboard without an explicit user action. No "copy my timesheet to clipboard
 on every save" behaviour.
 
-**R5** — One narrow exception is permitted for **non-sensitive UI preferences**:
-the theme key in `localStorage`, used solely so the theme can be applied before
-first paint (0002 TH4). It contains no personal data, is not authoritative, and
-is reconstructible if lost. The set of allowed localStorage keys MUST be an
-explicit allowlist, so this cannot quietly become a back door around R4.
+**R5** — `localStorage` is limited to an explicit allowlist of **non-sensitive
+values**, so this cannot quietly become a back door around R4. Two keys are
+permitted:
+
+| Key | Why it is allowed |
+| --- | --- |
+| `tt:theme` | A UI preference, needed before first paint because IndexedDB cannot be read synchronously (0002 TH4). No personal data; reconstructible if lost. |
+| `tt:dropbox-app-key` | An OAuth **client id**, which is public and is shipped in the JavaScript bundle regardless (0012 AU3, AR6). Needed so it can be read synchronously by the OAuth redirect handler, and so it can be entered in the browser rather than baked into a build (`SPECS/todo.md` item 6). |
+
+Neither key is a credential. OAuth **tokens** are credentials and live in the
+IndexedDB `secrets` table, which the snapshot reader excludes structurally rather
+than by remembering to filter (0012 AU5, 0008 S2). That separation is the point:
+keeping the public id and the secret in different stores is what makes the export
+exclusion reliable.
+
+**R6** — Because the app key is public, this spec does not require a warning about
+its storage. A warning implying the key is sensitive would be misleading and would
+teach the user to distrust something that is not a secret (0011 LV-PRIVACY-3 is the
+same principle applied to free-text labels).
 
 ## Non-working day labels
 

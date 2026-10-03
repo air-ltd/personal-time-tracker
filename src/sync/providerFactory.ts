@@ -1,6 +1,7 @@
 import { DropboxProvider } from './dropbox/DropboxProvider'
 import { DROPBOX } from './dropbox/config'
 import { indexedDbTokenStore } from '../storage/secretsRepo'
+import { readAppKey } from './appKey'
 
 /**
  * Provider construction.
@@ -10,10 +11,14 @@ import { indexedDbTokenStore } from '../storage/secretsRepo'
  * cannot complete an authorisation the first one started (0012 AU8).
  */
 function build(): DropboxProvider {
-  // Read through a declared shape rather than indexing `import.meta.env` directly,
-  // which is untyped outside a Vite-aware module and yields `any`.
+  // The key comes from the user's browser first, then the build-time environment
+  // (src/sync/appKey.ts). Read once at construction and held by the instance: a
+  // second instance would carry its own PKCE verifier and so could not complete an
+  // authorisation the first one began (0012 AU8).
+  const clientId = readAppKey()
+  // Read through a declared shape: `import.meta.env` is untyped outside a
+  // Vite-aware module and yields `any`.
   const env = import.meta.env as unknown as Record<string, string | undefined>
-  const clientId = env['VITE_DROPBOX_APP_KEY'] ?? ''
   return new DropboxProvider({
     clientId,
     redirectUri: `${window.location.origin}${env['BASE_URL'] ?? '/'}`,
@@ -35,7 +40,13 @@ export function indexedDbDropboxProvider(): DropboxProvider {
   return cached
 }
 
-export function resetProviderForTests(): void {
+/**
+ * Discard the cached provider so the next call rebuilds it.
+ *
+ * Needed when the app key changes: the old instance holds the previous client id,
+ * and OAuth would fail confusingly.
+ */
+export function resetProvider(): void {
   cached = null
 }
 

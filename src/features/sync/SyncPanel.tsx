@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { SyncScheduler, type SyncStatus } from '../../sync/scheduler'
-import { indexedDbDropboxProvider, REMOTE_PATH } from '../../sync/providerFactory'
+import {
+  indexedDbDropboxProvider,
+  resetProvider,
+  REMOTE_PATH,
+} from '../../sync/providerFactory'
+import { DropboxSetup } from './DropboxSetup'
+import { readAppKey } from '../../sync/appKey'
 
 /**
  * Sync controls (0012 C8, AU8).
@@ -10,19 +16,16 @@ import { indexedDbDropboxProvider, REMOTE_PATH } from '../../sync/providerFactor
  * last synced, an in-progress state, and any error.
  */
 
-const CLIENT_ID =
-  (import.meta.env as unknown as Record<string, string | undefined>)['VITE_DROPBOX_APP_KEY'] ??
-  ''
-
-type Connection = 'checking' | 'connected' | 'disconnected' | 'unconfigured'
+type Connection = 'checking' | 'connected' | 'disconnected'
 
 export function SyncPanel() {
   const [connection, setConnection] = useState<Connection>('checking')
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [busy, setBusy] = useState(false)
+  // Read at runtime rather than from a module constant: the app key can be entered
+  // in the browser, which is the point of item 6 in SPECS/todo.md.
+  const [hasKey, setHasKey] = useState(() => readAppKey() !== '')
   const schedulerRef = useRef<SyncScheduler | null>(null)
-
-  const configured = CLIENT_ID !== ''
 
   const provider = indexedDbDropboxProvider()
 
@@ -81,15 +84,22 @@ export function SyncPanel() {
     }
   }, [])
 
-  if (!configured) {
+  if (!hasKey) {
     return (
       <section className="panel" aria-labelledby="sync-heading">
         <h2 id="sync-heading">Sync</h2>
         <p className="hint">
-          Cross-device sync is not configured. It needs a Dropbox app key, which is read from{' '}
-          <code>VITE_DROPBOX_APP_KEY</code>. Everything works without it — your data stays in
-          this browser. See <code>docs/dropbox-app-setup.md</code>.
+          Connect a Dropbox account to use your entries on more than one device. Everything
+          works without it — your data stays in this browser.
         </p>
+        <DropboxSetup
+          onConfigured={() => {
+            // The cached provider holds the previous key, so rebuild it or OAuth
+            // would fail confusingly against a stale client id.
+            resetProvider()
+            setHasKey(readAppKey() !== '')
+          }}
+        />
       </section>
     )
   }

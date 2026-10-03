@@ -394,3 +394,68 @@ code {
   padding: 0.6rem 1rem;
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
 }
+
+/* ------------------------------------------------- Sync setup (todo.md item 6) */
+
+.sync-setup .field {
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sync-setup input[type='text'] {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 22rem;
+}
+
+.sync-setup .button-row {
+  margin-bottom: 0.75rem;
+}
+
+.sync-setup-instructions {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.sync-setup-instructions summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.setup-steps {
+  font-size: 0.9rem;
+  padding-left: 1.2rem;
+  line-height: 1.6;
+}
+
+.setup-steps code {
+  font-size: 0.85em;
+}
+
+.setup-steps h3,
+.sync-setup-instructions h3 {
+  font-size: 0.85rem;
+  margin: 1rem 0 0.4rem;
+  color: var(--fg-muted);
+}
+
+.setup-uris {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.setup-uris li {
+  padding: 0.25rem 0;
+  overflow-wrap: anywhere;
+}

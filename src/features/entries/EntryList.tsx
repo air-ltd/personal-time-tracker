@@ -35,7 +35,9 @@ export function EntryList({ now }: { now: Date }) {
               {formatDuration(group.totalMs)}
             </span>
           </header>
-          <ul className="entry-rows">
+          {/* Named so it is distinguishable from any other list on the page, both
+              for assistive tech and for tests that count rows. */}
+          <ul className="entry-rows" aria-label={`Entries for ${heading(group.key)}`}>
             {group.entries.map((entry) => (
               <EntryRow key={entry.id} entry={entry} now={now} />
             ))}

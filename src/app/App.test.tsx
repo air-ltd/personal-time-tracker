@@ -130,7 +130,11 @@ describe('entry list', () => {
     await waitFor(() => expect(screen.getByTestId(`day-total-${key}`)).toBeInTheDocument())
     expect(screen.getByTestId(`day-total-${key}`)).toHaveTextContent('2h')
 
-    const rows = screen.getAllByRole('listitem')
+    // Scoped to the entries list: the page contains other lists (the sync setup
+    // instructions), so an unscoped count would silently include them.
+    const rows = within(
+      screen.getByRole('list', { name: new RegExp(`Entries for`) }),
+    ).getAllByRole('listitem')
     expect(rows).toHaveLength(2)
   })
 

@@ -39,3 +39,9 @@ export async function completeAuthFromRedirect(): Promise<boolean> {
 }
 
 export const DROPBOX_REDIRECT_PATH = DROPBOX.defaultRemotePath
+
+/** The redirect URI this deployment must have registered with Dropbox. */
+export function currentRedirectUri(): string {
+  const env = import.meta.env as unknown as Record<string, string | undefined>
+  return `${window.location.origin}${env['BASE_URL'] ?? '/'}`
+}

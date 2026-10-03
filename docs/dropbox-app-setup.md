@@ -10,6 +10,11 @@ dependency left to wait on. It is the longest-lead item in the plan.
 Spec references: [0012 §Authentication](../SPECS/0012-sync.md), and AU3 on the
 embedded client id being public.
 
+> **You may not need this file at all.** The app collects the key in its own Sync
+> panel and shows the same steps inline, so the quickest route is to paste your App
+> key into the app once. This file is the longer version, and is still the place to
+> check a redirect URI that the app reports as mismatched.
+
 ---
 
 ## About these instructions
