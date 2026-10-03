@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DropboxSetup } from './DropboxSetup'
+import { currentRedirectUri, deployedRedirectUri } from '../../sync/redirect'
 import { APP_KEY_STORAGE_KEY, readAppKey } from '../../sync/appKey'
 import { BUILT_IN_KEYS } from '../../sync/appKey'
 
@@ -103,7 +104,11 @@ describe('instructions', () => {
   it('shows both redirect URIs with trailing slashes', () => {
     render(<DropboxSetup onConfigured={() => {}} />)
     const uris = screen.getAllByText(/^https?:\/\/.+\/$/).map((el) => el.textContent ?? '')
-    expect(uris).toContain('https://air-ltd.github.io/personal-time-tracker/')
+    // Expected from the same helpers the panel uses, not written out: the deployed path
+    // follows the configured base so a renamed repository cannot leave the panel telling
+    // the user to register a URI that no longer exists.
+    expect(uris).toContain(deployedRedirectUri())
+    expect(uris).toContain(currentRedirectUri())
     expect(uris.every((uri) => uri.endsWith('/'))).toBe(true)
   })
 

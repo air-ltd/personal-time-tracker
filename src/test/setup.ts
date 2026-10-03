@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom/vitest'
+import { cleanup } from '@testing-library/react'
+import { afterEach } from 'vitest'
 // IndexedDB is absent in jsdom, and every repository call needs it. Installed
 // globally so component tests exercise the real storage path rather than a mock,
 // which is what makes the integration tests worth having (0010 Q1, Q2).
@@ -33,5 +35,18 @@ function stubMatchMedia(matches: boolean): void {
 }
 
 stubMatchMedia(false)
+
+/**
+ * Unmount rendered components between tests.
+ *
+ * Testing Library registers this automatically, but only when it can find a global
+ * `afterEach`. Vitest's `globals` are off here — so that production code cannot reach
+ * `describe` or `expect` by accident — which means there is no global to find and nothing
+ * unmounted. Without it, rendered DOM accumulated across a file and queries matched
+ * elements from earlier tests.
+ */
+afterEach(() => {
+  cleanup()
+})
 
 export { stubMatchMedia }

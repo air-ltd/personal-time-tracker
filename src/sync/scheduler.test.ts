@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncScheduler, type SyncStatus } from './scheduler'
 import { SyncError, type ProviderStatus, type RemoteFile, type SyncProvider } from './provider'
 import type { Snapshot } from '../domain/merge'

@@ -5,7 +5,7 @@ import {
   hasLegacyStoredKey,
   readAppKey,
 } from '../../sync/appKey'
-import { currentRedirectUri } from '../../sync/redirect'
+import { currentRedirectUri, deployedRedirectUri } from '../../sync/redirect'
 import { SCOPES as REQUIRED_SCOPES } from '../../sync/dropbox/config'
 
 /**
@@ -161,7 +161,7 @@ export function DropboxSetup({ onConfigured }: Props) {
         <h3>Redirect URIs to register</h3>
         <ul className="setup-uris">
           <li>
-            <code>https://air-ltd.github.io/personal-time-tracker/</code> — the deployed site
+            <code>{deployedRedirectUri()}</code> — the deployed site
           </li>
           <li>
             <code>{redirectUri}</code> — this page, right now

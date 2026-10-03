@@ -47,7 +47,10 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    globals: true,
+    // Globals are off deliberately. With them on, `describe` and `expect` are in scope
+    // for production code as well, so a stray call in app code type-checks and only
+    // fails at runtime. Every test imports what it uses instead.
+    globals: false,
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
     env: {
