@@ -1,0 +1,92 @@
+/**
+ * Name rules (0005 P2, T2, 0003).
+ *
+ * Uniqueness is enforced here rather than by a database index because IndexedDB indexes
+ * are byte-exact: they cannot express "unique after trimming, case-insensitively", which
+ * is the rule. Two devices creating "Acme" and "acme" offline would otherwise both
+ * succeed and merge into two projects that look identical in a report.
+ */
+
+/**
+ * Comparison key for a name.
+ *
+ * Trimmed and lowercased. Deliberately not Unicode-normalised: NFC and NFD forms of the
+ * same accented character would compare unequal here, so "café" typed two ways could
+ * both be created. Normalising means a name round-tripped through a backup — where
+ * decomposition can differ — still compares equal to itself.
+ */
+export function nameKey(name: string): string {
+  return name.trim().toLowerCase().normalize('NFC')
+}
+
+export const NAME_LIMITS = {
+  project: { min: 1, max: 80 },
+  client: { min: 1, max: 80 },
+  tag: { min: 1, max: 40 },
+} as const
+
+export type NameKind = keyof typeof NAME_LIMITS
+
+export type NameProblem =
+  | { kind: 'empty' }
+  | { kind: 'too-long'; limit: number }
+  | { kind: 'duplicate'; existingId: string; existingName: string }
+
+/** Check a name in isolation, before consulting what already exists. */
+export function validateName(kind: NameKind, name: string): NameProblem | null {
+  const trimmed = name.trim()
+  const limits = NAME_LIMITS[kind]
+  if (trimmed.length < limits.min) return { kind: 'empty' }
+  if (trimmed.length > limits.max) return { kind: 'too-long', limit: limits.max }
+  return null
+}
+
+export interface ExistingName {
+  id: string
+  name: string
+  archived: boolean
+}
+
+/**
+ * Find a name conflict among existing records.
+ *
+ * Archived records are excluded for projects (0005 P2) so a name freed by archiving can
+ * be reused; a client name is unique regardless of archived state (0003). The exclusion
+ * is a parameter rather than inferred from the record, because the two rules differ.
+ */
+export function findNameConflict(
+  kind: NameKind,
+  name: string,
+  existing: readonly ExistingName[],
+  options: { ignoreArchived: boolean },
+): NameProblem | null {
+  const shape = validateName(kind, name)
+  if (shape) return shape
+
+  const key = nameKey(name)
+  for (const candidate of existing) {
+    if (options.ignoreArchived && candidate.archived) continue
+    if (nameKey(candidate.name) === key) {
+      return {
+        kind: 'duplicate',
+        existingId: candidate.id,
+        existingName: candidate.name,
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * Find an existing record matching a name, ignoring case and surrounding space.
+ *
+ * This is what inline tag creation depends on: typing `Research` when `research` exists
+ * must select the existing tag rather than create a duplicate (0005 T2).
+ */
+export function findByName<T extends ExistingName>(
+  name: string,
+  existing: readonly T[],
+): T | undefined {
+  const key = nameKey(name)
+  return existing.find((candidate) => nameKey(candidate.name) === key)
+}
