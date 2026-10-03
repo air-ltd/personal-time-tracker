@@ -120,11 +120,16 @@ export class DropboxProvider implements SyncProvider {
     url.searchParams.set('code_challenge_method', 'S256')
     url.searchParams.set('code_challenge', base64Url(await sha256(verifier)))
     url.searchParams.set('state', state)
-    // Dropbox takes multiple scopes as ONE space-separated `scope` parameter.
-    // Setting the key repeatedly overwrites it, so only the last scope would ever be
-    // sent — and requesting a scope the app has not enabled produces
-    // "No scope requested can be granted for this app".
-    url.searchParams.set('scope', DROPBOX.scopes.join(' '))
+    // Deliberately no `scope` parameter. Dropbox documents that omitting it requests
+    // exactly the scopes selected on the app's Permissions tab, which makes the
+    // console the single source of truth for what the app may access.
+    //
+    // Requesting an explicit subset is the fragile choice: whenever the console and
+    // the code disagree by even one scope, Dropbox rejects the whole authorisation
+    // with `scope_not_granted` and the app cannot start at all. That is not
+    // hypothetical — it is what happened on both registered apps. Least privilege is
+    // still achieved, by ticking only the two scopes in the console; the app's own
+    // setup instructions say exactly that.
     return { url: url.toString() }
   }
 

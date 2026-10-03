@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DropboxProvider, type DropboxTokens, type DropboxTokenStore } from './DropboxProvider'
-import { DROPBOX } from './config'
+import { DROPBOX, SCOPES } from './config'
 import { SyncError } from '../provider'
 
 const CLIENT_ID = 'app-key-123'
@@ -67,26 +67,37 @@ beforeEach(() => {
 })
 
 describe('PKCE authorisation (0012 AU1–AU2)', () => {
-  // Regression: setting the `scope` key once per scope overwrites it, so only the
-  // last was ever sent. Dropbox takes one space-separated value.
-  it('sends every scope as one space-separated parameter', async () => {
+  // Omitting `scope` makes the app's Permissions tab the source of truth for what it
+  // may access. Requesting an explicit subset means any disagreement between the
+  // console and the code fails the whole authorisation with `scope_not_granted`,
+  // which is what blocked both registered apps.
+  it('sends no scope parameter, deferring to the app configuration', async () => {
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     const { url } = await provider.beginAuth('state')
 
     const parsed = new URL(url)
-    expect(parsed.searchParams.getAll('scope')).toHaveLength(1)
-    expect(parsed.searchParams.get('scope')).toBe('files.content.read files.content.write')
+    expect(parsed.searchParams.has('scope')).toBe(false)
   })
 
-  it('requests only the scopes the app actually needs', async () => {
+  it('leaves every other parameter intact', async () => {
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
     const { url } = await provider.beginAuth('state')
-    const scopes = (new URL(url).searchParams.get('scope') ?? '').split(' ').filter(Boolean)
+    const parsed = new URL(url)
 
-    // Nothing beyond content read/write. The revision arrives in the download
-    // response header and the account is read from the stored token, so no metadata
-    // or account scope is used.
-    expect(scopes.sort()).toEqual(['files.content.read', 'files.content.write'])
+    expect(parsed.searchParams.get('client_id')).toBe(CLIENT_ID)
+    expect(parsed.searchParams.get('response_type')).toBe('code')
+    expect(parsed.searchParams.get('redirect_uri')).toBe(REDIRECT)
+    expect(parsed.searchParams.get('code_challenge_method')).toBe('S256')
+    expect(parsed.searchParams.get('code_challenge')).toBeTruthy()
+    expect(parsed.searchParams.get('state')).toBe('state')
+  })
+
+  // Documents what must be ticked on the Permissions tab. Nothing beyond content
+  // read/write is used: the revision arrives in the download response header, the
+  // conditional write is part of the upload argument, and the account name is read
+  // from the stored token rather than the API.
+  it('documents exactly the scopes the app needs ticked', () => {
+    expect([...SCOPES].sort()).toEqual(['files.content.read', 'files.content.write'])
   })
 
   it('builds an authorisation URL with S256 and the exact redirect URI', async () => {

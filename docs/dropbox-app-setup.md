@@ -75,10 +75,44 @@ The non-production Dropbox app is a separate app with its own configuration. It
 needs the **same two redirect URIs** registered (step 4), or local authorisation
 will fail with a URI mismatch.
 
-**Only two scopes are needed, and both must be ticked or Dropbox refuses the
-authorisation** with `No scope requested can be granted for this app`. That error
-means the Permissions tab does not grant everything the app asks for — not that the
-request was malformed.
+### What each registered app currently has
+
+Verified by calling the live Dropbox authorize endpoint, which returns a specific
+error code without needing a login. Recorded because the console gives no feedback
+of this kind and every symptom looks the same from inside the app.
+
+| | `gh3s5cqaz4n30ah` (production) | `5k94zo8ymchm1ge` (testing) |
+| --- | --- | --- |
+| Redirect URI `https://air-ltd.github.io/personal-time-tracker/` | registered | **not registered** |
+| Redirect URI `http://localhost:5173/personal-time-tracker/` | **not registered** | registered |
+| `files.content.read` / `files.content.write` ticked | **no** | **no** |
+| Authorisation with no `scope` parameter | reaches consent | reaches consent |
+| Authorisation requesting content scopes | `scope_not_granted` | `scope_not_granted` |
+
+So both apps need:
+
+1. Both content scopes ticked on the **Permissions** tab.
+2. **Both** redirect URIs registered, if you want to be able to authorise either
+   app from either place. Each currently has only the one that suits its purpose,
+   which is a sensible default but means a local test against the production app
+   will fail with `invalid_redirect_uri`, and vice versa.
+
+### Why the app does not send a `scope` parameter
+
+Dropbox documents that omitting `scope` requests exactly the scopes selected on the
+Permissions tab. That makes the console the single source of truth.
+
+Requesting an explicit subset is the fragile choice: if the console and the code
+disagree by even one scope, Dropbox rejects the whole authorisation with
+`scope_not_granted` and the app cannot start at all. That is exactly what happened
+here — both apps had no content scopes ticked, so an explicit request made the app
+unusable while omitting it worked immediately.
+
+Least privilege is still achieved, by ticking only the two scopes the app uses.
+
+**Only two scopes are needed, and both must be ticked.** With no `scope` parameter
+sent, an app with no scopes ticked will reach the consent screen with nothing to
+grant and then fail at the first API call, so this step is not optional either way.
 
 Verified against Dropbox's machine-readable API spec (`dropbox/dropbox-api-spec`,
 `files.stone`), which declares a required scope per route:
