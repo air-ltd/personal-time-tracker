@@ -96,6 +96,12 @@ than by remembering to filter (0012 AU5, 0008 S2). That separation is the point:
 keeping the public id and the secret in different stores is what makes the export
 exclusion reliable.
 
+**R7** — `sessionStorage` is limited to the OAuth round trip's pending state: the
+PKCE verifier, its `state`, and any authorisation error message. The verifier is a
+short-lived secret — it is what proves the token request belongs to the
+authorisation request — so it is kept out of `localStorage`, expires within minutes,
+and is cleared on use (0012 AU4.2, AU4.3).
+
 **R6** — Because the app key is public, this spec does not require a warning about
 its storage. A warning implying the key is sensitive would be misleading and would
 teach the user to distrust something that is not a secret (0011 LV-PRIVACY-3 is the

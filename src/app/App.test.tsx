@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { App } from './App'
 import { installTestDb } from '../test/harness'
 import { createManualEntry, listEntries } from '../storage/entriesRepo'
@@ -265,24 +265,59 @@ describe('theme control', () => {
 })
 
 describe('unload warning (0004 W1, W5)', () => {
-  it('registers beforeunload only while a timer runs', async () => {
-    const user = userEvent.setup()
-    const addSpy = vi.spyOn(window, 'addEventListener')
+  /**
+   * Behavioural rather than a spy count.
+   *
+   * Counting `addEventListener` calls races React's passive effects: the DOM can show
+   * the running state before the unload effect has flushed, which made this test pass
+   * alone and fail in a full run. Dispatching the event and checking whether the app
+   * cancelled it tests what actually matters.
+   */
+  function beforeUnloadIsPrevented(): boolean {
+    const event = new Event('beforeunload', { cancelable: true })
+    window.dispatchEvent(event)
+    return event.defaultPrevented
+  }
 
+  it('does not warn while idle', () => {
     render(<App />)
-    const idleRegistrations = addSpy.mock.calls.filter(
-      ([type]) => type === 'beforeunload',
-    ).length
+    expect(beforeUnloadIsPrevented()).toBe(false)
+  })
+
+  it('warns once a timer is running', async () => {
+    const user = userEvent.setup()
+    render(<App />)
 
     await user.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument(),
     )
 
-    const runningRegistrations = addSpy.mock.calls.filter(
-      ([type]) => type === 'beforeunload',
-    ).length
-    expect(runningRegistrations).toBeGreaterThan(idleRegistrations)
-    addSpy.mockRestore()
+    await waitFor(() => expect(beforeUnloadIsPrevented()).toBe(true))
+  })
+
+  it('stops warning once dismissed, and warns again for a new timer (0004 W6)', async () => {
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(beforeUnloadIsPrevented()).toBe(true))
+
+    await user.click(screen.getByRole('button', { name: "Don't remind me" }))
+    await waitFor(() => expect(beforeUnloadIsPrevented()).toBe(false))
+
+    // Stopping routes to the entry form (0001 US2), so go back to the list before
+    // looking for the Start button.
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Edit entry' })).toBeInTheDocument(),
+    )
+    await user.click(screen.getByRole('link', { name: 'Cancel' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument(),
+    )
+    await user.click(screen.getByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(beforeUnloadIsPrevented()).toBe(true))
   })
 })

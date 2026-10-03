@@ -36,6 +36,29 @@ export interface DropboxTokenStore {
 
 const TOKEN_TTL_FALLBACK_MS = 4 * 60 * 60 * 1000
 
+/**
+ * Where the pending authorisation is parked across the redirect.
+ *
+ * sessionStorage is correct and deliberate: it survives a same-tab navigation, which
+ * is exactly the one journey this needs to survive, and it is scoped to the tab and
+ * discarded when the tab closes. localStorage would outlive the authorisation and
+ * leave a token-exchange credential lying around for no reason.
+ *
+ * The verifier is a short-lived secret — it is what proves the token request belongs
+ * to the authorisation request — so it is kept out of localStorage and out of any
+ * export (0011 R7).
+ */
+const PENDING_KEY = 'tt:dropbox-pending'
+
+interface PendingAuth {
+  verifier: string
+  state: string
+  createdAt: number
+}
+
+/** Ten minutes: long enough for a login and a consent screen, short enough to expire. */
+const PENDING_TTL_MS = 10 * 60 * 1000
+
 export class DropboxProvider implements SyncProvider {
   readonly id = 'dropbox'
   private readonly clientId: string
@@ -44,8 +67,15 @@ export class DropboxProvider implements SyncProvider {
   private readonly fetchImpl: typeof fetch
   private readonly randomBytes: (length: number) => Uint8Array
   private readonly now: () => number
-  /** Set between `beginAuth` and the redirect callback. */
+  /**
+   * The pending PKCE verifier, cached for the duration of the round trip.
+   *
+   * Never sufficient on its own: the OAuth redirect is a full page navigation, so
+   * anything held only in memory is gone by the time the code returns. `sessionKey`
+   * is the durable copy that makes the flow work at all.
+   */
   private verifier: string | null = null
+  private inMemoryState: string | null = null
 
   constructor(options: DropboxProviderOptions) {
     this.clientId = options.clientId
@@ -80,6 +110,8 @@ export class DropboxProvider implements SyncProvider {
   async beginAuth(state: string): Promise<{ url: string }> {
     const verifier = base64Url(this.randomBytes(64))
     this.verifier = verifier
+    this.inMemoryState = state
+    this.writePending({ verifier, state, createdAt: this.now() })
 
     const url = new URL(DROPBOX.authorizeUrl)
     url.searchParams.set('client_id', this.clientId)
@@ -94,17 +126,35 @@ export class DropboxProvider implements SyncProvider {
     return { url: url.toString() }
   }
 
-  /** Exchange the authorisation code from the redirect for tokens. */
-  async completeAuth(code: string): Promise<void> {
-    if (!this.verifier) {
-      throw new SyncError('auth', 'No authorisation was started in this session.')
+  /**
+   * Exchange the authorisation code from the redirect for tokens.
+   *
+   * `state` is checked against the value stored by `beginAuth`. Without that check a
+   * third party could feed this app an authorisation code of their choosing, and the
+   * app would silently adopt whichever Dropbox account that code belongs to
+   * (0012 AU9).
+   */
+  async completeAuth(code: string, state: string): Promise<void> {
+    const pending = this.readPending()
+
+    if (!pending) {
+      throw new SyncError(
+        'auth',
+        'This authorisation link has expired or was started in a different browser tab. Start again from the Sync panel.',
+      )
     }
+    if (pending.state !== state) {
+      // Drop it: a mismatched state means this callback is not ours.
+      this.clearPending()
+      throw new SyncError('auth', 'Authorisation state did not match. Start again.')
+    }
+
     const body = new URLSearchParams({
       code,
       grant_type: 'authorization_code',
       client_id: this.clientId,
       redirect_uri: this.redirectUri,
-      code_verifier: this.verifier,
+      code_verifier: pending.verifier,
     })
 
     const response = await this.fetchImpl(DROPBOX.tokenUrl, {
@@ -137,6 +187,63 @@ export class DropboxProvider implements SyncProvider {
       ...(json.account_id ? { accountId: json.account_id } : {}),
     })
     this.verifier = null
+    this.inMemoryState = null
+    this.clearPending()
+  }
+
+  private writePending(pending: PendingAuth): void {
+    try {
+      window.sessionStorage.setItem(PENDING_KEY, JSON.stringify(pending))
+    } catch {
+      // Without this the round trip cannot complete, so surface it at the point of
+      // the redirect rather than after a confusing failure on the way back.
+      throw new SyncError(
+        'auth',
+        'This browser is blocking session storage, so the Dropbox authorisation cannot be completed.',
+      )
+    }
+  }
+
+  private readPending(): PendingAuth | null {
+    let raw: string | null
+    try {
+      raw = window.sessionStorage.getItem(PENDING_KEY)
+    } catch {
+      // Storage is blocked. Fall back to the in-memory copy: that only works if no
+      // navigation happened, but it is better than failing outright.
+      return this.verifier && this.inMemoryState
+        ? { verifier: this.verifier, state: this.inMemoryState, createdAt: this.now() }
+        : null
+    }
+    if (!raw) return null
+
+    try {
+      const parsed = JSON.parse(raw) as Partial<PendingAuth>
+      if (
+        typeof parsed.verifier !== 'string' ||
+        parsed.verifier === '' ||
+        typeof parsed.state !== 'string' ||
+        typeof parsed.createdAt !== 'number'
+      ) {
+        return null
+      }
+      // Expire it, so a stale entry cannot be replayed much later.
+      if (this.now() - parsed.createdAt > PENDING_TTL_MS) {
+        this.clearPending()
+        return null
+      }
+      return { verifier: parsed.verifier, state: parsed.state, createdAt: parsed.createdAt }
+    } catch {
+      return null
+    }
+  }
+
+  private clearPending(): void {
+    try {
+      window.sessionStorage.removeItem(PENDING_KEY)
+    } catch {
+      // Nothing more to do.
+    }
   }
 
   async ensureAuth(): Promise<void> {
@@ -150,6 +257,8 @@ export class DropboxProvider implements SyncProvider {
   async signOut(): Promise<void> {
     // Local data is deliberately untouched (0012 AU7).
     this.verifier = null
+    this.inMemoryState = null
+    this.clearPending()
     await this.storage.clear()
   }
 

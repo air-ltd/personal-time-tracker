@@ -11,3 +11,13 @@
    `phase-2b`: `src/sync/appKey.ts` resolves the key from `localStorage` first and the
    build-time variable second, and `src/features/sync/DropboxSetup.tsx` collects it and
    shows the console steps plus both redirect URIs inline.
+7. [x] Connecting to Dropbox appeared to work, then said "not connected". Done in
+   `phase-2b`. Two bugs, both reproduced before fixing:
+   (a) the PKCE verifier lived only in memory, and the OAuth redirect is a full page
+   load, so it was gone on return and redemption silently failed — it is now persisted
+   in `sessionStorage`, single-use, with an expiry (0012 AU4.1–AU4.3);
+   (b) the Sync panel asked "am I connected?" without waiting for the token
+   exchange to finish, so it read the store too early and reported not-connected for
+   a successful authorisation (0012 AU4.4).
+   Also added `state` verification (AU9) and made failures report their reason instead
+   of failing quietly (AU10).

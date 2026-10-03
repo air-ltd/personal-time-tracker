@@ -7,6 +7,7 @@ import {
 } from '../../sync/providerFactory'
 import { DropboxSetup } from './DropboxSetup'
 import { readAppKey } from '../../sync/appKey'
+import { beginAuthCallback, takeAuthError } from '../../sync/oauthCallback'
 
 /**
  * Sync controls (0012 C8, AU8).
@@ -25,15 +26,25 @@ export function SyncPanel() {
   // Read at runtime rather than from a module constant: the app key can be entered
   // in the browser, which is the point of item 6 in SPECS/todo.md.
   const [hasKey, setHasKey] = useState(() => readAppKey() !== '')
+  // Read once at mount: a one-shot value left behind by the redirect, consumed here
+  // rather than in an effect so it does not cause a cascading render.
+  const [authError] = useState<string | null>(() => takeAuthError())
+  // Read once at mount: it is a one-shot value left behind by the redirect, and
+  // consuming it during initialisation avoids a cascading render in an effect.
   const schedulerRef = useRef<SyncScheduler | null>(null)
 
   const provider = indexedDbDropboxProvider()
 
   useEffect(() => {
     let cancelled = false
-    void provider.status().then((status) => {
-      if (!cancelled) setConnection(status.authenticated ? 'connected' : 'disconnected')
-    })
+    // Wait for any redirect callback to finish before asking whether we are
+    // connected. Otherwise the check races the token write and reports "not
+    // connected" for an authorisation that in fact worked.
+    void beginAuthCallback()
+      .then(() => provider.status())
+      .then((status) => {
+        if (!cancelled) setConnection(status.authenticated ? 'connected' : 'disconnected')
+      })
     return () => {
       cancelled = true
     }
@@ -140,7 +151,13 @@ export function SyncPanel() {
         )}
       </div>
 
-      <SyncStatusLine status={status} connection={connection} />
+      {authError && (
+        <p className="alert alert-error" role="alert" data-testid="auth-error">
+          Dropbox authorisation failed: {authError}
+        </p>
+      )}
+
+      <SyncStatusLine status={status} connection={connection} authError={authError} />
 
       <p className="hint">
         Your data stays in this browser. Syncing copies one file to the Dropbox account you
@@ -153,14 +170,17 @@ export function SyncPanel() {
 function SyncStatusLine({
   status,
   connection,
+  authError,
 }: {
   status: SyncStatus | null
   connection: Connection
+  authError: string | null
 }) {
   if (connection === 'disconnected') {
     return (
       <p className="hint" data-testid="sync-status">
         Not connected. Entries are saved here only.
+        {authError ? ' The last attempt failed — see the message above.' : ''}
       </p>
     )
   }

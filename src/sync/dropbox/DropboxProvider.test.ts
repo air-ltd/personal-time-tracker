@@ -96,6 +96,7 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
   })
 
   it('exchanges the code for a token and stores it', async () => {
+    window.sessionStorage.clear()
     fetchMock.mockResolvedValue(
       response({
         status: 200,
@@ -103,8 +104,8 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
       }),
     )
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
-    await provider.beginAuth('state')
-    await provider.completeAuth('code-123')
+    await provider.beginAuth('state-123')
+    await provider.completeAuth('code-123', 'state-123')
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     const raw = typeof init.body === 'string' ? init.body : ''
@@ -125,22 +126,81 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
       response({ status: 200, json: { access_token: 'tok-1', expires_in: 60 } }),
     )
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
-    await provider.beginAuth('state')
-    await provider.completeAuth('code')
+    await provider.beginAuth('state-refresh')
+    await provider.completeAuth('code', 'state-refresh')
     expect(store.tokens?.refreshToken).toBeUndefined()
     expect(await provider.hasUsableToken()).toBe(true)
   })
 
   it('refuses to complete an authorisation that was never started', async () => {
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
-    await expect(provider.completeAuth('orphan-code')).rejects.toBeInstanceOf(SyncError)
+    await expect(provider.completeAuth('orphan-code', 'state')).rejects.toBeInstanceOf(
+      SyncError,
+    )
+  })
+
+  // The bug behind SPECS/todo.md item 7. The OAuth redirect is a full page
+  // navigation, so a verifier held only in memory is gone by the time the code
+  // comes back, redemption fails, and the user is told they are "not connected"
+  // after an authorisation that appeared to succeed.
+  it('completes an authorisation across a page reload', async () => {
+    window.sessionStorage.clear()
+    fetchMock.mockResolvedValue(
+      response({ status: 200, json: { access_token: 'tok-after-reload', expires_in: 3600 } }),
+    )
+
+    // Before the redirect.
+    const first = makeProvider(store, fetchMock as unknown as typeof fetch)
+    const { url } = await first.beginAuth('state-round-trip')
+    const state = new URL(url).searchParams.get('state')
+
+    // The redirect reloads the page, so a brand new instance handles the callback.
+    const afterReload = makeProvider(store, fetchMock as unknown as typeof fetch)
+    await afterReload.completeAuth('code-from-redirect', state ?? '')
+
+    expect(store.tokens?.accessToken).toBe('tok-after-reload')
+    const body = new URLSearchParams(
+      typeof (fetchMock.mock.calls[0]?.[1] as RequestInit).body === 'string'
+        ? ((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)
+        : '',
+    )
+    // The verifier sent must be the one generated before the redirect, not empty.
+    expect(body.get('code_verifier')).toBeTruthy()
+    expect(body.get('code_verifier')?.length ?? 0).toBeGreaterThanOrEqual(43)
+  })
+
+  it('rejects a callback whose state does not match', async () => {
+    window.sessionStorage.clear()
+    fetchMock.mockResolvedValue(response({ status: 200, json: { access_token: 'tok' } }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    await provider.beginAuth('the-real-state')
+
+    await expect(provider.completeAuth('code', 'a-different-state')).rejects.toMatchObject({
+      kind: 'auth',
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('clears the stored verifier once used, so a code cannot be replayed', async () => {
+    window.sessionStorage.clear()
+    fetchMock.mockResolvedValue(response({ status: 200, json: { access_token: 'tok' } }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    const { url } = await provider.beginAuth('state-once')
+    const state = new URL(url).searchParams.get('state') ?? ''
+    await provider.completeAuth('code', state)
+
+    await expect(provider.completeAuth('code-again', state)).rejects.toMatchObject({
+      kind: 'auth',
+    })
   })
 
   it('reports a rejected authorisation as an auth error, not a failure', async () => {
     fetchMock.mockResolvedValue(response({ status: 400 }))
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
-    await provider.beginAuth('state')
-    await expect(provider.completeAuth('bad')).rejects.toMatchObject({ kind: 'auth' })
+    await provider.beginAuth('state-bad')
+    await expect(provider.completeAuth('bad', 'state-bad')).rejects.toMatchObject({
+      kind: 'auth',
+    })
   })
 })
 

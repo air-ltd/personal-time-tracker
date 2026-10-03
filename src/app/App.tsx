@@ -9,7 +9,6 @@ import {
 } from './theme'
 import { TimerPanel } from '../features/timer/TimerPanel'
 import { useTimer } from '../features/timer/useTimer'
-import { useUnloadWarning } from '../features/timer/useUnloadWarning'
 import { EntryList } from '../features/entries/EntryList'
 import { EntryForm } from '../features/entries/EntryForm'
 import { UndoBar, type PendingDelete } from '../features/entries/UndoBar'
@@ -58,8 +57,11 @@ export function App() {
     setTheme(next)
   }, [])
 
+  // The unload warning lives in TimerPanel, which owns the timer state and the
+  // "don't remind me" control. Registering it here as well gave two independent
+  // instances with separate dismissal state, so dismissing the prompt in the panel
+  // left this copy still firing.
   const timer = useTimer()
-  useUnloadWarning({ active: timer.running !== null })
 
   // 0001 US2: stopping routes to the entry form, so classification happens while
   // the work is still fresh.
