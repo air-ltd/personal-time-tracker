@@ -13,6 +13,7 @@ import { EntryList } from '../features/entries/EntryList'
 import { EntryForm } from '../features/entries/EntryForm'
 import { UndoBar, type PendingDelete } from '../features/entries/UndoBar'
 import { SyncPanel } from '../features/sync/SyncPanel'
+import { BackupPanel } from '../features/backup/BackupPanel'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
 import type { TimeEntry } from '../domain/entries/types'
@@ -126,6 +127,7 @@ export function App() {
               <EntryList now={now} />
             </div>
             <SyncPanel />
+            <BackupPanel />
           </>
         )}
 

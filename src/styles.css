@@ -380,6 +380,18 @@ code {
   color: var(--fg-muted);
 }
 
+/* Confirmation that an action finished. Uses the muted palette rather than the
+   accent, so a success reads as settled rather than as another call to action. */
+.alert-success {
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.backup-issues {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
+}
+
 .undo-bar {
   position: fixed;
   bottom: 1rem;

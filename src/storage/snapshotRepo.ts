@@ -1,4 +1,5 @@
 import { getDb, SCHEMA_VERSION } from './db'
+import { bumpRevision } from './events'
 import type { Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
 
@@ -47,6 +48,7 @@ export async function readSnapshot(): Promise<Snapshot> {
  */
 export async function writeSnapshot(snapshot: Snapshot): Promise<void> {
   const db = getDb()
+  let wrote = false
 
   for (const name of TABLES) {
     const table = db.tables.find((candidate) => candidate.name === name)
@@ -59,7 +61,14 @@ export async function writeSnapshot(snapshot: Snapshot): Promise<void> {
       // insert window in which a crash would empty the table.
       await table.bulkPut(records as unknown[])
     })
+    wrote = true
   }
+
+  // Views subscribe to a revision counter rather than to IndexedDB, so a write that
+  // does not bump it is invisible until something else happens to re-render. A synced
+  // entry or a restored backup could sit on disk, correctly stored and correctly
+  // merged, while the list still showed the old contents.
+  if (wrote) bumpRevision()
 }
 
 const LAST_REV_KEY = 'sync:lastRev'

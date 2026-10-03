@@ -202,6 +202,36 @@ async function main() {
       (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
     )
 
+    // 6. Backup is reachable and works on a real build (Phase 2B gate).
+    // Exercised in a browser because the download path uses an object URL, which
+    // jsdom does not implement, so a unit test cannot cover the actual handoff.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    check(
+      'backup panel present',
+      (await page.getByRole('heading', { name: 'Backup' }).count()) === 1,
+    )
+
+    const download = page.waitForEvent('download', { timeout: 10_000 })
+    await page.getByRole('button', { name: 'Download backup' }).click()
+    let backupName = ''
+    try {
+      backupName = (await download).suggestedFilename()
+    } catch {
+      backupName = ''
+    }
+    check(
+      'backup downloads with a dated filename',
+      /^time-tracker-backup-\d{4}-\d{2}-\d{2}\.json$/.test(backupName),
+      backupName,
+    )
+
+    const status = page.getByTestId('backup-status')
+    check(
+      'export reports what it saved',
+      (await status.innerText()).includes('Saved'),
+      await status.innerText().catch(() => ''),
+    )
+
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))
     check('no failed requests overall', failedRequests.length === 0, failedRequests.join(' | '))
 

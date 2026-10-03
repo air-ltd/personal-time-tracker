@@ -21,3 +21,4 @@
    a successful authorisation (0012 AU4.4).
    Also added `state` verification (AU9) and made failures report their reason instead
    of failing quietly (AU10).
+8. [ ] saving to 1 second accuracy, rather than to the minute.

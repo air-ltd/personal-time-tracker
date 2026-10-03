@@ -190,6 +190,27 @@ under PKCE and is not a secret (0012 AU3, AR6).
 - An exported backup contains no OAuth tokens (0012 AU6)
 - Export → wipe → import → identical state
 
+Notes from implementation:
+
+- **The two-browser test is done by hand, not in CI.** It needs two browser profiles and
+  a real Dropbox account. Criteria 1, 3 and 4 were verified this way: two browsers both
+  offline, an entry created in each, both brought online and synced, union on both; and
+  a deletion on one device removed on the other without resurrecting. Nothing automates
+  it, so it is re-verified by hand rather than protected by a test.
+- **Criteria 8–10 are not Phase 2B work.** Non-working days and contract-period overlap
+  need entities this phase does not create. `merge.ts` is table-agnostic, so the
+  tombstone and union rules apply to them unchanged, but there is deliberately no
+  per-entity assertion yet. Phase 3 covers the overlap case once capacity entities exist.
+- **A latent write-visibility bug, found while building the backup UI.** Views subscribe
+  to a revision counter rather than to IndexedDB, and `writeSnapshot` never bumped it.
+  Data written by a sync merge or a restore was therefore stored correctly but stayed
+  invisible until an unrelated re-render — most often the 30-second clock tick. It was
+  masked during development because entries reliably appeared within that window.
+- **Restore merges rather than replaces.** Export → wipe → import → identical is
+  satisfied by a merge, and merging means a stale or mistyped file can never empty the
+  database. A replace would satisfy the gate too, and would also make the backup a
+  data-loss vector.
+
 ---
 
 ### Phase 3 — Test suite
