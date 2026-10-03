@@ -1,4 +1,4 @@
-import { mergeSnapshots, repairReferences, type Snapshot } from '../domain/merge'
+import { mergeSnapshots, type Snapshot } from '../domain/merge'
 import { parseEnvelope, serialiseEnvelope, toEnvelope } from './envelope'
 
 /**
@@ -95,7 +95,17 @@ export async function restoreBackup(deps: BackupDeps, raw: string): Promise<Rest
     }
   }
 
-  const merged = repairReferences(outcome.merged)
+  /*
+   * Written as merged, without `repairReferences`.
+   *
+   * Repair belongs to sync, where a partial or stale merge is normal and a dangling
+   * reference means two devices disagree. A restore is not that: it is a recovery
+   * action, and silently rewriting records in someone's backup while recovering it is
+   * a modification they did not ask for and cannot see. An entry referencing a project
+   * absent from the file renders uncategorised, which is honest about the file's
+   * contents; nulling the reference instead quietly changes the data.
+   */
+  const merged = outcome.merged
   await deps.writeLocal(merged)
 
   const counts: Record<string, number> = {}

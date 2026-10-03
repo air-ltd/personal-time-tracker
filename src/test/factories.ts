@@ -72,7 +72,10 @@ export function entry(overrides: EntryOverrides = {}): TimeEntry {
     note: overrides.note ?? '',
     billable: overrides.billable ?? false,
     rateOverrideMinor: overrides.rateOverrideMinor ?? null,
-    source: overrides.source ?? 'manual',
+    // A running entry is a timer entry by definition, so the source follows `end`
+    // unless stated. Defaulting to `manual` produced a fixture describing a running
+    // entry that no part of the app could have created.
+    source: overrides.source ?? (end === null ? 'timer' : 'manual'),
     createdAt: created.toISOString(),
     updatedAt: (overrides.updatedAt ?? end ?? start).toISOString(),
     deletedAt:

@@ -7,6 +7,8 @@ import {
   toEnvelope,
 } from './envelope'
 import type { Mergeable, Snapshot } from '../domain/merge'
+import { entryDurationMs } from '../domain/time/duration'
+import type { TimeEntry } from '../domain/entries/types'
 
 const AT = new Date('2026-10-13T09:00:00.000Z')
 
@@ -168,8 +170,16 @@ describe('parseEnvelope', () => {
       },
     }
     // A reversed span is well-formed data even though it is nonsense, so the schema
-    // accepts it; validateEntry is what rejects it. Asserted here to pin down where
-    // the boundary sits.
+    // accepts it, and the corruption is contained where it is used instead.
+    //
+    // Rejecting the file here was considered and rejected: a user restoring a backup
+    // would lose access to every other record because one is corrupt, and the error
+    // would not tell them which. `entryDurationMs` returns null for such a record and
+    // a day containing one totals to null, so the damage is a visible "unknown" rather
+    // than a plausible wrong number. Covered in duration.test.ts and group.test.ts.
+    //
+    // Note `validateEntry` does not run on this path — it only validates form input —
+    // so containment at the point of use is the whole of the protection.
     expect(parseEnvelope(broken, 1).ok).toBe(true)
   })
 
@@ -248,5 +258,40 @@ describe('credentials never appear in a payload (0012 AU6, 0008 S2)', () => {
     expect(serialised).not.toMatch(/token/i)
     expect(serialised).not.toMatch(/secret/i)
     expect(serialised).not.toMatch(/refresh/i)
+  })
+})
+
+/**
+ * Where a corrupt record is contained.
+ *
+ * The envelope deliberately admits a reversed span, so these pin down that the damage
+ * is bounded: the record reads as unknown, and a day containing one totals to unknown,
+ * rather than either silently reporting a negative duration or a short day.
+ */
+describe('a reversed span is contained rather than rejected', () => {
+  const broken = {
+    ...toEnvelope(snapshotOf([entry('a')]), AT),
+    data: {
+      ...toEnvelope(snapshotOf([entry('a')]), AT).data,
+      entries: [
+        {
+          ...toEnvelope(snapshotOf([entry('a')]), AT).data.entries[0],
+          start: '2026-10-13T10:00:00.000Z',
+          end: '2026-10-13T09:00:00.000Z',
+        },
+      ],
+    },
+  }
+
+  it('still imports, so the rest of the backup is reachable', () => {
+    expect(parseEnvelope(broken, 1).ok).toBe(true)
+  })
+
+  it('reads as an unknown duration, not a negative one', () => {
+    const parsed = parseEnvelope(broken, 1)
+    if (!parsed.ok) throw new Error('expected the file to import')
+
+    const [restored] = (parsed.snapshot.entities['entries'] ?? []) as TimeEntry[]
+    expect(entryDurationMs(restored as TimeEntry, AT)).toBeNull()
   })
 })
