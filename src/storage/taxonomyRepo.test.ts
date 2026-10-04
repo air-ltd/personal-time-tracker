@@ -536,3 +536,51 @@ describe('deleting a project leaves existing tombstones untouched', () => {
     expect((await projectDeleteImpact(project.id)).entryCount).toBe(1)
   })
 })
+
+/**
+ * Names freed by deletion.
+ *
+ * 0005 F4 says deleting exists for projects created by mistake, so the mistake most
+ * worth fixing is the one where the intended project cannot be created afterwards.
+ */
+describe('names freed by deletion', () => {
+  it('reuses a deleted project name', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    await deleteProject(project.id, T0)
+    const replacement = await createProject({ name: 'acme', now: T0 })
+    expect(replacement.name).toBe('acme')
+  })
+
+  it('reuses a deleted client name', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await deleteClient(client.id, T0)
+    await expect(
+      createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 }),
+    ).resolves.toMatchObject({ name: 'Acme Ltd' })
+  })
+
+  it('creates a new tag rather than resurrecting a deleted one', async () => {
+    // A tag has no archive state (0005 T5), so deletion is the only way a name goes
+    // away and reuse has to produce a genuinely new record.
+    const { tag: first } = await createOrFindTag({ name: 'research', now: T0 })
+    await deleteTag(first.id, T0)
+    const { tag: second, created } = await createOrFindTag({ name: 'research', now: T0 })
+    expect(created).toBe(true)
+    expect(second.id).not.toBe(first.id)
+  })
+
+  it('frees the name when a project is archived rather than deleted', async () => {
+    // Archiving is the intended way to retire a project (0005 F4, A1), and a name freed
+    // by archiving has to be reusable or archiving becomes a one-way door.
+    const first = await createProject({ name: 'Acme', now: T0 })
+    await setArchived('project', first.id, true, T0)
+    await expect(createProject({ name: 'Acme', now: T0 })).resolves.toMatchObject({
+      name: 'Acme',
+    })
+  })
+
+  it('still refuses a name held by a live project', async () => {
+    await createProject({ name: 'Acme', now: T0 })
+    await expect(createProject({ name: 'ACME', now: T0 })).rejects.toThrow(/already exists/)
+  })
+})

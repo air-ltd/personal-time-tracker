@@ -38,26 +38,30 @@ async function assertNameFree(
   name: string,
   options: { ignoreArchived: boolean; exceptId?: string },
 ): Promise<void> {
-  // Branching per kind rather than indexing a union of tables: a tag has no `archived`
-  // field at all (0005 T5), and a union row would type it as `unknown`.
+  /*
+   * Branching per kind rather than indexing a union of tables: a tag has no `archived`
+   * field at all (0005 T5), and a union row would type it as `unknown`.
+   *
+   * Tombstones are excluded, which they were not. `toArray()` returns them, and a
+   * tombstone is not a record the user can see or select — it is the merge marker for a
+   * deletion that already happened. Counting one made a deleted project's name
+   * permanently unusable: 0005 F4 says deleting is for projects created by mistake, and
+   * the mistake that most needs fixing is precisely the one where you cannot create the
+   * project you meant straight afterwards. Every table keeps the same filter so the three
+   * agree about what exists.
+   */
   const existing: ExistingName[] =
     kind === 'tag'
-      ? (await db().tags.toArray()).map((row) => ({
-          id: row.id,
-          name: row.name,
-          archived: false,
-        }))
+      ? (await db().tags.toArray())
+          .filter((row) => row.deletedAt === null)
+          .map((row) => ({ id: row.id, name: row.name, archived: false }))
       : kind === 'client'
-        ? (await db().clients.toArray()).map((row) => ({
-            id: row.id,
-            name: row.name,
-            archived: row.archived,
-          }))
-        : (await db().projects.toArray()).map((row) => ({
-            id: row.id,
-            name: row.name,
-            archived: row.archived,
-          }))
+        ? (await db().clients.toArray())
+            .filter((row) => row.deletedAt === null)
+            .map((row) => ({ id: row.id, name: row.name, archived: row.archived }))
+        : (await db().projects.toArray())
+            .filter((row) => row.deletedAt === null)
+            .map((row) => ({ id: row.id, name: row.name, archived: row.archived }))
   const conflict = findNameConflict(kind, name, existing, {
     ignoreArchived: options.ignoreArchived,
   })
