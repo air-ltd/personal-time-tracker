@@ -14,7 +14,8 @@ import {
   setArchived,
 } from '../../storage/taxonomyRepo'
 import { putEntry, getEntry } from '../../storage/entriesRepo'
-import { readDefaultCurrency } from '../../storage/settingsRepo'
+import { readDefaultCurrency, writeDefaultCurrency } from '../../storage/settingsRepo'
+import { FALLBACK_CURRENCY } from '../../domain/taxonomy/money'
 
 /**
  * Taxonomy settings (0005).
@@ -78,7 +79,7 @@ function formFor(labelText: string): HTMLElement {
 describe('creating records (0005 P1, P2, P7)', () => {
   it('creates a client with a currency and a rate', async () => {
     await show()
-    await user.click(screen.getByRole('button', { name: 'Add client' }))
+    await user.click(screen.getByTestId('new-client'))
 
     const form = formFor('Client name')
     await user.type(within(form).getByLabelText('Client name'), 'Acme Ltd')
@@ -117,7 +118,7 @@ describe('creating records (0005 P1, P2, P7)', () => {
   it('refuses a duplicate project name and reports why', async () => {
     await createProject({ name: 'Acme', now: T0 })
     await show()
-    await user.click(screen.getByRole('button', { name: 'Add project' }))
+    await user.click(screen.getByTestId('new-project'))
 
     const form = formFor('Project name')
     await user.type(within(form).getByLabelText('Project name'), 'acme')
@@ -129,7 +130,7 @@ describe('creating records (0005 P1, P2, P7)', () => {
 
   it('creates a project with no client', async () => {
     await show()
-    await user.click(screen.getByRole('button', { name: 'Add project' }))
+    await user.click(screen.getByTestId('new-project'))
 
     const form = formFor('Project name')
     await user.type(within(form).getByLabelText('Project name'), 'Internal')
@@ -479,5 +480,55 @@ describe('colour choice (0005 P3–P4)', () => {
 
     // The number is reported whether or not it passes, so the user can decide.
     expect(await screen.findByTestId('colour-assessment')).toHaveTextContent(/\d+\.\d+:1 light/)
+  })
+})
+
+describe('a new client starts at the app default currency (item 31)', () => {
+  it('picks up the default when one has been set', async () => {
+    // Setting the default and then adding a client that ignores it is worse than having
+    // no default: the user has said what they bill in, and every client after that has to
+    // be corrected by hand.
+    await writeDefaultCurrency('JPY')
+    await show()
+    await user.click(screen.getByTestId('new-client'))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Billing currency')).toHaveValue('JPY')
+    })
+  })
+
+  it('falls back to the chain’s last link when no default has been set', async () => {
+    await show()
+    await user.click(screen.getByTestId('new-client'))
+
+    expect(await screen.findByLabelText('Billing currency')).toHaveValue(FALLBACK_CURRENCY)
+  })
+
+  it('leaves an existing client’s currency alone', async () => {
+    // Only a *new* client follows the default. Overwriting one that already bills in
+    // something else would silently restate what they charge.
+    await writeDefaultCurrency('JPY')
+    await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await show()
+
+    await user.click(rowButton('Acme Ltd', 'Edit'))
+
+    expect(await screen.findByLabelText('Billing currency')).toHaveValue('GBP')
+  })
+
+  it('saves the default when the client is created without touching the field', async () => {
+    await writeDefaultCurrency('JPY')
+    await show()
+    await user.click(screen.getByTestId('new-client'))
+
+    const form = formFor('Client name')
+    await user.type(within(form).getByLabelText('Client name'), 'Acme Ltd')
+    await user.click(within(form).getByRole('button', { name: 'Add client' }))
+
+    // Submitted before the stored default has loaded, which is the ordinary case: the
+    // field is filled in as soon as it is shown, so a quick save must not race it.
+    await waitFor(async () => {
+      expect(await listClients()).toMatchObject([{ name: 'Acme Ltd', currency: 'JPY' }])
+    })
   })
 })

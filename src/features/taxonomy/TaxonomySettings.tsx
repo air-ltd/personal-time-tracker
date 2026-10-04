@@ -5,6 +5,7 @@ import { CurrencySelect } from './CurrencySelect'
 import { RateField } from './RateField'
 import { DeleteConfirm } from './DeleteConfirm'
 import { ClientForm } from './ClientForm'
+import { PlusIcon } from '../../app/Icons'
 import { ProjectUndoBar, type TaxonomyUndo } from './TaxonomyUndoBar'
 import {
   clientDeleteImpact,
@@ -344,7 +345,7 @@ function ClientSection({
 
   return (
     <div className="settings-block">
-      <h3>Clients</h3>
+      <SectionHeading noun="client" onAdd={() => setCreating(true)} />
 
       {creating ? (
         <ClientForm
@@ -353,11 +354,7 @@ function ClientSection({
           onDone={() => setCreating(false)}
           report={report}
         />
-      ) : (
-        <button type="button" className="button" onClick={() => setCreating(true)}>
-          Add client
-        </button>
-      )}
+      ) : null}
 
       {clients.length === 0 && <p className="hint">No clients yet.</p>}
 
@@ -487,7 +484,7 @@ function ProjectSection({
 
   return (
     <div className="settings-block">
-      <h3>Projects</h3>
+      <SectionHeading noun="project" onAdd={() => setCreating(true)} />
 
       {creating ? (
         <form className="taxonomy-form" onSubmit={(e) => void submit(e)}>
@@ -557,11 +554,7 @@ function ProjectSection({
             </button>
           </div>
         </form>
-      ) : (
-        <button type="button" className="button" onClick={() => setCreating(true)}>
-          Add project
-        </button>
-      )}
+      ) : null}
 
       {projects.length === 0 && <p className="hint">No projects yet.</p>}
 
@@ -934,6 +927,41 @@ function TagRow({
         </button>
       </span>
     </>
+  )
+}
+
+/**
+ * A section heading with its add button on the same line (items 32 and 33).
+ *
+ * The button was on a line of its own under the heading, which cost a row of height on
+ * both of the longest lists in the app and read as a separate thing rather than as the way
+ * you add to the list you are looking at. It is a "+" for the same reason the timer card's
+ * is: the surrounding section already says what is being added, and the glyph keeps the row
+ * compact.
+ *
+ * `aria-label` still carries the full verb, so the control is named rather than being a
+ * bare symbol to a screen reader.
+ */
+function SectionHeading({ noun, onAdd }: { noun: 'client' | 'project'; onAdd: () => void }) {
+  return (
+    <div className="taxonomy-section-heading">
+      <h3>{noun === 'client' ? 'Clients' : 'Projects'}</h3>
+      <button
+        type="button"
+        className="button timer-add-client"
+        onClick={onAdd}
+        /*
+         * "New client", not "Add client": the form's own submit button is called "Add
+         * client", and while that form is open both were on screen with the same
+         * accessible name — so "Add client" matched two controls.
+         */
+        aria-label={`New ${noun}`}
+        title={`New ${noun}`}
+        data-testid={`new-${noun}`}
+      >
+        <PlusIcon />
+      </button>
+    </div>
   )
 }
 
