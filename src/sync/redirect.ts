@@ -40,3 +40,19 @@ export const DEPLOYED_ORIGIN = 'https://air-ltd.github.io'
 export function deployedRedirectUri(): string {
   return `${DEPLOYED_ORIGIN}${basePath()}`
 }
+
+/**
+ * The app's own home, relative to wherever it is being served (item 15).
+ *
+ * Relative on purpose. Items 11 and 15 asked for the header title to link to the
+ * personal-time-tracker page, and the first attempt resolved that to the deployed
+ * origin — which sends a fork, or a local `npm run dev`, off to somebody else's site.
+ * Deriving it from the current origin plus the configured base means the same build
+ * links to itself wherever it is served from, including a subdirectory.
+ *
+ * The trailing slash matters: without it, a server that redirects `/personal-time-tracker`
+ * to the directory can turn the click into a 404 on some hosts.
+ */
+export function appHomeUrl(): string {
+  return `${window.location.origin}${basePath()}`
+}
