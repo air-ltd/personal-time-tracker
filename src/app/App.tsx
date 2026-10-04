@@ -14,6 +14,7 @@ import { EntryForm } from '../features/entries/EntryForm'
 import { UndoBar, type PendingDelete } from '../features/entries/UndoBar'
 import { SyncPanel } from '../features/sync/SyncPanel'
 import { BackupPanel } from '../features/backup/BackupPanel'
+import { TaxonomySettings } from '../features/taxonomy/TaxonomySettings'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
 import type { TimeEntry } from '../domain/entries/types'
@@ -27,6 +28,7 @@ const ROUTES: readonly Route[] = [
   { path: '/' },
   { path: '/entries/new' },
   { path: '/entries/:id' },
+  { path: '/settings' },
 ]
 
 /** Entries display elapsed time, so this needs to advance while a timer runs. */
@@ -99,6 +101,10 @@ export function App() {
     })
   }, [])
 
+  // Stable, because the bar arms its auto-hide timer per pending item and a fresh
+  // function each render would re-arm it and the bar would never close.
+  const onDismiss = useCallback(() => setPending(null), [])
+
   const onUndo = useCallback(() => {
     if (!pending) return
     const target = pending
@@ -110,7 +116,14 @@ export function App() {
     <div className="app">
       <header className="app-header">
         <h1>Time Tracker</h1>
-        <ThemeToggle value={theme} onChange={onThemeChange} />
+        <div className="app-header-controls">
+          {/* 0005 P1: a missing project blocks entry capture, so creating one has to be
+              reachable in two interactions from anywhere — this link, then the form. */}
+          <a className="button" href="#/settings">
+            Settings
+          </a>
+          <ThemeToggle value={theme} onChange={onThemeChange} />
+        </div>
       </header>
 
       <main className="app-main">
@@ -132,6 +145,8 @@ export function App() {
         )}
 
         {match?.route.path === '/entries/new' && <EntryForm now={now} />}
+
+        {match?.route.path === '/settings' && <TaxonomySettings now={now} />}
 
         {match?.route.path === '/entries/:id' &&
           (editing === undefined ? (
@@ -160,7 +175,7 @@ export function App() {
         )}
       </main>
 
-      {pending && <UndoBar pending={pending} onUndo={onUndo} />}
+      {pending && <UndoBar pending={pending} onUndo={onUndo} onDismiss={onDismiss} />}
     </div>
   )
 }

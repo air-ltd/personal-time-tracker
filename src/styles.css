@@ -310,6 +310,109 @@ code {
   overflow-wrap: anywhere;
 }
 
+/*
+ * Taxonomy on an entry row. It occupies the same column as the note and sits above it,
+ * because which project and tags an entry carries is what someone scanning a day is
+ * looking for, and the free-text note is the fallback.
+ */
+.entry-taxonomy {
+  grid-column: 3 / 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.entry-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.entry-client {
+  color: var(--fg-muted);
+}
+
+.entry-uncategorised {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.entry-tags,
+.tag-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+}
+
+.entry-tags {
+  grid-column: 3 / 5;
+}
+
+/*
+ * Reserved feedback line under a rate field.
+ *
+ * Deliberately not `display: none` when empty: the point is that the field's height does
+ * not change, because a button that moves under the pointer as it is being pressed does
+ * not get pressed.
+ */
+.rate-feedback {
+  min-height: 1.4rem;
+}
+
+/*
+ * A tag chip. The name is the content; the swatch repeats it, so colour is never the only
+ * carrier of meaning (0005 N2), and removing one is a labelled button rather than an "×"
+ * nobody can reach with a screen reader.
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.tag-swatch {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 0.2rem;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.chip-remove {
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0 0 0.15rem;
+}
+
+.chip-remove:hover {
+  color: var(--fg);
+}
+
+.badge-billable {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.2rem;
+  padding: 0 0.25rem;
+}
+
 .entry-edit {
   color: var(--accent);
 }
@@ -505,15 +608,282 @@ code {
  * Fixed column widths are kept rather than percentages so the times and durations stay
  * aligned down the list, which is what makes a column of durations scannable.
  */
+
+/* Header controls: settings link beside the theme toggle. */
+.app-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Settings */
+.settings-block {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-block h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.taxonomy-form {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+
+.taxonomy-form.inline-form {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
+.taxonomy-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.taxonomy-form label,
+.taxonomy-edit label {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.taxonomy-form input[type='text'],
+.taxonomy-form select,
+.taxonomy-edit input[type='text'],
+.taxonomy-edit select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  max-width: 28rem;
+}
+
+.taxonomy-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.taxonomy-row {
+  display: grid;
+  /* Name, description, actions. Fixed action width keeps the delete buttons from
+     jumping as a row gains or loses an action. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px dotted var(--border);
+}
+
+/* An archived row stays readable rather than greyed into illegibility. */
+.taxonomy-row.archived .taxonomy-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.taxonomy-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.taxonomy-meta {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.taxonomy-actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/*
+ * The swatch is decorative. Every place it appears is also labelled with the name it
+ * belongs to, so 0005 N2 holds: nothing is distinguished by colour alone.
+ */
+.taxonomy-swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.2rem;
+  flex: none;
+  /* A ring in the current foreground, so a swatch is visible against both themes even
+     if the palette entry is close to the background. */
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.badge-archived {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.taxonomy-edit {
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+
+.taxonomy-edit .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* Colour picker */
+.colour-picker {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  margin: 0;
+}
+
+.colour-picker legend {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  padding: 0 0.25rem;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/*
+ * Each swatch is a label wrapping a radio, so the whole group is one tab stop and the
+ * arrow keys move between colours. The input is visually replaced rather than hidden
+ * with `display: none`, which would remove it from the tab order entirely.
+ */
+.swatch {
+  position: relative;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.3rem;
+  background: var(--swatch, var(--surface));
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.swatch input[type='radio'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Selection is a double ring rather than a fill change, so it survives a colour that is
+   similar to its neighbours. */
+.swatch-selected {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--fg);
+}
+
+/* A colour already used elsewhere is dimmed, not removed: two projects may legitimately
+   share one, and hiding the swatch would make the choice impossible to reproduce. */
+.swatch-taken {
+  opacity: 0.55;
+}
+
+.swatch-custom {
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.colour-custom {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.colour-custom input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  max-width: 14rem;
+}
+
+.colour-custom .alert,
+.colour-custom .hint {
+  margin: 0;
+}
+
+/* Destructive confirmation */
+.delete-confirm {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 2px solid var(--accent);
+  border-radius: 0.4rem;
+  background: var(--bg);
+}
+
+.delete-confirm:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.delete-confirm h4 {
+  margin: 0 0 0.5rem;
+}
+
+.delete-confirm ul {
+  margin: 0 0 0.5rem 1.1rem;
+  padding: 0;
+}
+
 @media (max-width: 34rem) {
   .entry-row {
     grid-template-columns: 1fr auto;
     row-gap: 0.15rem;
   }
 
-  /* The note and the edit link share the second line, note taking the remaining width. */
-  .entry-note {
+  /* The note, the taxonomy and the edit link share the lower lines, the text taking the
+     remaining width. */
+  .entry-note,
+  .entry-taxonomy,
+  .entry-tags {
     grid-column: 1;
+  }
+
+  .entry-tags {
+    grid-row: 3;
   }
 
   .entry-edit {
@@ -522,12 +892,26 @@ code {
     justify-self: end;
   }
 
-  /* The form is already a single column, so it only needs roomier tap targets. */
+  /* The form is already a single column, so it only needs roomer tap targets. */
   .app {
     padding: 1rem 0.75rem;
   }
 
   .button-row {
     flex-wrap: wrap;
+  }
+
+  /* Taxonomy rows stack rather than compete for three columns on a phone. */
+  .taxonomy-row {
+    grid-template-columns: 1fr;
+    row-gap: 0.3rem;
+  }
+
+  .taxonomy-actions {
+    justify-content: flex-start;
+  }
+
+  .taxonomy-form.inline-form {
+    grid-template-columns: 1fr;
   }
 }

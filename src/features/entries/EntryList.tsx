@@ -3,6 +3,8 @@ import { formatClock, formatDuration, entryDurationMs } from '../../domain/time/
 import { localDayBounds } from '../../domain/time/days'
 import type { TimeEntry } from '../../domain/entries/types'
 import { useEntries } from './useEntries'
+import { useTaxonomy } from '../taxonomy/useTaxonomy'
+import type { Client, Project, Tag } from '../../domain/taxonomy/types'
 
 /**
  * Entry list, grouped by local day with per-day subtotals (0004 L1–L2).
@@ -13,7 +15,15 @@ import { useEntries } from './useEntries'
  */
 export function EntryList({ now }: { now: Date }) {
   const { entries, loading } = useEntries()
+  const { projects, clients, tags } = useTaxonomy()
   const groups = groupEntriesByDay(entries, now)
+
+  // Resolved once here rather than in each row: a row that called `useTaxonomy` would
+  // subscribe to the same store N times, and `useSyncExternalStore` re-reads on every
+  // notification — so a long day would re-read the whole taxonomy per row.
+  const projectById = new Map(projects.map((row) => [row.id, row]))
+  const clientById = new Map(clients.map((row) => [row.id, row]))
+  const tagById = new Map(tags.map((row) => [row.id, row]))
 
   if (loading) return <p className="hint">Loading…</p>
 
@@ -39,7 +49,22 @@ export function EntryList({ now }: { now: Date }) {
               for assistive tech and for tests that count rows. */}
           <ul className="entry-rows" aria-label={`Entries for ${heading(group.key)}`}>
             {group.entries.map((entry) => (
-              <EntryRow key={entry.id} entry={entry} now={now} />
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                now={now}
+                project={
+                  entry.projectId === null ? null : (projectById.get(entry.projectId) ?? null)
+                }
+                client={
+                  entry.projectId === null
+                    ? null
+                    : (clientById.get(projectById.get(entry.projectId)?.clientId ?? '') ?? null)
+                }
+                tags={entry.tagIds
+                  .map((id) => tagById.get(id))
+                  .filter((tag): tag is Tag => tag !== undefined)}
+              />
             ))}
           </ul>
         </section>
@@ -48,7 +73,19 @@ export function EntryList({ now }: { now: Date }) {
   )
 }
 
-function EntryRow({ entry, now }: { entry: TimeEntry; now: Date }) {
+function EntryRow({
+  entry,
+  now,
+  project,
+  client,
+  tags,
+}: {
+  entry: TimeEntry
+  now: Date
+  project: Project | null
+  client: Client | null
+  tags: Tag[]
+}) {
   const start = new Date(entry.start)
   const end = entry.end === null ? null : new Date(entry.end)
   const duration = entryDurationMs(entry, now)
@@ -67,6 +104,51 @@ function EntryRow({ entry, now }: { entry: TimeEntry; now: Date }) {
       <div className="entry-duration" data-testid={`duration-${entry.id}`}>
         {formatDuration(duration)}
       </div>
+      <div className="entry-taxonomy">
+        {project === null ? (
+          // U1/U2: uncategorised is named rather than shown as a blank, so an entry that
+          // lost its project — or never had one — reads as a state rather than as missing
+          // information.
+          <span className="entry-project entry-uncategorised">Uncategorised</span>
+        ) : (
+          <>
+            {/* N2: the project name is always text, and the client is named beside it.
+                The swatch repeats information already in words, so colour is never the
+                only carrier of meaning. */}
+            <span className="entry-project">
+              <span
+                className="tag-swatch"
+                style={{ background: project.colour }}
+                aria-hidden="true"
+              />
+              {project.name}
+              {project.archived && <span className="badge badge-archived">archived</span>}
+              {client !== null && <span className="entry-client"> · {client.name}</span>}
+            </span>
+          </>
+        )}
+        {entry.billable && (
+          <span className="badge badge-billable" data-testid={`billable-${entry.id}`}>
+            Billable
+          </span>
+        )}
+      </div>
+
+      {tags.length > 0 && (
+        <ul className="entry-tags" data-testid={`tags-${entry.id}`}>
+          {tags.map((tag) => (
+            <li key={tag.id} className="chip">
+              <span
+                className="tag-swatch"
+                style={{ background: tag.colour }}
+                aria-hidden="true"
+              />
+              {tag.name}
+            </li>
+          ))}
+        </ul>
+      )}
+
       {entry.note && <p className="entry-note">{entry.note}</p>}
       <a className="entry-edit" href={`#/entries/${entry.id}`}>
         Edit<span className="visually-hidden"> entry starting {formatClock(start)}</span>

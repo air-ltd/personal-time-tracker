@@ -14,6 +14,9 @@ import {
   type ValidationIssue,
 } from '../../domain/entries/validate'
 import { createManualEntry, updateEntry } from '../../storage/entriesRepo'
+import { useTaxonomy } from '../taxonomy/useTaxonomy'
+import { TagInput } from '../taxonomy/TagInput'
+import { formatMinor } from '../../domain/taxonomy/currencies'
 
 /**
  * Create or edit a completed entry.
@@ -55,6 +58,28 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
   const [note, setNote] = useState(entry?.note ?? '')
   const [issues, setIssues] = useState<ValidationIssue[]>([])
   const [submitting, setSubmitting] = useState(false)
+
+  const { projects, clients, tags, loading: taxonomyLoading } = useTaxonomy()
+  const [projectId, setProjectId] = useState<string | null>(entry?.projectId ?? null)
+  const [tagIds, setTagIds] = useState<string[]>(entry?.tagIds ?? [])
+  // P5: a project with a default rate implies billable work, so the checkbox starts
+  // ticked for it. Held separately from the project so it can still be turned off for a
+  // one-off piece of unbilled work on a normally-billable project.
+  const [billable, setBillable] = useState(entry?.billable ?? false)
+  const [taxonomyError, setTaxonomyError] = useState<string | null>(null)
+
+  const project = projects.find((row) => row.id === projectId) ?? null
+  const client = project ? (clients.find((row) => row.id === project.clientId) ?? null) : null
+
+  function chooseProject(id: string | null): void {
+    setProjectId(id)
+    // P5 applies to a new entry only: re-tick billable when moving onto a rated project,
+    // but never overwrite what an existing entry already recorded.
+    if (entry === undefined) {
+      const chosen = projects.find((row) => row.id === id) ?? null
+      setBillable(chosen?.defaultRateMinor !== null && chosen !== null)
+    }
+  }
 
   const start = useMemo(() => fromLocalInputValue(startValue), [startValue])
 
@@ -114,17 +139,41 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
       if (entry) {
         await updateEntry(
           entry.id,
-          { start: start.toISOString(), end: end.toISOString(), note },
+          {
+            start: start.toISOString(),
+            end: end.toISOString(),
+            note,
+            projectId,
+            tagIds,
+            billable,
+          },
           now,
         )
       } else {
-        await createManualEntry({ start, end, note, now })
+        await createManualEntry({ start, end, note, now, projectId, tagIds, billable })
       }
       navigate('/')
     } finally {
       setSubmitting(false)
     }
   }
+
+  // A project whose client has been deleted still has to be selectable, or an existing
+  // entry becomes unsaveable the moment a client is removed.
+  const orphanedProjects = projects.filter(
+    (row) => row.clientId === null || clients.every((row2) => row2.id !== row.clientId),
+  )
+
+  const effectiveRate = project?.defaultRateMinor ?? client?.defaultRateMinor ?? null
+  const effectiveCurrency = project?.currency ?? client?.currency ?? null
+  const billingHint =
+    project === null
+      ? null
+      : effectiveRate === null
+        ? `No rate set${client ? ` on ${client.name}` : ''}, so this is not billed unless you add a rate.`
+        : `Billed at ${formatMinor(effectiveRate, effectiveCurrency ?? 'USD')} per hour${
+            client ? ` (${client.name}’s rate)` : ''
+          }.`
 
   const errors = blockingIssues(issues)
   const warnings = issues.filter((i) => i.severity === 'warning')
@@ -210,6 +259,76 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
       )}
 
       <div className="field">
+        <label htmlFor="entry-project">Project</label>
+        <select
+          id="entry-project"
+          value={projectId ?? ''}
+          onChange={(event) =>
+            chooseProject(event.target.value === '' ? null : event.target.value)
+          }
+        >
+          {/*
+            U1/U2: uncategorised is a real, labelled state rather than an absent selection,
+            and the option says plainly what it is, so a missing project cannot be
+            mistaken for a deliberate choice of no work.
+          */}
+          <option value="">No project — uncategorised</option>
+          {!taxonomyLoading &&
+            clients.map((owner) => {
+              const owned = projects.filter((row) => row.clientId === owner.id)
+              if (owned.length === 0) return null
+              return (
+                // N2: projects and clients appear together here, so the client is named in
+                // the group heading rather than being implied by order or colour.
+                <optgroup key={owner.id} label={owner.name}>
+                  {owned.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.archived ? `${row.name} (archived)` : row.name}
+                    </option>
+                  ))}
+                </optgroup>
+              )
+            })}
+          {!taxonomyLoading && orphanedProjects.length > 0 && (
+            <optgroup label="No client">
+              {orphanedProjects.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.archived ? `${row.name} (archived)` : row.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+        </select>
+        {billingHint !== null && (
+          <p className="hint" data-testid="billing-hint">
+            {billingHint}
+          </p>
+        )}
+      </div>
+
+      <TagInput
+        tags={tags}
+        selected={tagIds}
+        onChange={setTagIds}
+        now={now}
+        report={(problem) =>
+          setTaxonomyError(problem instanceof Error ? problem.message : String(problem))
+        }
+      />
+
+      <div className="field">
+        <label htmlFor="entry-billable">
+          <input
+            id="entry-billable"
+            type="checkbox"
+            checked={billable}
+            onChange={(event) => setBillable(event.target.checked)}
+          />{' '}
+          Billable
+        </label>
+      </div>
+
+      <div className="field">
         <label htmlFor="entry-note">Note</label>
         <textarea
           id="entry-note"
@@ -218,6 +337,12 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
           onChange={(e) => setNote(e.target.value)}
         />
       </div>
+
+      {taxonomyError !== null && (
+        <div className="alert alert-error" role="alert" data-testid="taxonomy-error">
+          <p>{taxonomyError}</p>
+        </div>
+      )}
 
       {errors.length > 0 && (
         <div className="alert alert-error" role="alert" data-testid="form-errors">
