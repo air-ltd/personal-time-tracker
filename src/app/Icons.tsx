@@ -137,3 +137,29 @@ export function PlusIcon({ size = 16, weight = 2.4 }: IconProps) {
     </Svg>
   )
 }
+
+/**
+ * A cog — "Settings" (item 26).
+ *
+ * The teeth are drawn as a ring with eight short radial strokes rather than as a scalloped
+ * outline: a scalloped path needs more points than survive at 18px, where the gaps between
+ * teeth close up and the shape reads as a blob.
+ */
+export function SettingsIcon({ size = 16, weight }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8" />
+      <path d="m18.5 5.5-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5" />
+    </Svg>
+  )
+}
+
+/** A chevron, for the collapsible cards (items 25, 26). */
+export function ChevronIcon({ size = 16, weight }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      <path d="m7 10 5 5 5-5" />
+    </Svg>
+  )
+}
