@@ -26,6 +26,7 @@ import { CURRENCY_CODES } from '../domain/taxonomy/currencies'
 
 const DEFAULT_CURRENCY_KEY = 'app-default-currency'
 const VISIBLE_CURRENCIES_KEY = 'visible-currencies'
+const ENTRY_PERIOD_KEY = 'entry-period'
 
 /**
  * The user's app-wide default currency, or null when they have not chosen one.
@@ -92,5 +93,29 @@ export async function writeVisibleCurrencies(codes: readonly string[] | null): P
     return
   }
   await getDb().meta.put({ key: VISIBLE_CURRENCIES_KEY, value: [...codes] })
+  bumpRevision()
+}
+
+/**
+ * The entries period the user last chose (item 28).
+ *
+ * In IndexedDB rather than `localStorage`, which 0011 R5 reserves for the theme. Slightly
+ * awkward for a display preference — the control shows "all" for a frame before the stored
+ * value arrives — but it keeps the app to one localStorage key, and the same trade-off was
+ * already made for the visible currencies.
+ *
+ * Read as "all" when nothing is stored, or when the stored value is not one of the three
+ * periods: a corrupted preference should not be able to leave the list in a state nothing
+ * can get out of.
+ */
+export async function readEntryPeriod(): Promise<'day' | 'week' | 'all'> {
+  const record = await getDb().meta.get(ENTRY_PERIOD_KEY)
+  const value = record?.value
+  return value === 'day' || value === 'week' || value === 'all' ? value : 'all'
+}
+
+/** Remember the chosen period. */
+export async function writeEntryPeriod(period: 'day' | 'week' | 'all'): Promise<void> {
+  await getDb().meta.put({ key: ENTRY_PERIOD_KEY, value: period })
   bumpRevision()
 }

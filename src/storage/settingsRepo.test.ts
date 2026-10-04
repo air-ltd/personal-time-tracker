@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { installTestDb } from '../test/harness'
-import { readDefaultCurrency, writeDefaultCurrency } from './settingsRepo'
+import {
+  readDefaultCurrency,
+  readEntryPeriod,
+  writeDefaultCurrency,
+  writeEntryPeriod,
+} from './settingsRepo'
+import { getDb } from './db'
 import { resolveCurrency } from '../domain/taxonomy/money'
 import type { Client } from '../domain/taxonomy/types'
 
@@ -82,5 +88,27 @@ describe('default currency', () => {
       code: 'JPY',
       source: 'client',
     })
+  })
+})
+
+describe('entry period (item 28)', () => {
+  it('defaults to all, so nothing is remembered until something is chosen', async () => {
+    expect(await readEntryPeriod()).toBe('all')
+  })
+
+  it('round-trips each period', async () => {
+    for (const period of ['day', 'week', 'all'] as const) {
+      await writeEntryPeriod(period)
+      expect(await readEntryPeriod()).toBe(period)
+    }
+  })
+
+  it('falls back to all for a corrupted value', async () => {
+    // A preference that cannot be read must not be able to leave the list in a state
+    // nothing can get out of.
+    await writeEntryPeriod('day')
+    await getDb().meta.put({ key: 'entry-period', value: 'fortnightly' })
+
+    expect(await readEntryPeriod()).toBe('all')
   })
 })

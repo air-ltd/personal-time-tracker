@@ -9,62 +9,12 @@ import type { TimeEntry } from '../../domain/entries/types'
 import type { Client, Project } from '../../domain/taxonomy/types'
 
 /**
- * The client filter and the period control (items 21 and 22).
+ * The period control and the per-client summary (items 22 and 25).
  *
- * Split from `EntriesView` because the reasoning about which client wins — the selection
- * or the running timer — belongs there, and this file is only presentation.
+ * The client filter used to live here too, as a dropdown. Item 25 moved it to the timer
+ * card, where the clients already are — so what remains is only what is genuinely about the
+ * entries rather than about which client is being looked at.
  */
-
-/**
- * Choose a client.
- *
- * A filter that is being overridden says so, and says why. Silently showing one client's
- * entries while the control claims another is the kind of thing that is only noticed once
- * a figure has been believed.
- */
-export function ClientFilter({
-  clients,
-  selected,
-  lockedBy,
-  onSelect,
-}: {
-  clients: readonly Client[]
-  selected: string | null
-  /** Non-null when a running timer is forcing the filter, whatever the selection says. */
-  lockedBy: string | null
-  onSelect: (clientId: string | null) => void
-}) {
-  const id = 'entry-client-filter'
-  const lockedName =
-    lockedBy === null ? null : (clients.find((c) => c.id === lockedBy)?.name ?? null)
-
-  return (
-    <div className="field entries-filter">
-      <label htmlFor={id}>Client</label>
-      <select
-        id={id}
-        value={selected ?? ''}
-        // Disabled rather than ignored while locked: a control that looks live and is not
-        // is worse than one that visibly cannot be moved.
-        disabled={lockedBy !== null}
-        onChange={(event) => onSelect(event.target.value === '' ? null : event.target.value)}
-        data-testid="client-filter"
-      >
-        <option value="">All clients</option>
-        {clients.map((client) => (
-          <option key={client.id} value={client.id}>
-            {client.name}
-          </option>
-        ))}
-      </select>
-      {lockedName !== null && (
-        <p className="hint" data-testid="client-filter-locked">
-          Showing {lockedName}, because a timer is running for it.
-        </p>
-      )}
-    </div>
-  )
-}
 
 /** Daily, weekly, or all entries (item 22). */
 export function PeriodControl({

@@ -47,14 +47,15 @@ describe('filtering by client (item 21)', () => {
     await entryFor(web.id, 30)
     await entryFor(ret.id, 45)
 
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={acme.id} />)
     await screen.findByText('Website')
-    await user.selectOptions(screen.getByTestId('client-filter'), acme.id)
 
     await waitFor(() => {
       expect(screen.getByText('Website')).toBeInTheDocument()
       expect(screen.queryByText('Retainer')).toBeNull()
     })
+    // The card says which client, because the control that chose it is on another card.
+    expect(screen.getByTestId('entries-filter-note')).toHaveTextContent(/Acme Ltd/)
   })
 
   it('says which client is filtering, and that a timer is why', async () => {
@@ -68,9 +69,9 @@ describe('filtering by client (item 21)', () => {
     await entryFor(ret.id, 45)
     const running = await startTimer(NOW, web.id)
 
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={null} />)
     await waitFor(() => {
-      expect(screen.getByTestId('client-filter-locked')).toHaveTextContent(/Acme Ltd/)
+      expect(screen.getByTestId('entries-filter-note')).toHaveTextContent(/A timer is running/)
     })
 
     // Two rows mention Website: the manual entry and the running timer. Both belong to
@@ -81,18 +82,23 @@ describe('filtering by client (item 21)', () => {
     expect(running.projectId).toBe(web.id)
   })
 
-  it('locks the control while a timer decides, so it cannot silently disagree', async () => {
+  it('overrides the chosen client while a timer runs, and says so', async () => {
     const acme = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+    const other = await createClient({ name: 'Other Ltd', currency: 'GBP', now: NOW })
     const web = await createProject({ name: 'Website', clientId: acme.id, now: NOW })
+    const ret = await createProject({ name: 'Retainer', clientId: other.id, now: NOW })
     await entryFor(web.id, 30)
+    await entryFor(ret.id, 45)
     await startTimer(NOW, web.id)
 
-    render(<EntriesView now={NOW} />)
+    // The prop says Other Ltd; the timer says Acme. The timer wins, visibly.
+    render(<EntriesView now={NOW} selectedClientId={other.id} />)
 
-    // A control that looks live but is not is worse than one that visibly cannot move.
     await waitFor(() => {
-      expect(screen.getByTestId('client-filter')).toBeDisabled()
+      expect(screen.getByTestId('entries-filter-note')).toHaveTextContent(/Acme Ltd/)
     })
+    expect(screen.getByTestId('entries-filter-note')).toHaveTextContent(/timer is running/)
+    expect(screen.queryByText('Retainer')).toBeNull()
   })
 
   it('goes back to the chosen client once the timer is gone', async () => {
@@ -104,15 +110,13 @@ describe('filtering by client (item 21)', () => {
     await entryFor(ret.id, 45)
     await startTimer(NOW, web.id)
 
-    render(<EntriesView now={NOW} />)
-    // `findBy*` rather than `getBy*` inside `waitFor`: `getBy` throws on the first miss, so
-    // a `waitFor` built from it retries nothing and fails on the very first frame.
+    render(<EntriesView now={NOW} selectedClientId={null} />)
     await waitFor(() => {
-      expect(screen.getByTestId('client-filter')).toBeDisabled()
+      expect(screen.getByTestId('entries-filter-note')).toHaveTextContent(/timer is running/)
     })
 
     // The timer has to actually go away: the view reads it from storage, so leaving it
-    // running would keep the lock and prove nothing.
+    // running would keep the override and prove nothing.
     const running = await findRunningEntry()
     if (running === undefined) throw new Error('expected a running entry')
     await discardTimer(running.id, NOW)
@@ -120,15 +124,14 @@ describe('filtering by client (item 21)', () => {
     // Re-mounted rather than re-rendered, so the assertion does not depend on the store
     // subscription firing mid-test.
     cleanup()
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={acme.id} />)
+
     await waitFor(() => {
-      expect(screen.getByTestId('client-filter')).not.toBeDisabled()
+      expect(screen.getByTestId('entries-filter-note')).not.toHaveTextContent(
+        /timer is running/,
+      )
     })
-    expect(screen.queryByTestId('client-filter-locked')).toBeNull()
-    // The options arrive with the taxonomy read, so they have to be waited for rather
-    // than assumed present the moment the select is.
-    await screen.findByRole('option', { name: 'Acme Ltd' })
-    await user.selectOptions(screen.getByTestId('client-filter'), acme.id)
+    expect(screen.getByTestId('entries-filter-note')).toHaveTextContent(/Acme Ltd/)
     expect(screen.getAllByText('Website').length).toBeGreaterThan(0)
   })
 })
@@ -139,7 +142,7 @@ describe('the period (item 22)', () => {
     const web = await createProject({ name: 'Website', clientId: acme.id, now: NOW })
     await entryFor(web.id, 30)
 
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={null} />)
     // Default is the list, so 0004's day groups and subtotals are untouched.
     expect(await screen.findByText('Website')).toBeInTheDocument()
     expect(screen.queryByTestId('entry-summary')).toBeNull()
@@ -157,7 +160,7 @@ describe('the period (item 22)', () => {
     const web = await createProject({ name: 'Website', clientId: acme.id, now: NOW })
     await entryFor(web.id, 30)
 
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={null} />)
     await user.click(screen.getByRole('radio', { name: 'Weekly' }))
 
     const summary = await screen.findByTestId('entry-summary')
@@ -176,10 +179,8 @@ describe('the period (item 22)', () => {
     await entryFor(web.id, 30)
     await entryFor(ret.id, 45)
 
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={acme.id} />)
     await screen.findByText('Website')
-    await screen.findByRole('option', { name: 'Acme Ltd' })
-    await user.selectOptions(screen.getByTestId('client-filter'), acme.id)
     await user.click(screen.getByRole('radio', { name: 'Daily' }))
 
     const summary = await screen.findByTestId('entry-summary')
@@ -190,7 +191,7 @@ describe('the period (item 22)', () => {
   it('shows the empty state when nothing has ever been recorded', async () => {
     // 0007 FB3, and it must survive the new period control: a summary reading "nothing in
     // this period" is a different and more alarming claim than "no work yet".
-    render(<EntriesView now={NOW} />)
+    render(<EntriesView now={NOW} selectedClientId={null} />)
 
     expect(await screen.findByTestId('empty-state')).toBeInTheDocument()
   })
