@@ -994,6 +994,30 @@ async function main() {
         .evaluate((node) => node === document.activeElement)),
     )
 
+    // The About page and the changelog it bundles (README points at both).
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    await page.getByRole('link', { name: /About this app/ }).click()
+    await page.getByRole('heading', { name: 'About' }).waitFor()
+    check(
+      'the About page explains where data lives',
+      (await page.getByText(/never appears in a backup/).count()) === 1,
+    )
+    const changelog = page.locator('.changelog')
+    check(
+      'the About page renders the bundled changelog',
+      (await changelog.count()) === 1 && (await changelog.locator('li').count()) > 10,
+      String(await changelog.locator('li').count()),
+    )
+    check(
+      'the changelog is rendered as text, not injected markup',
+      (await changelog.locator('script').count()) === 0 &&
+        !(await changelog.innerHTML()).includes('<script'),
+    )
+    check(
+      'the changelog headings dropped Keep a Changelog’s brackets',
+      (await page.getByRole('heading', { name: 'Unreleased', exact: true }).count()) === 1,
+    )
+
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))
     check('no failed requests overall', failedRequests.length === 0, failedRequests.join(' | '))
 

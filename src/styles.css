@@ -512,6 +512,32 @@ code {
   white-space: nowrap;
 }
 
+/* About page, and the changelog rendered into it. */
+.settings-footer {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+}
+
+.about-changelog h3 {
+  margin: 1rem 0 0.3rem;
+  font-size: 1rem;
+}
+
+.about-changelog h4 {
+  margin: 0.8rem 0 0.2rem;
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+}
+
+.changelog ul {
+  margin: 0.2rem 0 0.6rem;
+  padding-left: 1.2rem;
+}
+
+.changelog p {
+  margin: 0.3rem 0;
+}
+
 /* Header home link and favicon (item 23). */
 .app-home {
   display: inline-flex;

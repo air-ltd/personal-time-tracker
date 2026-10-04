@@ -53,6 +53,15 @@ export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
           backup is or that restoring merges rather than replaces. The explanation lives
           here; the actions are in both places, sharing one `useBackup`. */}
       <BackupPanel />
+
+      {/*
+        About lives here rather than in the header menu, which item 26 fixed at three
+        buttons. A settings page is where someone looks for it, and a fourth menu button
+        would undo a decision that was made on purpose.
+      */}
+      <p className="settings-footer">
+        <a href="#/about">About this app and what has changed</a>
+      </p>
     </>
   )
 }

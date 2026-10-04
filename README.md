@@ -10,6 +10,11 @@ In development. Through Phase 4 (taxonomy) — see
 [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md) for the phase
 sequence and each phase's gate.
 
+- What has changed: [`CHANGELOG.md`](CHANGELOG.md), also readable in the app under
+  **About**.
+- Cutting a release: [`docs/RELEASING.md`](docs/RELEASING.md).
+- Outstanding and accepted limitations: [`SPECS/todo.md`](SPECS/todo.md).
+
 | Phase | What it covers | State |
 | --- | --- | --- |
 | 1 | Static shell, hash routing, theme, Pages deploy | Done |

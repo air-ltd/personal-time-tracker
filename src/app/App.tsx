@@ -14,6 +14,7 @@ import { UndoBar, type PendingDelete } from '../features/entries/UndoBar'
 import { SyncIndicator } from '../features/sync/SyncIndicator'
 import { SyncProvider } from '../features/sync/SyncProvider'
 import { SettingsPage } from '../features/settings/SettingsPage'
+import { AboutPage } from './AboutPage'
 import { HeaderMenu } from '../features/settings/HeaderMenu'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
@@ -30,6 +31,7 @@ const ROUTES: readonly Route[] = [
   { path: '/entries/new' },
   { path: '/entries/:id' },
   { path: '/settings' },
+  { path: '/about' },
 ]
 
 /** Entries display elapsed time, so this needs to advance while a timer runs. */
@@ -175,6 +177,8 @@ export function App() {
           {match?.route.path === '/settings' && (
             <SettingsPage now={now} theme={theme} onThemeChange={onThemeChange} />
           )}
+
+          {match?.route.path === '/about' && <AboutPage />}
 
           {match?.route.path === '/entries/:id' &&
             (editing === undefined ? (
