@@ -10,15 +10,14 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    timer already stops and saves, but `App.tsx` navigates to a form afterwards; the fix
    is to save and stay put. Note this interacts with item 5 — the modify-after-the-fact
    affordance is what makes skipping the screen safe.
-4. [ ] **Need ability to categorise by job/client.** In progress in `phase-4`. The data
-   layer is done and committed: schema v3, the taxonomy repository, and the rate and
-   currency resolution chains. What remains is the UI — a settings view for project and
-   client CRUD, and a project picker on the entry form. Storage can already create,
-   archive, delete and merge, so the rules are enforced and tested; nothing is reachable
-   by clicking yet.
-5. [ ] **Within a job/client have projects.** Same position as item 4. `Project.clientId`
-   exists and is tested, and deleting a client clears it on its projects rather than
-   removing them. Needs the same UI.
+4. [x] **Need ability to categorise by job/client.** Done in `phase-4`, though the branch is
+   still uncommitted. A `#/settings` view reachable from the header in one click (two
+   interactions to any record, 0005 P1), a project picker on the entry form grouped by
+   client, and entries naming their project, client and tags in the list.
+5. [x] **Within a job/client have projects.** Done alongside item 4. `Project.clientId` is
+   set from the picker, deleting a client clears it on its projects rather than removing
+   them (0005 X4), and a project left without a client stays selectable so its entries
+   remain editable.
 6. [x] Dropbox key given in the browser, with the setup instructions in-app. Done in
    `phase-2b`, then revised: both Dropbox keys are now built in and chosen by host, a
    stored key is ignored and cleaned up, and the Sync panel shows the key in use plus the
@@ -33,6 +32,11 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    decided "nothing to publish" from the remote revision alone, which cannot distinguish
    "nothing happened anywhere" from "only this device changed" — so *every* local edit and
    addition had also never synced, not just deletions.
+9. [ ] light/dark mode settings should be under the settings page.
+10. [ ] dropbox connection status should be indicated in the header row, and details moved to settings page. if disconnected the header row indicator should be a buttons that allows connection to be triggered.
+11. [ ] "Time Tracker" in the header should be a link that takes user to "personal-time-tracker" page
+12. [ ] the "TIMER" box should allow starting a timer for each client, and should include a button to create a new client & buttons to edit a client - every client gets a default project and as default the time should be recorded against that project.
+13. [ ] allow user to select relevant currencies and hide others.
 
 # Where the branches are
 
@@ -55,19 +59,21 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
 ## Phase 4 — Taxonomy
 
-1. [ ] Settings view for project and client CRUD (0005 P1).
-2. [ ] Colour picker over the computed palette, with the measured contrast shown when a
+1. [x] Settings view for project and client CRUD (0005 P1).
+2. [x] Colour picker over the computed palette, with the measured contrast shown when a
    user overrides it (0005 P3–P4).
-3. [ ] Project picker on the entry form, grouped by client, with the uncategorised option
+3. [x] Project picker on the entry form, grouped by client, with the uncategorised option
    labelled rather than shown as "Unknown" (0005 U1, N2).
-4. [ ] Inline tag creation in the entry form, reusing an existing tag on a
+4. [x] Inline tag creation in the entry form, reusing an existing tag on a
    case-insensitive match (0005 T1–T2).
-5. [ ] Tag management with merge (0005 T4).
-6. [ ] Delete confirmations showing the affected entry count and billable hours, with a
+5. [x] Tag management with merge (0005 T4).
+6. [x] Delete confirmations showing the affected entry count and billable hours, with a
    stronger second confirmation when billable entries are involved (0005 X1–X3).
-7. [ ] "Show archived" control, so historical entries stay editable (0005 A2).
-8. [ ] Phase 4 gate: deleting a project leaves its entries intact and unprojected with a
+7. [x] "Show archived" control, so historical entries stay editable (0005 A2).
+8. [x] Phase 4 gate: deleting a project leaves its entries intact and unprojected with a
    count shown; archiving preserves historical entries and their colours.
+
+Gated by 631 unit tests across 37 files and 44 browser checks, all passing.
 
 ## Phase 5 onwards
 
@@ -82,7 +88,22 @@ Per `0014-development-plan.md`. Not started.
    `npm run check:silent` after touching anything in `domain/`, `storage/` or `sync/`.
 2. [ ] `npm run test:e2e` is **not** part of `npm run verify`. It needs a built site and a
    browser, so it has to be run deliberately. Playwright's browsers need installing once
-   with `npx playwright install chromium`.
+   with `npx playwright install chromium`. It builds first, so a compile error fails it —
+   but nothing else in the loop builds, so **run it after `npm run verify`, not instead**.
+3. [ ] **The app default currency is device-local.** It lives in IndexedDB `meta`, and `meta`
+   is excluded from both sync and backup, so a second device does not inherit it and a
+   restore does not bring it back. Deliberate for now: it is a display preference, not
+   data. If it ever becomes something a user would be upset to lose, it has to move into
+   the snapshot like everything else.
+4. [ ] **The taxonomy undo window closes when you leave the settings view.** The receipt is
+   component state, so navigating away discards it and the deletion stands. The entry undo
+   bar in `App.tsx` survives navigation because it lives at the app level; moving the
+   taxonomy one up would need the receipt held outside `TaxonomySettings`.
+5. [ ] Two layout bugs of the same shape are worth remembering because neither is visible
+   to jsdom: the rate and colour feedback lines used to appear on blur, which moved the
+   button under the pointer mid-click, so **clicking Save straight after typing a rate did
+   nothing**. Both lines now hold their height permanently. Any new field that swaps its
+   own height on focus loss will reintroduce it.
 
 # External review
 
