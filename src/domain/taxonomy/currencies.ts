@@ -177,7 +177,7 @@ export function majorStringToMinor(value: string, code: string): number | null {
   if (cleaned === '' || cleaned === '-' || cleaned === '+') return null
 
   const negative = cleaned.startsWith('-')
-  let digitsOnly = cleaned.replace(/^\+/, '').replace(/-/g, '')
+  const digitsOnly = cleaned.replace(/^\+/, '').replace(/-/g, '')
 
   const lastDot = digitsOnly.lastIndexOf('.')
   const lastComma = digitsOnly.lastIndexOf(',')
