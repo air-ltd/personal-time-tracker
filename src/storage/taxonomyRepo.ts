@@ -36,7 +36,21 @@ function requireName(kind: NameKind, name: string): string {
 async function assertNameFree(
   kind: NameKind,
   name: string,
-  options: { ignoreArchived: boolean; exceptId?: string },
+  options: {
+    ignoreArchived: boolean
+    exceptId?: string | undefined
+    /**
+     * Restricts the comparison to one client's projects.
+     *
+     * Project names are unique *within a client*, not across all projects (0005 P2,
+     * revised). Two clients both having a project called "General" is the normal case,
+     * not a collision — and it is what makes a per-client timer list read the way it
+     * does, with the same project name under each client.
+     *
+     * Ignored for clients and tags, which have no client to be scoped to.
+     */
+    clientId?: string | null | undefined
+  },
 ): Promise<void> {
   /*
    * Branching per kind rather than indexing a union of tables: a tag has no `archived`
@@ -61,6 +75,13 @@ async function assertNameFree(
             .map((row) => ({ id: row.id, name: row.name, archived: row.archived }))
         : (await db().projects.toArray())
             .filter((row) => row.deletedAt === null)
+            // Scoped to the client being written to, so a sibling client's project of the
+            // same name is not a conflict. `undefined` means "no scope given", which keeps
+            // the historical global behaviour available rather than silently changing
+            // every caller's meaning.
+            .filter(
+              (row) => options.clientId === undefined || row.clientId === options.clientId,
+            )
             .map((row) => ({ id: row.id, name: row.name, archived: row.archived }))
   const conflict = findNameConflict(kind, name, existing, {
     ignoreArchived: options.ignoreArchived,
@@ -119,7 +140,11 @@ export async function updateProject(
   }
   const name = patch.name === undefined ? current.name : requireName('project', patch.name)
   if (patch.name !== undefined) {
-    await assertNameFree('project', name, { ignoreArchived: true, exceptId: id })
+    await assertNameFree('project', name, {
+      ignoreArchived: true,
+      exceptId: id,
+      clientId: patch.clientId ?? current.clientId,
+    })
   }
   const updated: Project = {
     ...current,
@@ -201,7 +226,13 @@ export interface CreateProjectInput {
 
 export async function createProject(input: CreateProjectInput): Promise<Project> {
   const name = requireName('project', input.name)
-  await assertNameFree('project', name, { ignoreArchived: true })
+  // `?? null` rather than passing `input.clientId` through: an absent client is its own
+  // scope, not an absent scope. Leaving it undefined would fall back to comparing against
+  // every project in the database, which is the global rule this replaced.
+  await assertNameFree('project', name, {
+    ignoreArchived: true,
+    clientId: input.clientId ?? null,
+  })
 
   const project: Project = {
     id: newId(),
@@ -262,6 +293,70 @@ export interface CreateTagInput {
  * recording, so `Research` and `research` must converge on one tag rather than silently
  * creating a near-duplicate the user then has to merge.
  */
+/**
+ * The name given to the project created alongside every client (item 12 of
+ * `SPECS/todo.md`).
+ *
+ * A client with no project cannot be recorded against, and item 12 asks that starting a
+ * timer for a client records against *its* project — so the project has to exist without
+ * anyone having to go and make one.
+ *
+ * The same name under every client, because project names are unique within a client
+ * rather than across all projects (0005 P2, revised). That is what lets each client's
+ * project list read the same way, and what makes a per-client timer list legible.
+ */
+export const DEFAULT_PROJECT_NAME = 'General'
+
+/**
+ * Create a client together with its default project.
+ *
+ * One transaction, because a client whose project failed to be created is a client the
+ * timer cannot record against, and the user would find that out at the moment they
+ * pressed Start rather than when they created the client.
+ */
+export async function createClientWithDefaultProject(
+  input: CreateClientInput,
+): Promise<{ client: Client; defaultProject: Project }> {
+  // Every taxonomy store is declared, not just the two being written. `createClient` and
+  // `createProject` each check name uniqueness and read the colours already in use, and a
+  // Dexie transaction fails outright if it touches a store it did not declare — which
+  // surfaces as "an object store did not exist" rather than anything mentioning the
+  // transaction.
+  return db().transaction(
+    'rw',
+    db().clients,
+    db().projects,
+    db().tags,
+    db().entries,
+    async () => {
+      const client = await createClient(input)
+      const defaultProject = await createProject({
+        name: DEFAULT_PROJECT_NAME,
+        clientId: client.id,
+        now: input.now,
+      })
+      return { client, defaultProject }
+    },
+  )
+}
+
+/**
+ * The project a client's timer records against, or null when it has none.
+ *
+ * The client's *oldest* project rather than one flagged as the default. A flag would be
+ * the more explicit design and would need a schema migration, which is a large and
+ * irreversible step to buy a distinction nothing yet needs: the project created with the
+ * client is always the oldest, and if the user deletes it the next one is what they most
+ * likely mean. Archived projects are skipped, because recording against something the
+ * user has retired is not what "default" implies.
+ */
+export async function defaultProjectForClient(clientId: string): Promise<Project | null> {
+  const owned = (await listProjects({ clientId, includeArchived: false }))
+    .filter((project) => project.clientId === clientId)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  return owned[0] ?? null
+}
+
 export async function createOrFindTag(
   input: CreateTagInput,
 ): Promise<{ tag: Tag; created: boolean }> {
@@ -285,11 +380,12 @@ export async function createOrFindTag(
 }
 
 export async function listProjects(
-  options: { includeArchived?: boolean } = {},
+  options: { includeArchived?: boolean; clientId?: string } = {},
 ): Promise<Project[]> {
   const rows = await db().projects.toArray()
   return rows
     .filter((row) => row.deletedAt === null)
+    .filter((row) => options.clientId === undefined || row.clientId === options.clientId)
     .filter((row) => options.includeArchived === true || !row.archived)
     .sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -447,7 +543,13 @@ export async function undoDeleteProject(
       const live = await db().projects.get(project.id)
       if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
 
-      const conflict = await nameConflictExcluding('project', project.name, project.id, true)
+      const conflict = await nameConflictExcluding(
+        'project',
+        project.name,
+        project.id,
+        true,
+        project.clientId,
+      )
       if (conflict) {
         return {
           ok: false,
@@ -486,9 +588,10 @@ async function nameConflictExcluding(
   name: string,
   exceptId: string,
   ignoreArchived: boolean,
+  clientId?: string | null,
 ): Promise<boolean> {
   try {
-    await assertNameFree(kind, name, { ignoreArchived, exceptId })
+    await assertNameFree(kind, name, { ignoreArchived, exceptId, clientId })
     return false
   } catch {
     return true

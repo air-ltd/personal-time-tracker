@@ -153,6 +153,65 @@ describe('creating', () => {
     await expect(createProject({ name: 'acme', now: T0 })).rejects.toThrow(/already exists/)
   })
 
+  describe('names are unique within a client (0005 P2, revised)', () => {
+    it('lets two clients each have a project called General', async () => {
+      // The rule used to be global, which meant every client could not have the same
+      // obvious project name and a per-client project list could not read consistently.
+      const acme = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+      const other = await createClient({ name: 'Other Ltd', currency: 'GBP', now: T0 })
+
+      const first = await createProject({ name: 'General', clientId: acme.id, now: T0 })
+      const second = await createProject({ name: 'General', clientId: other.id, now: T0 })
+
+      expect(first.name).toBe('General')
+      expect(second.name).toBe('General')
+    })
+
+    it('still rejects a duplicate within one client, whatever the case', async () => {
+      const acme = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+      await createProject({ name: 'General', clientId: acme.id, now: T0 })
+
+      await expect(
+        createProject({ name: 'general', clientId: acme.id, now: T0 }),
+      ).rejects.toThrow(/already exists/)
+    })
+
+    it('treats client-less projects as one scope of their own', async () => {
+      // Two internal projects cannot share a name either: they appear together in the same
+      // uncategorised group, so the collision would be visible there too.
+      await createProject({ name: 'Internal', now: T0 })
+      await expect(createProject({ name: 'internal', now: T0 })).rejects.toThrow(
+        /already exists/,
+      )
+    })
+
+    it('does not let a client-less project collide with a client’s', async () => {
+      const acme = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+      await createProject({ name: 'General', clientId: acme.id, now: T0 })
+
+      // Different scopes, so this is allowed — and 0005 N2 keeps them distinguishable by
+      // the group heading rather than by the name.
+      const internal = await createProject({ name: 'General', now: T0 })
+      expect(internal.clientId).toBeNull()
+    })
+
+    it('rejects a rename that would collide inside the same client', async () => {
+      const acme = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+      const other = await createClient({ name: 'Other Ltd', currency: 'GBP', now: T0 })
+      await createProject({ name: 'Website', clientId: acme.id, now: T0 })
+      const spare = await createProject({ name: 'Spare', clientId: acme.id, now: T0 })
+
+      await expect(updateProject(spare.id, { name: 'website' }, T0)).rejects.toThrow(
+        /already exists/,
+      )
+
+      // But moving it to a client with no such project is fine.
+      await expect(
+        updateProject(spare.id, { name: 'Website', clientId: other.id }, T0),
+      ).resolves.toMatchObject({ name: 'Website', clientId: other.id })
+    })
+  })
+
   it('rejects a blank name', async () => {
     await expect(createProject({ name: '   ', now: T0 })).rejects.toThrow(/needs a name/)
   })

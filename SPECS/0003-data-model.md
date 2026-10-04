@@ -32,7 +32,7 @@
 | Field | Type | Rules |
 | --- | --- | --- |
 | `id` | UUID | PK |
-| `name` | string | Required, trimmed, 1–80 chars, unique among non-archived |
+| `name` | string | Required, trimmed, 1–80 chars, unique among the non-archived projects of the same `clientId` (0005 P2). `clientId: null` is one scope. |
 | `clientId` | UUID \| null | FK → Client. `null` means non-client work. |
 | `colour` | string | Hex `#rrggbb`, lowercase. |
 | `defaultRateMinor` | integer \| null | Hourly rate in minor units. `null` = not billable by default. |
