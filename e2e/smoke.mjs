@@ -157,6 +157,39 @@ async function main() {
     )
 
     // 4. The timer survives a reload — 0004 T5, which requires real IndexedDB.
+    // Wait for the write itself, not for the radio: the control updates from local state
+    // immediately, so reloading on that would race the IndexedDB write and test nothing.
+    // Read straight out of the database rather than sleeping for a guessed interval.
+    await page.waitForFunction(
+      () =>
+        new Promise((resolve) => {
+          const request = indexedDB.open('personal-time-tracker')
+          request.onsuccess = () => {
+            const db = request.result
+            if (!db.objectStoreNames.contains('meta')) {
+              db.close()
+              resolve(false)
+              return
+            }
+            const get = db
+              .transaction('meta', 'readonly')
+              .objectStore('meta')
+              .get('entry-period')
+            get.onsuccess = () => {
+              db.close()
+              resolve(get.result?.value === 'day')
+            }
+            get.onerror = () => {
+              db.close()
+              resolve(false)
+            }
+          }
+          request.onerror = () => resolve(false)
+        }),
+      undefined,
+      { timeout: 5000 },
+    )
+
     await page.reload({ waitUntil: 'networkidle' })
     await page.getByRole('button', { name: 'Stop' }).waitFor()
     const elapsedAfter = await page.getByTestId('timer-elapsed').innerText()
@@ -218,6 +251,39 @@ async function main() {
     check('undo restores the entry', (await page.getByTestId('empty-state').count()) === 0)
 
     // 8. Persistence across a full reload, which is the data-loss case.
+    // Wait for the write itself, not for the radio: the control updates from local state
+    // immediately, so reloading on that would race the IndexedDB write and test nothing.
+    // Read straight out of the database rather than sleeping for a guessed interval.
+    await page.waitForFunction(
+      () =>
+        new Promise((resolve) => {
+          const request = indexedDB.open('personal-time-tracker')
+          request.onsuccess = () => {
+            const db = request.result
+            if (!db.objectStoreNames.contains('meta')) {
+              db.close()
+              resolve(false)
+              return
+            }
+            const get = db
+              .transaction('meta', 'readonly')
+              .objectStore('meta')
+              .get('entry-period')
+            get.onsuccess = () => {
+              db.close()
+              resolve(get.result?.value === 'day')
+            }
+            get.onerror = () => {
+              db.close()
+              resolve(false)
+            }
+          }
+          request.onerror = () => resolve(false)
+        }),
+      undefined,
+      { timeout: 5000 },
+    )
+
     await page.reload({ waitUntil: 'networkidle' })
     await page.getByTestId('empty-state').waitFor({ state: 'detached', timeout: 5000 })
     check('entry persists across reload', (await page.getByTestId('empty-state').count()) === 0)
@@ -231,6 +297,39 @@ async function main() {
       'theme applies immediately',
       (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
     )
+    // Wait for the write itself, not for the radio: the control updates from local state
+    // immediately, so reloading on that would race the IndexedDB write and test nothing.
+    // Read straight out of the database rather than sleeping for a guessed interval.
+    await page.waitForFunction(
+      () =>
+        new Promise((resolve) => {
+          const request = indexedDB.open('personal-time-tracker')
+          request.onsuccess = () => {
+            const db = request.result
+            if (!db.objectStoreNames.contains('meta')) {
+              db.close()
+              resolve(false)
+              return
+            }
+            const get = db
+              .transaction('meta', 'readonly')
+              .objectStore('meta')
+              .get('entry-period')
+            get.onsuccess = () => {
+              db.close()
+              resolve(get.result?.value === 'day')
+            }
+            get.onerror = () => {
+              db.close()
+              resolve(false)
+            }
+          }
+          request.onerror = () => resolve(false)
+        }),
+      undefined,
+      { timeout: 5000 },
+    )
+
     await page.reload({ waitUntil: 'networkidle' })
     check(
       'theme persists across reload with no flash',
@@ -268,13 +367,32 @@ async function main() {
     )
     await page.getByTestId('header-menu-toggle').click()
     await page.getByTestId('header-menu-settings').waitFor()
+    // Item 26/29: three named buttons, stacked, and no prose. The heading moved to the
+    // settings page, where there is room to explain what a backup is.
     check(
-      'the menu holds settings and backup',
-      (await page.getByRole('heading', { name: /^Backup/ }).count()) === 1,
+      'the menu holds three named buttons and no prose',
+      (await page.locator('.header-menu-panel .header-menu-item').count()) === 3 &&
+        (await page.getByRole('heading', { name: /^Backup/ }).count()) === 0,
+    )
+    check(
+      'the menu buttons are stacked vertically',
+      await page.evaluate(() => {
+        const items = [...document.querySelectorAll('.header-menu-panel .header-menu-item')]
+        if (items.length !== 3) return false
+        const tops = items.map((item) => item.getBoundingClientRect().top)
+        return tops[0] < tops[1] && tops[1] < tops[2]
+      }),
+    )
+    check(
+      'each menu button has its word beside the icon',
+      (await page.getByTestId('header-menu-download').innerText()).trim() === 'download' &&
+        (await page.getByTestId('header-menu-restore').innerText()).trim() === 'import',
     )
 
     const download = page.waitForEvent('download', { timeout: 10_000 })
-    await page.getByRole('button', { name: 'Download backup' }).click()
+    // Scoped to the menu, and matched on its one-word label (item 29): the settings panel
+    // carries the long "Download backup", so an unscoped name matches two controls.
+    await page.getByTestId('header-menu-download').click()
     let backupName = ''
     try {
       backupName = (await download).suggestedFilename()
@@ -303,14 +421,14 @@ async function main() {
     await page.getByRole('heading', { name: 'Settings' }).waitFor()
 
     // P1: a project is two interactions from anywhere.
-    await page.getByRole('button', { name: 'Add client' }).click()
+    await page.getByTestId('new-client').click()
     await page.getByLabel('Client name').fill('Acme Ltd')
     await page.getByLabel('Billing currency').selectOption({ label: 'GBP — British Pound' })
     // Opening the form turns the reveal button into "Cancel", so there is one "Add client".
     await page.getByRole('button', { name: 'Add client', exact: true }).click()
     await page.getByText('Acme Ltd').first().waitFor()
 
-    await page.getByRole('button', { name: 'Add project' }).click()
+    await page.getByTestId('new-project').click()
     await page.getByLabel('Project name').fill('Website')
     await page.getByLabel('Client', { exact: true }).selectOption({ label: 'Acme Ltd' })
     // Typed and clicked without an intervening blur. Regression guard for a layout bug:
@@ -459,7 +577,7 @@ async function main() {
     // is currently deleted. Keeping this flow independent of the undo round trip means a
     // change to one cannot silently stop exercising the other.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    await page.getByRole('button', { name: 'Add project' }).click()
+    await page.getByTestId('new-project').click()
     await page.getByLabel('Project name').fill('Admin')
     await page.getByRole('button', { name: 'Add project', exact: true }).click()
     await page.locator('.taxonomy-row', { hasText: 'Admin' }).first().waitFor()
@@ -516,7 +634,7 @@ async function main() {
     // and no assertion about position survives outside a real browser.
     // A second client, so the "only one timer at a time" rule has something to apply to.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    await page.getByRole('button', { name: 'Add client' }).click()
+    await page.getByTestId('new-client').click()
     await page.getByLabel('Client name').fill('Other Ltd')
     await page.getByRole('button', { name: 'Add client', exact: true }).click()
     await page.getByText('Other Ltd').first().waitFor()
@@ -559,9 +677,13 @@ async function main() {
     )
 
     // Item 21: the running timer filters the entries, and says so.
+    await page.getByTestId('entries-filter-note').waitFor()
     check(
       'a running timer filters the entries to its client',
-      (await page.getByTestId('client-filter-locked').count()) === 1,
+      (await page.getByTestId('entries-filter-note').count()) === 1 &&
+        (await page.getByTestId('entries-filter-note').innerText()).includes(
+          'timer is running',
+        ),
     )
 
     // Stop it again so the rest of the checks start from idle.
@@ -572,10 +694,21 @@ async function main() {
     await page.getByRole('heading', { name: 'Edit entry' }).waitFor()
 
     await page.goto(URL, { waitUntil: 'networkidle' })
-    await page.getByLabel('Client', { exact: true }).first().waitFor()
-    await page.getByTestId('client-filter').selectOption({ label: 'Acme Ltd' })
+    // Item 25: the client is chosen by pressing its line on the timer card, not from a
+    // dropdown here, so this is the whole of the interaction.
+    const acmeLine = page.locator('.timer-client-row', { hasText: 'Acme Ltd' })
+    await acmeLine.waitFor()
+    // `exact`, because Playwright's name matching is substring by default — and "Acme Ltd"
+    // is a substring of "Start a timer for Acme Ltd" and "Edit client Acme Ltd" too.
+    await acmeLine.getByRole('button', { name: 'Acme Ltd', exact: true }).click()
+    await page.getByTestId('entries-filter-note').waitFor()
     const acmeRows = await page.locator('.entry-row').count()
-    await page.getByTestId('client-filter').selectOption({ label: 'Other Ltd' })
+
+    await page
+      .locator('.timer-client-row', { hasText: 'Other Ltd' })
+      .getByRole('button', { name: 'Other Ltd', exact: true })
+      .click()
+    await page.getByTestId('entries-filter-note').waitFor()
     const otherRows = await page.locator('.entry-row').count()
     check(
       'selecting a client filters the entries',
@@ -583,17 +716,150 @@ async function main() {
       `acme=${acmeRows} other=${otherRows}`,
     )
 
-    await page.getByTestId('client-filter').selectOption('')
+    // Pressing the same client again returns to all of them. With no dropdown there is no
+    // other way back, so this has to work.
+    await page
+      .locator('.timer-client-row', { hasText: 'Other Ltd' })
+      .getByRole('button', { name: 'Other Ltd', exact: true })
+      .click()
+    await page.waitForFunction(
+      () => !document.querySelector('[data-testid="entries-filter-note"]'),
+    )
+    const allRows = await page.locator('.entry-row').count()
+    check(
+      'pressing the client again shows every client',
+      allRows > otherRows && allRows >= acmeRows,
+      `all=${allRows} acme=${acmeRows} other=${otherRows}`,
+    )
+
+    // Item 25: the period control sits in the entries header, not on a row of its own.
+    check(
+      'the period control is in the entries header',
+      (await page.locator('.entries-header .period-control').count()) === 1,
+    )
+
+    // Item 25: the entries card collapses.
+    await page.getByTestId('entries-collapse').click()
+    check(
+      'the entries card collapses',
+      (await page.locator('#entries-body').isHidden()) === true,
+    )
+    await page.getByTestId('entries-collapse').click()
+
+    // With the filter cleared, so the summary covers every client rather than one.
     await page.getByRole('radio', { name: 'Daily' }).click()
+    await page.getByTestId('entry-summary').waitFor()
     check(
       'the daily period summarises per client',
-      (await page.getByTestId('entry-summary').count()) === 1,
+      (await page.locator('.summary-row').count()) >= 1,
     )
+
+    // Item 28: the choice survives a reload, rather than resetting every time.
+    //
+    // Polled rather than read once: the period is written to IndexedDB and read back on
+    // mount, so immediately after a reload the control is briefly showing its default. A
+    // single read would be asserting that the read was synchronous, which it is not.
+    // Wait for the write itself, not for the radio: the control updates from local state
+    // immediately, so reloading on that would race the IndexedDB write and test nothing.
+    // Read straight out of the database rather than sleeping for a guessed interval.
+    await page.waitForFunction(
+      () =>
+        new Promise((resolve) => {
+          const request = indexedDB.open('personal-time-tracker')
+          request.onsuccess = () => {
+            const db = request.result
+            if (!db.objectStoreNames.contains('meta')) {
+              db.close()
+              resolve(false)
+              return
+            }
+            const get = db
+              .transaction('meta', 'readonly')
+              .objectStore('meta')
+              .get('entry-period')
+            get.onsuccess = () => {
+              db.close()
+              resolve(get.result?.value === 'day')
+            }
+            get.onerror = () => {
+              db.close()
+              resolve(false)
+            }
+          }
+          request.onerror = () => resolve(false)
+        }),
+      undefined,
+      { timeout: 5000 },
+    )
+
+    await page.reload({ waitUntil: 'networkidle' })
+    const remembered = await page
+      .getByRole('radio', { name: 'Daily' })
+      .waitFor({ state: 'attached' })
+      .then(async () => {
+        await page.waitForFunction(
+          () => document.querySelector('#period-day')?.checked === true,
+          undefined,
+          { timeout: 5000 },
+        )
+        return true
+      })
+      .catch(() => false)
+    check('the chosen period is remembered across a reload (item 28)', remembered)
+
     await page.getByRole('radio', { name: 'All' }).click()
     check('all-entries keeps the list', (await page.getByTestId('entry-summary').count()) === 0)
 
     // Item 20: the edit control is an icon with a name, not the word "Edit".
     const editLink = page.locator('.entry-edit').first()
+    /*
+     * Item 27, measured rather than asserted structurally: the pencil has to share a line
+     * with the entry's text. jsdom has no layout engine, so "is it on the same line" is not
+     * a question it can answer — and getting this wrong once already put the tags and the
+     * note in the wrong grid columns.
+     */
+    const inlineCheck = await page.evaluate(() => {
+      const row = document.querySelector('.entry-row')
+      if (!row) return { ok: false, reason: 'no rows' }
+      const pencil = row.querySelector('.entry-edit')
+      const note = row.querySelector('.entry-note')
+      const taxonomy = row.querySelector('.entry-taxonomy')
+      if (!pencil) return { ok: false, reason: 'no pencil' }
+      const p = pencil.getBoundingClientRect()
+      // Same line as the note when there is one, otherwise as the project line.
+      const partner = note ?? taxonomy
+      if (!partner) return { ok: false, reason: 'no text beside it' }
+      const t = partner.getBoundingClientRect()
+      const vertical = Math.abs(p.top + p.height / 2 - (t.top + t.height / 2))
+      // And it must lead that text, at the row's left-hand end (item 27).
+      const before = p.right <= t.left + 1
+      return {
+        ok: vertical < Math.max(p.height, t.height),
+        vertical: Math.round(vertical),
+        before,
+        pencilTop: Math.round(p.top),
+        textTop: Math.round(t.top),
+        rowHeight: Math.round(row.getBoundingClientRect().height),
+        // Nothing should overflow the row.
+        fits: row.scrollWidth <= row.clientWidth + 1,
+      }
+    })
+    check(
+      'the pencil shares a line with the entry text',
+      inlineCheck.ok === true,
+      JSON.stringify(inlineCheck),
+    )
+    check(
+      'the pencil leads that text, at the left-hand end (item 27)',
+      inlineCheck.before === true,
+      JSON.stringify(inlineCheck),
+    )
+    check(
+      'the compressed row still fits its width',
+      inlineCheck.fits === true,
+      JSON.stringify(inlineCheck),
+    )
+
     check(
       'the edit control is an icon with an accessible name',
       (await editLink.getAttribute('aria-label'))?.startsWith('Edit entry') === true,
@@ -652,6 +918,80 @@ async function main() {
       'the header mark is decorative, with the link named',
       mark !== null && mark.alt === '',
       JSON.stringify(mark),
+    )
+
+    /*
+     * Items 32, 33, 34 and the settings add buttons: things only a browser can answer.
+     * Focus and layout are not questions jsdom has an opinion about.
+     */
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    // The taxonomy is read asynchronously, so the sections are not in the DOM on arrival.
+    await page.locator('.taxonomy-section-heading').first().waitFor()
+    check(
+      'the add buttons sit on their section heading line (settings)',
+      await page.evaluate(() => {
+        const heads = [...document.querySelectorAll('.taxonomy-section-heading')]
+        if (heads.length < 2) return false
+        return heads.every((head) => {
+          const heading = head.querySelector('h3')
+          const add = head.querySelector('button')
+          if (!heading || !add) return false
+          // Same line: their vertical centres have to overlap.
+          const h = heading.getBoundingClientRect()
+          const a = add.getBoundingClientRect()
+          return (
+            Math.abs(h.top + h.height / 2 - (a.top + a.height / 2)) <
+            Math.max(h.height, a.height)
+          )
+        })
+      }),
+    )
+    check(
+      'the add buttons are the same + as the timer card’s',
+      (await page.locator('.taxonomy-section-heading button svg').count()) >= 2,
+    )
+
+    // Item 34: the period selector must not move because a client filter appeared.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.locator('.timer-client-row').first().waitFor()
+    const periodBefore = await page.getByRole('radio', { name: 'Daily' }).boundingBox()
+    await page.locator('.timer-client-row').first().locator('.timer-client-name').click()
+    await page.getByTestId('entries-filter-note').waitFor()
+    const periodAfter = await page.getByRole('radio', { name: 'Daily' }).boundingBox()
+    check(
+      'the period selector does not move when a client filter appears (item 34)',
+      Math.abs((periodBefore?.x ?? 0) - (periodAfter?.x ?? 0)) < 1 &&
+        Math.abs((periodBefore?.y ?? 0) - (periodAfter?.y ?? 0)) < 1,
+      `before=${JSON.stringify(periodBefore)} after=${JSON.stringify(periodAfter)}`,
+    )
+    check(
+      'the filter note is in the entries header, not on a line of its own',
+      (await page.locator('.entries-header [data-testid="entries-filter-note"]').count()) ===
+        1 &&
+        (await page
+          .locator('.entries-header > [data-testid="entries-filter-note"]')
+          .count()) === 1,
+    )
+
+    // Item 33: editing an entry focuses Save.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.getByRole('link', { name: /Edit/ }).first().click()
+    await page.getByRole('heading', { name: 'Edit entry' }).waitFor()
+    check(
+      'editing an entry focuses Save changes (item 33)',
+      await page
+        .getByTestId('entry-submit')
+        .evaluate((node) => node === document.activeElement),
+    )
+
+    // A *new* entry must not: its times are empty, so Save could not succeed.
+    await page.goto(`${URL}#/entries/new`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Add entry' }).waitFor()
+    check(
+      'a new entry does not focus Save, which could not yet succeed',
+      !(await page
+        .getByTestId('entry-submit')
+        .evaluate((node) => node === document.activeElement)),
     )
 
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))

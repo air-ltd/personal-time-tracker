@@ -102,9 +102,79 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     (0007 FB3) is not hidden behind a summary reading "nothing in this period".
 23. [x] a larger version of favicon should be to the left of the title "Time Tracker" -
     this icon should be link to the basic page. Done.
-24. [ ] timer card doesn't need the text clients, please remove and then compress a little further.
-25. [ ] selection of client for entry filter should be based on clicking on the client in the timer card. daily/weekly/all selection should be in the header row with entries. Entries card should be collapsable,
-26. [ ] hamburger menu needs tidy up - it doesn't need all the text, just the 3 buttons which should be arranged vertically.
+24. [x] timer card doesn't need the text clients, please remove and then compress a little
+    further. Done. The heading was the one line naming nothing the user did not already
+    know — the rows are buttons labelled with client names — and it cost a whole row of
+    height. Rows are tighter, and the add button is the only thing in the header.
+25. [x] selection of client for entry filter should be based on clicking on the client in the
+    timer card. daily/weekly/all selection should be in the header row with entries. Entries
+    card should be collapsable. Done, and the first clause removes a question the app was
+    asking twice: the user identifies a client by pressing its timer button, then had to say
+    the same name again in a dropdown. Pressing a client now toggles it — it is a toggle
+    rather than a radio so there is a way back to "all clients", which with no dropdown is
+    the only way back. The selection lives in `App`, because two cards act on it.
+26. [x] hamburger menu needs tidy up - it doesn't need all the text, just the 3 buttons which
+    should be arranged vertically. Done: three buttons, stacked, with the explanatory
+    paragraphs gone. They moved to the settings page, which has room for them — a menu has
+    nowhere to say that restoring merges rather than replaces, and that sentence is why the
+    buttons are safe to press. The two surfaces share one `useBackup`, so they cannot
+    disagree about what "restore" means.
+27. [x] pencil icon should be on same line as the rest of the text for the entry (left
+    hand end). Done, at the left-hand end of the row's first line. Getting there took three
+    attempts, all of which looked fine in the DOM and were wrong in a browser:
+
+    As a grid cell of its own it shared a column with nothing. As the last item of a flex
+    column it could only ever land on a row of its own — measured at 23px below the text it
+    was supposed to share a line with, and below the project name whenever an entry had no
+    note. Pinned to the *right* edge fixed the row but put it at the far end of the row
+    rather than beside the text, and it is on the left here because that is where it was
+    asked for.
+
+    Out of flow, so it cannot be pushed onto its own row, but still in the document, so it
+    keeps its place in the tab order. Moving it to the left also overflowed the row at 320px
+    for a while, which is the 0002 B7 constraint and is checked in a browser for that reason.
+
+28. [x] entry type (daily/weekly/all) should be remembered. Done. A control that resets on
+    every reload is one the user sets again every time. Stored in IndexedDB `meta`, since
+    0011 R5 allows only the theme key in `localStorage`; the control shows "all" for a frame
+    before the stored value lands, which is the same trade-off the currency preference made.
+29. [x] hamburger menu should still have words beside each icon. Done, and the words are one
+    character case lower than the long forms: "download" and "import" beside the icons,
+    rather than "Download backup" and "Restore from file". The long forms stay on the
+    settings panel where there is room to finish the sentence; here they crowd three buttons
+    into a strip that is only ever three buttons wide. No `aria-label` is added on top —
+    a control whose visible text and accessible name differ is announced twice.
+30. [x] duration on entry edit page should include seconds. Done, and this fixed a data-loss
+    path rather than a cosmetic one. `toDurationInputValue` rounded to whole minutes, so a
+    25-second entry — which is what stopping a timer after a glance produces — came back as
+    `00:00` on the edit page, and saving that without noticing wrote an entry of no length
+    at all. The field now carries seconds when there are any, and the parser accepts
+    `HH:mm:ss`, because an entry edited and saved without a change must keep its length.
+    Whole-minute entries keep the shorter `HH:mm` form.
+31. [x] default currency setting should be honoured when creating a new client. Done, and it
+    had been hardcoded to GBP. Setting the default currency and then adding a client that
+    ignores it is worse than having no default at all — the user has told the app what they
+    bill in, and every subsequent client has to be corrected by hand. `null` stays distinct
+    from the fallback, so the last link in the chain applies until they say otherwise, and
+    an existing client's currency is never overwritten: doing that would silently restate
+    what they already charge.
+32. [x] new client icon should be on same line as "TIMER" (in timer card) this will make the
+    card shorter. Done. It sat alone in a row of its own above the list, costing a row of
+    height on the card the user looks at most often, for a button that is about the list
+    below it. The editing state moved up to `TimerPanel` with it, so the button can live in
+    the panel header.
+33. [x] edit entry sheet - default focus should be on "save changes". Done, and only when
+    editing. A *new* entry deliberately does not focus Save: its times are empty, so focusing
+    a control that cannot yet succeed either fails validation the moment the sheet opens or
+    saves an entry with nothing in it. Focusing nothing is the better of those.
+34. [x] daily/weekly/all selector should not move based on filter for client (entries card).
+    Done. With the heading, the filter note and the controls sharing one flex row, showing
+    the note pushed the period selector sideways — so the control the user was about to press
+    moved because of something they did to a *different* control on a different card. The
+    header is now three grid columns with each child pinned, and the note is clipped rather
+    than wrapped, so a long client name cannot move it either. Measured in a browser, because
+    auto-placement has a subtlety that looks correct in review: with only two children the
+    controls landed in column 2 and jumped to column 3 the moment the note appeared.
 
 # Where the branches are
 
@@ -181,7 +251,18 @@ Per `0014-development-plan.md`. Not started.
    gets a default project" had forced — every client now has a project called `General`.
 7. [ ] **Weeks start on Monday, and Sunday is the trap.** Mapping Sunday to 0 rather than 7
    makes every Sunday land eight days early and every week one day too long.
-8. [ ] **A Dexie transaction fails if it touches a store it did not declare**, and says
+8. [ ] **State seeded in `useState` from something that arrives later stays stale.** A new
+   client's currency was seeded once from the app default, which had not been read yet, so
+   it kept the fallback and item 31 did nothing. It is now derived —
+   `picked ?? appDefault ?? FALLBACK` — so a late read has something to update. Worth
+   remembering whenever an initial value comes from storage.
+9. [ ] **A clickable control that depends on an async read must not be clickable yet.**
+   Start was live while the client's default project was still being read, so a quick click
+   started a timer with no project and the time was recorded *uncategorised* for a client
+   that had one — silently, and with no way to tell afterwards. Found by a test that failed
+   once in six runs, which is worth remembering: a rare failure is usually a real ordering
+   bug rather than a flaky test, and re-running until it passes hides it.
+10. [ ] **A Dexie transaction fails if it touches a store it did not declare**, and says
    `NotFoundError: ... an object store did not exist` rather than mentioning the
    transaction. `createClientWithDefaultProject` hit this by wrapping two helpers that each
    read more than the two stores being written. Declare every store the body can reach.
