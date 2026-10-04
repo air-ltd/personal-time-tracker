@@ -42,6 +42,8 @@ export function App() {
   const [theme, setTheme] = useState<ThemePreference>(readStoredPreference)
   const [now, setNow] = useState(() => new Date())
   const [pending, setPending] = useState<PendingDelete | null>(null)
+  // Item 25: which client's entries are shown. Set from the timer card.
+  const [clientFilter, setClientFilter] = useState<string | null>(null)
   const [loadedEdit, setLoadedEdit] = useState<{
     id: string
     entry: TimeEntry | null
@@ -154,8 +156,17 @@ export function App() {
         <main className="app-main">
           {match?.route.path === '/' && (
             <>
-              <TimerPanel timer={timer} onStopped={onStopped} now={now} />
-              <EntriesView now={now} />
+              {/* Item 25: the client is chosen by pressing its line on the timer card, and
+                  that choice filters the entries below. Held here because two cards act on
+                  it. */}
+              <TimerPanel
+                timer={timer}
+                onStopped={onStopped}
+                now={now}
+                selectedClientId={clientFilter}
+                onSelectClient={setClientFilter}
+              />
+              <EntriesView now={now} selectedClientId={clientFilter} />
             </>
           )}
 

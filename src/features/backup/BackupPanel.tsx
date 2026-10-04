@@ -1,95 +1,25 @@
-import { useCallback, useRef, useState } from 'react'
-import { createBackup, restoreBackup, type BackupDeps } from '../../export/backup'
-import { readSnapshot, writeSnapshot } from '../../storage/snapshotRepo'
-import { SCHEMA_VERSION } from '../../storage/db'
+import { useRef } from 'react'
 import { DownloadIcon, RestoreIcon } from '../../app/Icons'
+import { BackupFileInput, BackupStatus } from '../backup/BackupParts'
+import { useBackup } from './useBackup'
+import type { BackupDeps } from '../../export/backup'
 
 /**
- * Backup controls (0008 J1–J12).
+ * Backup controls, with room to explain them (0008 J1–J12).
  *
- * Deliberately present whether or not Dropbox is connected. A backup is the way out
- * when sync is unavailable — no account, a rejected token, an offline device — and it
- * is the only copy of the data that does not depend on a third party.
+ * The panel form lives on the settings page. The header menu reduced to three buttons in
+ * item 26, which is the right shape for a menu — but a menu has nowhere to say what a
+ * backup is or that restoring merges rather than replaces, and those sentences are the
+ * reason the buttons are safe to press. The logic is shared with the menu via `useBackup`,
+ * so there is one definition of what "restore" does.
  */
 
-type State =
-  | { kind: 'idle' }
-  | { kind: 'working' }
-  | { kind: 'done'; message: string }
-  | { kind: 'error'; message: string; issues: string[] }
-
-export interface BackupPanelProps {
-  deps?: BackupDeps
-  /**
-   * Called after a restore, so a caller that mounted this inside a menu can close it.
-   *
-   * Restoring replaces everything in the browser, so any panel showing data read before
-   * the restore is now showing the wrong data.
-   */
-  onNavigate?: (() => void) | undefined
-}
-
-export function BackupPanel({ deps = defaultDeps, onNavigate }: BackupPanelProps) {
-  const [state, setState] = useState<State>({ kind: 'idle' })
-  const fileInput = useRef<HTMLInputElement>(null)
-
-  const onExport = useCallback(() => {
-    setState({ kind: 'working' })
-    void createBackup(deps)
-      .then((backup) => {
-        downloadBackup(backup.filename, backup.body)
-        const count = backup.counts['entries'] ?? 0
-        setState({
-          kind: 'done',
-          message: `Saved ${count} ${count === 1 ? 'entry' : 'entries'} to ${backup.filename}.`,
-        })
-      })
-      .catch((error: unknown) => {
-        setState({
-          kind: 'error',
-          message: error instanceof Error ? error.message : 'Could not create a backup.',
-          issues: [],
-        })
-      })
-  }, [deps])
-
-  const onImport = useCallback(
-    (file: File) => {
-      setState({ kind: 'working' })
-      void file
-        .text()
-        .then((text) => restoreBackup(deps, text))
-        .then((result) => {
-          if (result.status === 'rejected') {
-            setState({
-              kind: 'error',
-              message: `Nothing was imported. ${result.message}`,
-              issues: result.issues,
-            })
-            return
-          }
-          const count = result.counts['entries'] ?? 0
-          const when = result.exportedAt
-            ? ` It was taken ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(result.exportedAt))}.`
-            : ''
-          setState({
-            kind: 'done',
-            message: `Restored. This device now holds ${count} ${count === 1 ? 'entry' : 'entries'}.${when}`,
-          })
-          // Notified after the state is set, so the caller sees the result and can close
-          // around it. A restore replaces everything in the browser.
-          onNavigate?.()
-        })
-        .catch((error: unknown) => {
-          setState({
-            kind: 'error',
-            message: error instanceof Error ? error.message : 'Could not read that file.',
-            issues: [],
-          })
-        })
-    },
-    [deps, onNavigate],
-  )
+export function BackupPanel({ deps }: { deps?: BackupDeps | undefined } = {}) {
+  // `deps` is a seam for tests: the storage wiring is injected rather than reached for, so
+  // the panel can be exercised without IndexedDB.
+  const backup = useBackup({ deps })
+  const input = useRef<HTMLInputElement>(null)
+  const working = backup.state.kind === 'working'
 
   return (
     <section className="panel backup-panel">
@@ -107,66 +37,24 @@ export function BackupPanel({ deps = defaultDeps, onNavigate }: BackupPanelProps
         <button
           type="button"
           className="button button-primary"
-          onClick={onExport}
-          disabled={state.kind === 'working'}
+          onClick={backup.export}
+          disabled={working}
         >
-          {/* Icons beside the words rather than instead of them: these are two of the
-              least reversible actions in the app, so they should not have to be inferred
-              from a glyph. */}
+          {/* Icons beside the words rather than instead of them: these are two of the least
+              reversible actions in the app, so they should not be inferred from a glyph. */}
           <DownloadIcon />
-          {state.kind === 'working' ? 'Working…' : 'Download backup'}
+          {working ? 'Working…' : 'Download backup'}
         </button>
 
-        <button
-          type="button"
-          className="button"
-          onClick={() => fileInput.current?.click()}
-          disabled={state.kind === 'working'}
-        >
+        <button type="button" className="button" onClick={backup.chooseFile} disabled={working}>
           <RestoreIcon />
           Restore from file
         </button>
 
-        {/*
-          Kept out of the tab order and hidden: a visible file input invites choosing a
-          file with no idea what will happen to the data, whereas the button above can
-          explain first.
-        */}
-        <input
-          ref={fileInput}
-          type="file"
-          accept="application/json,.json"
-          className="visually-hidden"
-          data-testid="backup-file"
-          aria-hidden="true"
-          tabIndex={-1}
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            // Reset immediately so choosing the same file twice fires again.
-            event.target.value = ''
-            if (file) onImport(file)
-          }}
-        />
+        <BackupFileInput input={input} onChange={backup.onFileChange} />
       </div>
 
-      {state.kind === 'done' && (
-        <p className="alert alert-success" role="status" data-testid="backup-status">
-          {state.message}
-        </p>
-      )}
-
-      {state.kind === 'error' && (
-        <div className="alert alert-error" role="alert" data-testid="backup-status">
-          <p>{state.message}</p>
-          {state.issues.length > 0 && (
-            <ul className="backup-issues">
-              {state.issues.map((issue) => (
-                <li key={issue}>{issue}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      <BackupStatus state={backup.state} />
 
       <p className="hint">
         Restoring adds a backup's entries to this device. Anything already here that the backup
@@ -174,37 +62,4 @@ export function BackupPanel({ deps = defaultDeps, onNavigate }: BackupPanelProps
       </p>
     </section>
   )
-}
-
-/**
- * Hand the file to the browser.
- *
- * An object URL rather than a data URL: a backup can grow, and a data URL has to be
- * held in memory twice. Revoked afterwards, since a leaked URL pins the blob for the
- * life of the document.
- */
-function downloadBackup(filename: string, body: string): void {
-  const url = URL.createObjectURL(new Blob([body], { type: 'application/json' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.append(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-/**
- * Wired to the live database. Overridable so the panel can be tested without
- * IndexedDB, and so the storage seam lives in one place rather than in the component.
- *
- * `SCHEMA_VERSION` is imported rather than written as a literal: a backup is only
- * restorable by a build that understands its schema, and a literal here would drift
- * from the database the moment the schema moved.
- */
-const defaultDeps: BackupDeps = {
-  readLocal: readSnapshot,
-  writeLocal: writeSnapshot,
-  supportedSchemaVersion: SCHEMA_VERSION,
-  now: () => new Date(),
 }

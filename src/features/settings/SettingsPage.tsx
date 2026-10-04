@@ -1,6 +1,7 @@
 import { ThemeToggle } from '../../app/ThemeToggle'
 import type { ThemePreference } from '../../app/theme'
 import { SyncPanel } from '../sync/SyncPanel'
+import { BackupPanel } from '../backup/BackupPanel'
 import { TaxonomySettings } from '../taxonomy/TaxonomySettings'
 import { CurrencyPreferences } from '../taxonomy/CurrencyPreferences'
 
@@ -47,6 +48,11 @@ export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
       </section>
 
       <SyncPanel />
+
+      {/* Item 26 reduced the header menu to three buttons, which left nowhere to say what a
+          backup is or that restoring merges rather than replaces. The explanation lives
+          here; the actions are in both places, sharing one `useBackup`. */}
+      <BackupPanel />
     </>
   )
 }

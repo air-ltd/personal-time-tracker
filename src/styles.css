@@ -284,13 +284,28 @@ code {
   padding: 0;
 }
 
+/* Item 24/27: three columns. The body flows, and the pencil sits inside it on the text's
+   own line rather than in a fourth column of its own. */
 .entry-row {
   display: grid;
-  grid-template-columns: 9rem 5rem 1fr auto;
-  gap: 0.75rem;
+  grid-template-columns: 7.5rem 4.5rem 1fr;
+  gap: 0.6rem;
   align-items: baseline;
-  padding: 0.4rem 0;
+  /*
+   * Room for the pencil, which is taken out of flow below and sits at the left-hand end
+   * of the row (item 27).
+   */
+  padding: 0.25rem 0 0.25rem 1.9rem;
   border-top: 1px dotted var(--border);
+  position: relative;
+}
+
+/* Times, duration, then one column holding everything textual. */
+.entry-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
 }
 
 .entry-times {
@@ -305,7 +320,6 @@ code {
 
 .entry-note {
   margin: 0;
-  grid-column: 3 / 5;
   color: var(--fg);
   overflow-wrap: anywhere;
 }
@@ -316,7 +330,6 @@ code {
  * looking for, and the free-text note is the fallback.
  */
 .entry-taxonomy {
-  grid-column: 3 / 5;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -351,7 +364,8 @@ code {
 }
 
 .entry-tags {
-  grid-column: 3 / 5;
+  /* Inside the content column now, so it needs no width of its own. */
+  flex-wrap: wrap;
 }
 
 /*
@@ -366,16 +380,58 @@ code {
 }
 
 /* Entries controls: the client filter and the period (items 21, 22). */
-.entries-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+/* Item 25: the period control moved into the entries header, next to what it changes. */
+/* Three columns, so the controls cannot be pushed sideways by the note (item 34). */
+.entries-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
 }
 
-.entries-filter {
-  min-width: 12rem;
+.entries-header h2 {
+  margin-right: 0;
+  /* Explicit, not auto-placed: with only two children the controls landed in column 2 and
+     jumped to column 3 the moment the note appeared, which moved the period selector by
+     about 10px. Naming each column makes its position depend only on the window. */
+  grid-column: 1;
+}
+
+/*
+ * The filter note sits between the heading and the controls, so "Showing Health NZ" reads
+ * as part of the card's header rather than as a stray note above the list. Baseline-aligned
+ * so it lines up with the heading and the period radios rather than floating between them.
+ */
+.entries-filter-note {
+  grid-column: 2;
+  margin: 0;
+  align-self: baseline;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  /* Clipped rather than wrapped, so a long client name cannot push the columns about. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.entries-header-controls {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-self: end;
+}
+
+.entries-collapse {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.35rem;
+}
+
+/* Rotated when collapsed, so the control looks the same and only its direction changes. */
+.entries-collapse[aria-expanded='false'] .icon {
+  transform: rotate(-90deg);
 }
 
 .period-control {
@@ -490,28 +546,59 @@ code {
   padding: 0.35rem 0.5rem;
 }
 
+/* Item 26: three buttons, stacked, no surrounding text. Narrow, because a menu holding
+   three icons does not need the width of a panel. */
 .header-menu-panel {
   position: absolute;
   right: 0;
   top: calc(100% + 0.4rem);
   z-index: 20;
-  width: min(22rem, calc(100vw - 2rem));
+  width: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.6rem;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.3rem;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
 }
 
-/* The panel supplies the chrome here, so the nested sections should not draw their own. */
-.header-menu-panel .panel {
-  border: 0;
-  padding: 0;
-  margin: 0;
+/* Item 29: the words came back beside the icons, so the buttons are a left-aligned label
+   row rather than a column of squares. */
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+  border-radius: 0.25rem;
+  color: var(--fg);
   background: none;
+  border: 0;
+  cursor: pointer;
+  /* Comfortably past the 24px minimum target, and square, so the three read as a column of
+     equal buttons rather than as a ragged list. */
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+}
+
+.header-menu-item:hover:not(:disabled) {
+  background: var(--surface-2, rgb(127 127 127 / 14%));
+}
+
+.header-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The result of a backup or restore, which is the one thing the menu still says. */
+.header-menu-panel .alert {
+  margin: 0.2rem 0.2rem 0.1rem;
+  font-size: 0.8rem;
+  max-width: 16rem;
 }
 
 /* An icon beside a label, sized to the text rather than to its own viewBox. */
@@ -525,21 +612,28 @@ code {
   margin-right: 0;
 }
 
-/* Timer: one line per client (item 16 of SPECS/todo.md). */
-.timer-clients-header {
+/* A settings section heading with its add button on the same line (items 32, 33). */
+.taxonomy-section-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.3rem;
 }
 
-.timer-clients-heading {
-  font-weight: 600;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--fg-muted);
+.taxonomy-section-heading h3 {
+  margin: 0;
+}
+
+/* Timer: one line per client (item 16 of SPECS/todo.md). */
+/* Item 32: the add button shares the "Timer" heading's line, right-aligned. The separate
+   header row it lived in is gone — it cost a whole row of height on the card the user
+   looks at most often. */
+.timer-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
 }
 
 /* A plus rather than a word: the rows beneath are all add-actions already. Sized for a
@@ -559,20 +653,44 @@ code {
   border-top: 1px dotted var(--border);
 }
 
+/* Item 24: tighter rows. */
 .timer-client-row {
   display: grid;
   /* name, total, actions, optional badge */
   grid-template-columns: 1fr auto auto auto;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
   border-bottom: 1px dotted var(--border);
 }
 
+/* Item 25: the name is the selection, so it is a button that looks like text until it is
+   hovered or pressed. */
 .timer-client-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0.1rem 0.2rem;
+  margin: -0.1rem -0.2rem;
+  border: 0;
+  border-radius: 0.2rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.timer-client-name:hover {
+  background: var(--surface-2, rgb(127 127 127 / 12%));
+}
+
+.timer-client-name[aria-pressed='true'] {
+  background: var(--surface-2, rgb(127 127 127 / 20%));
+  font-weight: 600;
 }
 
 /* The count-up while running, and the lifetime total while not (items 16, 19). */
@@ -722,13 +840,35 @@ code {
   padding: 0 0.25rem;
 }
 
-/* Item 20: an icon rather than the word, so the row needs no width for it. */
+/*
+ * Item 27: the pencil on the same line as the entry's text, at the row's left-hand end.
+ *
+ * Taken out of flow and pinned to the left edge of the row's first line. In the flow it
+ * could only ever be the last item of a flex column, which put it on a row of its own —
+ * measured in a browser at 23px below the text it was meant to share a line with — and
+ * pinning it to the right put it at the far end of the row instead of beside the text.
+ *
+ * Left rather than right so it leads the eye into the entry and sits at a consistent place
+ * in the tab order relative to the rest of the list.
+ *
+ * Out of flow but not out of the document, so it keeps its place in the tab order. `top`
+ * matches the row's first text line rather than centring, so it lines up whether or not
+ * there are tags or a note beneath it.
+ */
 .entry-edit {
+  position: absolute;
+  left: 0.15rem;
+  top: 0.3rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0.2rem 0.35rem;
+  padding: 0.1rem 0.25rem;
   border-radius: 0.25rem;
+  color: var(--fg-muted);
+}
+
+.entry-edit:hover {
+  color: var(--fg);
 }
 
 .entry-edit:hover {
@@ -1191,21 +1331,14 @@ code {
 }
 
 @media (max-width: 34rem) {
+  /* Times and duration share the first line, everything textual takes the rest. */
   .entry-row {
-    grid-template-columns: 1fr auto;
+    grid-template-columns: auto 1fr;
     row-gap: 0.15rem;
   }
 
-  /* The note, the taxonomy and the edit link share the lower lines, the text taking the
-     remaining width. */
-  .entry-note,
-  .entry-taxonomy,
-  .entry-tags {
-    grid-column: 1;
-  }
-
-  .entry-tags {
-    grid-row: 3;
+  .entry-content {
+    grid-column: 1 / -1;
   }
 
   /* Item 20: an icon rather than the word, so the row needs no width for it. */
@@ -1233,10 +1366,16 @@ code {
     columns: 1;
   }
 
-  /* The period control and the filter stack rather than compete for one row. */
-  .entries-controls {
-    flex-direction: column;
-    align-items: stretch;
+  /* On a phone the three columns do not fit, so the controls drop to their own row —
+     still below the note rather than beside it, so the position stays predictable. */
+  .entries-header {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.4rem;
+  }
+
+  .entries-filter-note {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .timer-client-row {

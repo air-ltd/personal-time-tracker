@@ -1,35 +1,42 @@
 import { useEffect, useRef, useState } from 'react'
-import { BackupPanel } from '../backup/BackupPanel'
-import { MenuIcon } from '../../app/Icons'
+import { DownloadIcon, MenuIcon, RestoreIcon, SettingsIcon } from '../../app/Icons'
+import { BackupFileInput, BackupStatus } from '../backup/BackupParts'
+import { useBackup } from '../backup/useBackup'
 
 /**
- * The header menu (item 18 of `SPECS/todo.md`).
+ * The header menu (items 18 and 26).
  *
- * "Backup & recovery actions should be on a hamburger menu with settings."
+ * Item 18 put settings and backup here; item 26 then reduced it to "just the 3 buttons
+ * which should be arranged vertically", with none of the surrounding text; item 29 put the
+ * words back beside the icons.
  *
- * Backup and restore were a full panel on the home screen, between the entries and the
- * bottom of the page, for two buttons used rarely. Moving them behind the menu puts
- * everything you configure in one place and gives the entries the room back.
+ * Read together, those three say something narrower than "no text": drop the explanatory
+ * paragraphs, keep the three actions stacked, and keep each action named. An icon alone
+ * makes the user guess, and writing out versus reading in is exactly the distinction they
+ * must not have to infer from a shape.
  *
- * A disclosure button rather than a `<details>` element: this needs to close on Escape and
- * on a click outside, and it needs to report its open state to the rest of the header so
- * the title link and the sync indicator can step aside while it is over them.
+ * The labels are one word each, lower case — "download", "import" — rather than the full
+ * "Download backup" / "Restore from file". The long forms live on the settings panel, where
+ * there is room to finish the sentence; here they crowd three buttons into a strip that is
+ * only ever three buttons wide.
  *
- * The panel is only mounted while open. Backup does work on mount — it reads the stored
- * snapshot — so keeping it mounted would mean doing that work on every page load to
- * display something nobody asked for.
+ * The labels are visible, so no `aria-label` is added: a control whose visible text and
+ * accessible name differ is announced twice and confuses voice-control users. The name is
+ * the word on the button.
  */
 
 export interface HeaderMenuProps {
   /** Where "Settings" goes. Item 15 makes the title the home link instead. */
   settingsHref: string
-  onNavigate?: () => void
 }
 
-export function HeaderMenu({ settingsHref, onNavigate }: HeaderMenuProps) {
+export function HeaderMenu({ settingsHref }: HeaderMenuProps) {
   const [open, setOpen] = useState(false)
   const container = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
+  const backup = useBackup()
+  const fileInput = useRef<HTMLInputElement>(null)
+  const working = backup.state.kind === 'working'
 
   // Close on Escape and return focus to the button that opened it, so keyboard users are
   // not dropped at the top of the document.
@@ -40,8 +47,8 @@ export function HeaderMenu({ settingsHref, onNavigate }: HeaderMenuProps) {
       setOpen(false)
       button.current?.focus()
     }
-    // Close on a click elsewhere, but not on the click that landed on the toggle itself —
-    // that is the browser's own toggle behaviour and handling both double-fires.
+    // Close on a click elsewhere. The toggle itself is inside this container, so its own
+    // click never reaches the outside handler and cannot double-fire with the toggle.
     function onPointerDown(event: PointerEvent): void {
       if (container.current?.contains(event.target as Node) !== true) setOpen(false)
     }
@@ -71,15 +78,45 @@ export function HeaderMenu({ settingsHref, onNavigate }: HeaderMenuProps) {
       {open && (
         <div className="header-menu-panel" id="header-menu-panel">
           <a
-            className="button"
+            className="header-menu-item"
             href={settingsHref}
-            onClick={onNavigate}
+            onClick={() => setOpen(false)}
             data-testid="header-menu-settings"
           >
-            Settings
+            <SettingsIcon />
+            <span>Settings</span>
           </a>
 
-          <BackupPanel onNavigate={onNavigate} />
+          <button
+            type="button"
+            className="header-menu-item"
+            onClick={backup.export}
+            disabled={working}
+            data-testid="header-menu-download"
+          >
+            <DownloadIcon />
+            <span>download</span>
+          </button>
+
+          <button
+            type="button"
+            className="header-menu-item"
+            onClick={backup.chooseFile}
+            disabled={working}
+            data-testid="header-menu-restore"
+          >
+            <RestoreIcon />
+            <span>import</span>
+          </button>
+
+          <BackupFileInput input={fileInput} onChange={backup.onFileChange} />
+
+          {/*
+            The one piece of text left, and only once something has happened: an action that
+            quietly replaced everything in the browser with no confirmation would be the
+            worst outcome in the app, so the result is always stated — here or on settings.
+          */}
+          <BackupStatus state={backup.state} />
         </div>
       )}
     </div>
