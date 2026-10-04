@@ -83,3 +83,24 @@ export function dayKeysInRange(start: Date, end: Date): string[] {
 export function isValidDayKey(value: string): boolean {
   return DAY_KEY.test(value)
 }
+
+/**
+ * Half-open `[start, end)` window for the local week containing `key`, starting Monday.
+ *
+ * Constructed from local components rather than by adding milliseconds, for the same DST
+ * reason as `localDayBounds`: a week is not always 604,800,000 ms.
+ */
+export function localWeekBounds(key: string): { start: Date; end: Date } {
+  const start = startOfLocalDay(localDayBounds(key).start)
+  // `getDay()` is 0 for Sunday, so Monday-based weeks need Sunday mapped to 7 rather than
+  // 0 — otherwise a Sunday would report itself as the *previous* week's last day and
+  // every week would be eight days long.
+  const weekday = start.getDay() === 0 ? 7 : start.getDay()
+  const monday = addLocalDays(start, 1 - weekday)
+  return { start: monday, end: addLocalDays(monday, 7) }
+}
+
+/** The Monday of the local week containing `key`, as a day key. */
+export function weekKey(value: Date): string {
+  return dayKey(localWeekBounds(dayKey(value)).start)
+}

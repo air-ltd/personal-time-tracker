@@ -4,6 +4,7 @@ import { localDayBounds } from '../../domain/time/days'
 import type { TimeEntry } from '../../domain/entries/types'
 import { useEntries } from './useEntries'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
+import { EditIcon } from '../../app/Icons'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
 
 /**
@@ -13,8 +14,23 @@ import type { Client, Project, Tag } from '../../domain/taxonomy/types'
  * (0006 RP2). Overlapping entries are both counted (0004 O2): a day reading more
  * than 24 hours is a data problem the user should see.
  */
-export function EntryList({ now }: { now: Date }) {
-  const { entries, loading } = useEntries()
+export function EntryList({
+  now,
+  /**
+   * Pre-filtered entries, when a caller has already decided which ones to show.
+   *
+   * Optional so the plain case stays a one-prop component. Item 21 filters by client, and
+   * filtering here as well would mean two places choosing what is shown — which is how a
+   * list and the summary above it come to disagree.
+   */
+  entries: provided,
+}: {
+  now: Date
+  entries?: readonly TimeEntry[] | undefined
+}) {
+  const stored = useEntries()
+  const entries = provided ?? stored.entries
+  const loading = provided === undefined && stored.loading
   const { projects, clients, tags } = useTaxonomy()
   const groups = groupEntriesByDay(entries, now)
 
@@ -149,9 +165,21 @@ function EntryRow({
         </ul>
       )}
 
+      {/*
+        On one line with the times and duration (item 20): a row per entry with its edit
+        control on a line of its own made a day of modest work taller than the screen. The
+        note still gets its own line when there is one, because a long note squeezed into
+        a single row is unreadable — it is the length, not the fact of a note, that earns
+        the space.
+      */}
       {entry.note && <p className="entry-note">{entry.note}</p>}
-      <a className="entry-edit" href={`#/entries/${entry.id}`}>
-        Edit<span className="visually-hidden"> entry starting {formatClock(start)}</span>
+      <a
+        className="entry-edit"
+        href={`#/entries/${entry.id}`}
+        aria-label={`Edit entry starting ${formatClock(start)}`}
+        title="Edit"
+      >
+        <EditIcon />
       </a>
     </li>
   )
