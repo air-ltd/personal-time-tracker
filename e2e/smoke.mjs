@@ -12,7 +12,7 @@
  * unit and integration suites already gate correctness; this is a separate,
  * heavier check. Run it with `npm run test:e2e`.
  */
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import process from 'node:process'
 import { chromium } from 'playwright'
@@ -69,7 +69,24 @@ async function waitForServer(url, timeoutMs = 30_000) {
 }
 
 async function main() {
+  /*
+   * Actually build, rather than logging that we are about to.
+   *
+   * `vite preview` serves whatever is in `dist/` and does not compile anything, so a
+   * script that only logs "building..." tests the last build that happened to succeed. That
+   * is worse than a stale bundle being merely inconvenient: it made a real fix look broken
+   * twice, because the browser was faithfully testing the previous code.
+   *
+   * Synchronous so a compile error stops the run here, where the stack trace points at the
+   * source, rather than surfacing later as a puzzling selector timeout.
+   */
   console.log('building...')
+  const build = spawnSync('npm', ['run', 'build'], { stdio: 'inherit' })
+  if (build.status !== 0) {
+    console.error('build failed; not starting the preview server')
+    process.exit(build.status ?? 1)
+  }
+
   const server = spawn(
     process.execPath,
     [
@@ -206,6 +223,9 @@ async function main() {
     check('entry persists across reload', (await page.getByTestId('empty-state').count()) === 0)
 
     // 9. Theme survives a reload (0002 TH4).
+    // On the settings page since item 9: the header no longer carries a three-way radio
+    // group on every screen, so the control has to be navigated to like any other.
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
     await page.getByRole('radio', { name: 'Dark' }).click()
     check(
       'theme applies immediately',
@@ -216,6 +236,8 @@ async function main() {
       'theme persists across reload with no flash',
       (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
     )
+    // Back to the entries for the checks that follow.
+    await page.goto(URL, { waitUntil: 'networkidle' })
 
     // 10. A narrow viewport must not clip an entry (0002 B7).
     // Checked in a real browser because the failure is a layout overflow, which jsdom
@@ -238,9 +260,17 @@ async function main() {
     // Exercised in a browser because the download path uses an object URL, which
     // jsdom does not implement, so a unit test cannot cover the actual handoff.
     await page.goto(URL, { waitUntil: 'networkidle' })
+    // Backup moved behind the header menu (item 18), so its absence from the page is the
+    // expected state and its presence inside the menu is what is being checked.
     check(
-      'backup panel present',
-      (await page.getByRole('heading', { name: 'Backup' }).count()) === 1,
+      'backup is not a panel on the entries screen',
+      (await page.getByRole('heading', { name: 'Backup' }).count()) === 0,
+    )
+    await page.getByTestId('header-menu-toggle').click()
+    await page.getByTestId('header-menu-settings').waitFor()
+    check(
+      'the menu holds settings and backup',
+      (await page.getByRole('heading', { name: /^Backup/ }).count()) === 1,
     )
 
     const download = page.waitForEvent('download', { timeout: 10_000 })
@@ -480,6 +510,149 @@ async function main() {
       JSON.stringify(confirmOverflow),
     )
     await page.setViewportSize({ width: 1280, height: 800 })
+
+    // 13. The client list, the filter and the period (items 16, 19, 21, 22).
+    // Driven through the UI because the point of item 19 is that the panel does not move,
+    // and no assertion about position survives outside a real browser.
+    // A second client, so the "only one timer at a time" rule has something to apply to.
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: 'Add client' }).click()
+    await page.getByLabel('Client name').fill('Other Ltd')
+    await page.getByRole('button', { name: 'Add client', exact: true }).click()
+    await page.getByText('Other Ltd').first().waitFor()
+
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    const rows = page.locator('.timer-client-row')
+    check(
+      'clients are listed one per line',
+      (await rows.count()) >= 2,
+      String(await rows.count()),
+    )
+
+    const idleHeights = await page.locator('.timer-client-row').first().boundingBox()
+
+    await page
+      .locator('.timer-client-row', { hasText: 'Acme Ltd' })
+      .getByRole('button', { name: /Start a timer for Acme Ltd/ })
+      .click()
+    await page
+      .getByTestId('timer-running')
+      .or(page.locator('.timer-client-row-active'))
+      .first()
+      .waitFor()
+    const activeHeights = await page.locator('.timer-client-row').first().boundingBox()
+    check(
+      'starting a timer does not move the client rows (item 19)',
+      Math.abs((idleHeights?.height ?? 0) - (activeHeights?.height ?? 0)) < 24,
+      `idle=${idleHeights?.height} running=${activeHeights?.height}`,
+    )
+    check(
+      'the running client is indicated on its own line',
+      (await page.locator('.timer-client-row-active').count()) === 1,
+    )
+    check(
+      'another client cannot be started while a timer runs',
+      await page
+        .locator('.timer-client-row', { hasText: 'Other Ltd' })
+        .getByRole('button', { name: /Start a timer for Other Ltd/ })
+        .isDisabled(),
+    )
+
+    // Item 21: the running timer filters the entries, and says so.
+    check(
+      'a running timer filters the entries to its client',
+      (await page.getByTestId('client-filter-locked').count()) === 1,
+    )
+
+    // Stop it again so the rest of the checks start from idle.
+    await page
+      .locator('.timer-client-row', { hasText: 'Acme Ltd' })
+      .getByRole('button', { name: /Stop the timer for Acme Ltd/ })
+      .click()
+    await page.getByRole('heading', { name: 'Edit entry' }).waitFor()
+
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.getByLabel('Client', { exact: true }).first().waitFor()
+    await page.getByTestId('client-filter').selectOption({ label: 'Acme Ltd' })
+    const acmeRows = await page.locator('.entry-row').count()
+    await page.getByTestId('client-filter').selectOption({ label: 'Other Ltd' })
+    const otherRows = await page.locator('.entry-row').count()
+    check(
+      'selecting a client filters the entries',
+      otherRows !== acmeRows,
+      `acme=${acmeRows} other=${otherRows}`,
+    )
+
+    await page.getByTestId('client-filter').selectOption('')
+    await page.getByRole('radio', { name: 'Daily' }).click()
+    check(
+      'the daily period summarises per client',
+      (await page.getByTestId('entry-summary').count()) === 1,
+    )
+    await page.getByRole('radio', { name: 'All' }).click()
+    check('all-entries keeps the list', (await page.getByTestId('entry-summary').count()) === 0)
+
+    // Item 20: the edit control is an icon with a name, not the word "Edit".
+    const editLink = page.locator('.entry-edit').first()
+    check(
+      'the edit control is an icon with an accessible name',
+      (await editLink.getAttribute('aria-label'))?.startsWith('Edit entry') === true,
+      String(await editLink.getAttribute('aria-label')),
+    )
+
+    // Item 17: the connect action carries an icon.
+    // 14. Icons render as icons, not as boxes (items 16, 17, 18, 20).
+    // Only checkable here: jsdom has no layout engine, so it cannot tell a drawn path from
+    // an empty <svg>, and a broken path fails silently everywhere else.
+    const iconGeometry = await page.evaluate(() => {
+      const wanted = ['.timer-add-client svg', '.entry-edit svg', '.header-menu-toggle svg']
+      return wanted.map((selector) => {
+        const svg = document.querySelector(selector)
+        if (!svg) return { selector, missing: true }
+        const box = svg.getBoundingClientRect()
+        // A path that failed to parse contributes no geometry to the union.
+        const painted = [...svg.querySelectorAll('path')].some((path) => {
+          const length = path.getTotalLength()
+          return Number.isFinite(length) && length > 0
+        })
+        return {
+          selector,
+          width: Math.round(box.width),
+          height: Math.round(box.height),
+          painted,
+        }
+      })
+    })
+    for (const icon of iconGeometry) {
+      check(
+        `icon renders with geometry: ${icon.selector}`,
+        icon.missing !== true && icon.painted === true && icon.width > 0 && icon.height > 0,
+        JSON.stringify(icon),
+      )
+    }
+
+    // The sync indicator's cloud, reachable from the header.
+    check(
+      'the connect control is labelled, not icon-only',
+      (await page.getByTestId('sync-indicator').getAttribute('title')) !== null,
+    )
+
+    // The favicon is the header mark, and it is a link to the app's own home (item 23).
+    const mark = await page.evaluate(() => {
+      const img = document.querySelector('.app-home-icon')
+      if (!img) return null
+      return { src: img.getAttribute('src'), alt: img.getAttribute('alt') }
+    })
+    check(
+      'the header mark is the favicon',
+      mark !== null && mark.src.endsWith('favicon.svg'),
+      JSON.stringify(mark),
+    )
+    check(
+      'the header mark is decorative, with the link named',
+      mark !== null && mark.alt === '',
+      JSON.stringify(mark),
+    )
 
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))
     check('no failed requests overall', failedRequests.length === 0, failedRequests.join(' | '))

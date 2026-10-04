@@ -32,11 +32,79 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    decided "nothing to publish" from the remote revision alone, which cannot distinguish
    "nothing happened anywhere" from "only this device changed" — so *every* local edit and
    addition had also never synced, not just deletions.
-9. [ ] light/dark mode settings should be under the settings page.
-10. [ ] dropbox connection status should be indicated in the header row, and details moved to settings page. if disconnected the header row indicator should be a buttons that allows connection to be triggered.
-11. [ ] "Time Tracker" in the header should be a link that takes user to "personal-time-tracker" page
-12. [ ] the "TIMER" box should allow starting a timer for each client, and should include a button to create a new client & buttons to edit a client - every client gets a default project and as default the time should be recorded against that project.
-13. [ ] allow user to select relevant currencies and hide others.
+9. [x] light/dark mode settings should be under the settings page. Done: the three-way
+   radio group moved off the header, which had carried it on every screen for a preference
+   nobody changes mid-entry.
+10. [x] dropbox connection status should be indicated in the header row, and details moved
+    to settings page. if disconnected the header row indicator should be a buttons that allows
+    connection to be triggered. Done. The indicator changes shape with the state rather than
+    being one control meaning different things: disconnected is the button that connects,
+    because that is when there is something to act on. The connection moved into one
+    provider at the app root, because the header and the settings page must not own it
+    separately — the provider caches a single PKCE verifier, so two owners could start an
+    authorisation neither could finish.
+11. [x] "Time Tracker" in the header should be a link that takes user to "personal-time-tracker"
+    page. Done, and then revised by item 15.
+12. [x] the "TIMER" box should allow starting a timer for each client, and should include a
+    button to create a new client & buttons to edit a client - every client gets a default
+    project and as default the time should be recorded against that project. Done. One
+    button per client, and the client's default project is created with the client so the
+    button has somewhere to record. A client whose project is missing still starts a timer,
+    recorded uncategorised, because refusing would lose the work.
+13. [x] allow user to select relevant currencies and hide others. Done: over 180 ISO 4217
+    entries were offered in every picker, and the user can now keep the relevant ones. Stored
+    in `meta` rather than `localStorage`, which 0011 R5 reserves for the theme alone.
+14. [x] make the currency selection list a collapsable display, and default collapsed. The
+    selected currencies should be grouped at the top of the list. Done. Collapsed by
+    default, because the list is 180-odd entries and the usual case is a user who has
+    already chosen. What is chosen stays visible while collapsed, since that is the one
+    question that must be answerable without expanding anything.
+15. [x] link on "Time Tracker" should be relative to current web-site. Done, and it
+    corrects item 11: the first attempt resolved the link to the deployed host, which sent
+    a fork — or a local `npm run dev` — off to somebody else's site. Derived from the
+    current origin plus the configured base instead.
+16. [x] layout for "TIMER" section - each client should have a single line, with "new
+    client" as a + button in top right corner. there should be no "no client option". along
+    with the name of the client, there should be a total (summed) time that has been tracked
+    under that client. Done, with two caveats worth recording. The no-client button is gone,
+    but a plain Start remains while there are no clients at all, or the panel would have
+    nothing to start a timer with. And uncategorised stays a legitimate state (0005 U1/U2)
+    reachable from the manual entry form — the timer is simply not where you choose it.
+17. [x] can you use this icon for the "Connect Dropbox" — a cloud is now drawn inline. The
+    flaticon artwork itself was **not** downloaded: it is third-party with its own licence
+    and attribution terms, and shipping a guess at what it looks like would be worse than
+    shipping something plainly ours. Swapping in the exact artwork is a one-line change in
+    `src/app/Icons.tsx`: keep the `viewBox`, replace the paths.
+18. [x] backup & recovery actions should be on an hamburger menu with "settings". Done, and
+    the panel is only mounted while the menu is open — backup reads the stored snapshot on
+    mount, so leaving it on the page meant doing that work on every load to show something
+    nobody asked for.
+19. [x] starting a timer should not significantly change the layout of the timer card, show
+    the count up on the line for the client, and indicate that one is active. does not need
+    the "no timer running" text if no timer is active. Done: the client list is rendered
+    once and the running state is expressed on the active client's own line, so nothing
+    below the panel moves. Other clients' Start buttons are disabled rather than hidden —
+    one timer at a time (0004 T2), and a control that vanishes cannot be learned.
+20. [x] can you compress the entries layout a bit - info and edit button should be on the
+    same line. edit button should be replaced with an icon rather then the word "edit".
+    Done. The edit control is a pencil with an `aria-label` naming the entry it edits, so it
+    is still reachable by name rather than by guessing which icon is which. A long note
+    still gets its own line: it is the length, not the fact of a note, that earns the space.
+21. [x] ability to select a client and have entries filtered by that client (this does not
+    necessarily start a timer). If a timer is active for a client the entries should be
+    filtered for that client. Done, and the second sentence is the interesting one: a
+    running timer **overrides** the selection, because a timer is an assertion that the user
+    is working for that client right now. The control says which client is filtering and
+    why, rather than the list changing silently. Starting a timer does not select a client.
+22. [x] entries to have a "period setting": daily, weekly, all entries - daily and weekly
+    should cause it to summarise to that level per client. Done. It defaults to **all**, so
+    the home screen still shows the day-grouped list 0004 L1–L2 asks for and the empty state
+    (0007 FB3) is not hidden behind a summary reading "nothing in this period".
+23. [x] a larger version of favicon should be to the left of the title "Time Tracker" -
+    this icon should be link to the basic page. Done.
+24. [ ] timer card doesn't need the text clients, please remove and then compress a little further.
+25. [ ] selection of client for entry filter should be based on clicking on the client in the timer card. daily/weekly/all selection should be in the header row with entries. Entries card should be collapsable,
+26. [ ] hamburger menu needs tidy up - it doesn't need all the text, just the 3 buttons which should be arranged vertically.
 
 # Where the branches are
 
@@ -86,10 +154,14 @@ Per `0014-development-plan.md`. Not started.
    quoting — all need Phase 6 arithmetic that does not exist. `scripts/check-silent-failures.mjs`
    lists them as pending with the phase that introduces them. Run
    `npm run check:silent` after touching anything in `domain/`, `storage/` or `sync/`.
-2. [ ] `npm run test:e2e` is **not** part of `npm run verify`. It needs a built site and a
-   browser, so it has to be run deliberately. Playwright's browsers need installing once
-   with `npx playwright install chromium`. It builds first, so a compile error fails it —
-   but nothing else in the loop builds, so **run it after `npm run verify`, not instead**.
+2. [x] `npm run test:e2e` is still **not** part of `npm run verify` — it needs a browser, so
+   it stays a deliberate step. Playwright's browsers need installing once with
+   `npx playwright install chromium`. It now really does build first, rather than only
+   logging that it is about to: `vite preview` serves whatever is in `dist/` and compiles
+   nothing, so the script was testing the last build that happened to succeed. That made a
+   genuine fix look broken twice, because the browser was faithfully running the previous
+   code. Worth remembering when a browser check fails after a change that should have fixed
+   it.
 3. [ ] **The app default currency is device-local.** It lives in IndexedDB `meta`, and `meta`
    is excluded from both sync and backup, so a second device does not inherit it and a
    restore does not bring it back. Deliberate for now: it is a display preference, not
@@ -104,6 +176,15 @@ Per `0014-development-plan.md`. Not started.
    button under the pointer mid-click, so **clicking Save straight after typing a rate did
    nothing**. Both lines now hold their height permanently. Any new field that swaps its
    own height on focus loss will reintroduce it.
+6. [x] **Project names are now unique within a client, not across all projects**
+   (0005 P2, revised; see 0005 and 0003). This removes the suffixing that "every client
+   gets a default project" had forced — every client now has a project called `General`.
+7. [ ] **Weeks start on Monday, and Sunday is the trap.** Mapping Sunday to 0 rather than 7
+   makes every Sunday land eight days early and every week one day too long.
+8. [ ] **A Dexie transaction fails if it touches a store it did not declare**, and says
+   `NotFoundError: ... an object store did not exist` rather than mentioning the
+   transaction. `createClientWithDefaultProject` hit this by wrapping two helpers that each
+   read more than the two stores being written. Declare every store the body can reach.
 
 # External review
 
