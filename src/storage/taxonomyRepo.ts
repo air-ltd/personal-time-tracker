@@ -89,6 +89,107 @@ async function usedColours(): Promise<string[]> {
     .map((row) => row.colour)
 }
 
+/**
+ * Amend a project.
+ *
+ * Every patch is applied through `assertNameFree` with the record's own id excluded,
+ * because a rename that keeps the same name is not a conflict with itself. A patch that
+ * leaves the name alone skips the check entirely rather than re-checking a value it is
+ * not changing.
+ *
+ * Rejected rather than coerced on bad input: a duplicate name here would merge into two
+ * indistinguishable projects on another device, which no later edit could fix.
+ */
+export interface ProjectPatch {
+  name?: string
+  clientId?: string | null
+  colour?: string
+  defaultRateMinor?: number | null
+  currency?: string | null
+}
+
+export async function updateProject(
+  id: string,
+  patch: ProjectPatch,
+  now: Date,
+): Promise<Project> {
+  const current = await db().projects.get(id)
+  if (!current || current.deletedAt !== null) {
+    throw new Error('That project no longer exists.')
+  }
+  const name = patch.name === undefined ? current.name : requireName('project', patch.name)
+  if (patch.name !== undefined) {
+    await assertNameFree('project', name, { ignoreArchived: true, exceptId: id })
+  }
+  const updated: Project = {
+    ...current,
+    name,
+    clientId: patch.clientId === undefined ? current.clientId : patch.clientId,
+    colour: patch.colour ?? current.colour,
+    defaultRateMinor:
+      patch.defaultRateMinor === undefined ? current.defaultRateMinor : patch.defaultRateMinor,
+    currency: patch.currency === undefined ? current.currency : patch.currency,
+    updatedAt: iso(now),
+  }
+  await db().projects.put(updated)
+  bumpRevision()
+  return updated
+}
+
+/** Amend a client. A client name is unique regardless of archived state (0003). */
+export interface ClientPatch {
+  name?: string
+  colour?: string
+  defaultRateMinor?: number | null
+  currency?: string
+}
+
+export async function updateClient(id: string, patch: ClientPatch, now: Date): Promise<Client> {
+  const current = await db().clients.get(id)
+  if (!current || current.deletedAt !== null) {
+    throw new Error('That client no longer exists.')
+  }
+  const name = patch.name === undefined ? current.name : requireName('client', patch.name)
+  if (patch.name !== undefined) {
+    await assertNameFree('client', name, { ignoreArchived: false, exceptId: id })
+  }
+  const updated: Client = {
+    ...current,
+    name,
+    colour: patch.colour ?? current.colour,
+    defaultRateMinor:
+      patch.defaultRateMinor === undefined ? current.defaultRateMinor : patch.defaultRateMinor,
+    currency: patch.currency ?? current.currency,
+    updatedAt: iso(now),
+  }
+  await db().clients.put(updated)
+  bumpRevision()
+  return updated
+}
+
+/** Rename a tag (0005 T4 offers merge, which is a rename plus a re-point of entries). */
+export async function updateTag(
+  id: string,
+  patch: { name?: string; colour?: string },
+  now: Date,
+): Promise<Tag> {
+  const current = await db().tags.get(id)
+  if (!current || current.deletedAt !== null) throw new Error('That tag no longer exists.')
+  const name = patch.name === undefined ? current.name : requireName('tag', patch.name)
+  if (patch.name !== undefined) {
+    await assertNameFree('tag', name, { ignoreArchived: false, exceptId: id })
+  }
+  const updated: Tag = {
+    ...current,
+    name,
+    colour: patch.colour ?? current.colour,
+    updatedAt: iso(now),
+  }
+  await db().tags.put(updated)
+  bumpRevision()
+  return updated
+}
+
 export interface CreateProjectInput {
   name: string
   clientId?: string | null
@@ -275,14 +376,18 @@ export async function projectDeleteImpact(projectId: string): Promise<DeleteImpa
  * removed so the deletion syncs; a hard delete cannot be merged and the project would
  * return on the next pull.
  */
-export async function deleteProject(id: string, now: Date): Promise<void> {
-  await db().transaction('rw', db().entries, db().projects, async () => {
+export async function deleteProject(
+  id: string,
+  now: Date,
+): Promise<DeleteProjectReceipt | null> {
+  return db().transaction('rw', db().entries, db().projects, async () => {
     const project = await db().projects.get(id)
-    if (!project || project.deletedAt !== null) return
+    if (!project || project.deletedAt !== null) return null
 
     const entries = await db()
       .entries.filter((row) => row.projectId === id)
       .toArray()
+    const orphanedEntryIds: string[] = []
     for (const row of entries) {
       // Already-deleted entries are left exactly as they are. Bumping `updatedAt` on a
       // tombstone makes it look newer than it is, so it would win a merge tie against a
@@ -292,10 +397,87 @@ export async function deleteProject(id: string, now: Date): Promise<void> {
       // `updatedAt` moves so the orphaning wins the merge against a device that still
       // has this entry pointing at the project.
       await db().entries.put({ ...row, projectId: null, updatedAt: iso(now) })
+      orphanedEntryIds.push(row.id)
     }
     await db().projects.put({ ...project, deletedAt: iso(now), updatedAt: iso(now) })
+    return { project, orphanedEntryIds }
   })
-  bumpRevision()
+}
+
+/** What undoing a project deletion needs (0005 X5). */
+export interface DeleteProjectReceipt {
+  project: Project
+  /**
+   * Entries whose `projectId` was cleared.
+   *
+   * Kept because the deletion is destructive to the *link* even though it is not
+   * destructive to the entry: once `projectId` is null there is nothing left in storage
+   * that says which entries used to belong to this project. Undo therefore has to be
+   * handed the list, which makes the undo window a real limit — an entry created after
+   * the deletion is never adopted, and one since given another project is left alone.
+   */
+  orphanedEntryIds: string[]
+}
+
+export type UndoOutcome = { ok: true } | { ok: false; reason: string }
+
+/**
+ * Undo a project deletion (0005 X5).
+ *
+ * Reports failure rather than throwing, because the user gets an undo bar with a
+ * countdown: a thrown error would be invisible. The one case that can legitimately fail
+ * is a name collision — if the user deleted "Acme" and then created a new "Acme", the
+ * restore would put two identical projects on screen. The entries stay orphaned in that
+ * case, which is the lesser harm and is what the message says.
+ */
+export async function undoDeleteProject(
+  receipt: DeleteProjectReceipt,
+  now: Date,
+): Promise<UndoOutcome> {
+  const { project, orphanedEntryIds } = receipt
+  return db().transaction('rw', db().entries, db().projects, async () => {
+    const live = await db().projects.get(project.id)
+    if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
+
+    const conflict = await nameConflictExcluding('project', project.name, project.id, true)
+    if (conflict) {
+      return {
+        ok: false,
+        reason: `Cannot restore "${project.name}": a project with that name already exists. The entries are still intact and uncategorised.`,
+      }
+    }
+
+    await db().projects.put({ ...live, deletedAt: null, updatedAt: iso(now) })
+    for (const entryId of orphanedEntryIds) {
+      const row = await db().entries.get(entryId)
+      // Skip anything deleted or already pointed elsewhere: within the undo window a
+      // device may have assigned it deliberately, and overwriting that would lose the
+      // newer choice.
+      if (!row || row.deletedAt !== null || row.projectId !== null) continue
+      await db().entries.put({ ...row, projectId: project.id, updatedAt: iso(now) })
+    }
+    return { ok: true }
+  })
+}
+
+/**
+ * Whether a live record other than `exceptId` already holds this name.
+ *
+ * The question `assertNameFree` asks, expressed as a value so undo can decide what to do
+ * rather than throwing.
+ */
+async function nameConflictExcluding(
+  kind: NameKind,
+  name: string,
+  exceptId: string,
+  ignoreArchived: boolean,
+): Promise<boolean> {
+  try {
+    await assertNameFree(kind, name, { ignoreArchived, exceptId })
+    return false
+  } catch {
+    return true
+  }
 }
 
 /**
@@ -304,10 +486,10 @@ export async function deleteProject(id: string, now: Date): Promise<void> {
  * Its projects and their entries are untouched; the entries simply move to the
  * client-less bucket, which is what makes the report totals reconcile (0005 X4, R3).
  */
-export async function deleteClient(id: string, now: Date): Promise<void> {
-  await db().transaction('rw', db().clients, db().projects, async () => {
+export async function deleteClient(id: string, now: Date): Promise<DeleteClientReceipt | null> {
+  return db().transaction('rw', db().clients, db().projects, async () => {
     const client = await db().clients.get(id)
-    if (!client || client.deletedAt !== null) return
+    if (!client || client.deletedAt !== null) return null
 
     const projects = await db()
       .projects.filter((row) => row.clientId === id)
@@ -316,8 +498,69 @@ export async function deleteClient(id: string, now: Date): Promise<void> {
       await db().projects.put({ ...project, clientId: null, updatedAt: iso(now) })
     }
     await db().clients.put({ ...client, deletedAt: iso(now), updatedAt: iso(now) })
+    return { client, unlinkedProjectIds: projects.map((project) => project.id) }
   })
-  bumpRevision()
+}
+
+/**
+ * What undoing a client deletion needs (0005 X5, X4).
+ *
+ * Ids alone. The obvious extra — the project's name, to check it has not been renamed
+ * since — buys nothing: undo only ever writes `clientId`, so relinking cannot revert a
+ * rename, and refusing to relink a project because it was renamed would leave the user
+ * with a restored client whose one project had silently not rejoined.
+ */
+export interface DeleteClientReceipt {
+  client: Client
+  unlinkedProjectIds: string[]
+}
+
+export async function undoDeleteClient(
+  receipt: DeleteClientReceipt,
+  now: Date,
+): Promise<UndoOutcome> {
+  const { client, unlinkedProjectIds } = receipt
+  return db().transaction('rw', db().clients, db().projects, async () => {
+    const live = await db().clients.get(client.id)
+    if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
+
+    const conflict = await nameConflictExcluding('client', client.name, client.id, false)
+    if (conflict) {
+      return {
+        ok: false,
+        reason: `Cannot restore "${client.name}": a client with that name already exists. Its projects are intact and no longer belong to a client.`,
+      }
+    }
+
+    await db().clients.put({ ...live, deletedAt: null, updatedAt: iso(now) })
+    for (const id of unlinkedProjectIds) {
+      const project = await db().projects.get(id)
+      // Only adopt projects that are still live and still client-less, for the same
+      // reason entries are not overwritten above. A rename in between is untouched:
+      // only `clientId` is written, so the newer name survives the restore.
+      if (!project || project.deletedAt !== null || project.clientId !== null) continue
+      await db().projects.put({ ...project, clientId: client.id, updatedAt: iso(now) })
+    }
+    return { ok: true }
+  })
+}
+
+/**
+ * What deleting a client would affect (0005 X4).
+ *
+ * Counts projects rather than entries, because that is what the deletion changes: the
+ * entries survive and simply move to the client-less bucket, which is what keeps report
+ * totals reconciling.
+ */
+export interface ClientDeleteImpact {
+  projectCount: number
+}
+
+export async function clientDeleteImpact(clientId: string): Promise<ClientDeleteImpact> {
+  const projects = await db()
+    .projects.filter((row) => row.clientId === clientId)
+    .toArray()
+  return { projectCount: projects.filter((row) => row.deletedAt === null).length }
 }
 
 /**
@@ -358,24 +601,71 @@ export async function mergeTags(fromId: string, toId: string, now: Date): Promis
  * Entries are not deleted, and no rate or billable state is touched — a tag is only ever
  * a label.
  */
-export async function deleteTag(id: string, now: Date): Promise<void> {
-  await db().transaction('rw', db().entries, db().tags, async () => {
+export async function deleteTag(id: string, now: Date): Promise<DeleteTagReceipt | null> {
+  return db().transaction('rw', db().entries, db().tags, async () => {
     const tag = await db().tags.get(id)
-    if (!tag || tag.deletedAt !== null) return
+    if (!tag || tag.deletedAt !== null) return null
 
     const entries = await db()
       .entries.filter((row) => row.tagIds.includes(id))
       .toArray()
+    const untaggedEntryIds: string[] = []
     for (const row of entries) {
       await db().entries.put({
         ...row,
         tagIds: row.tagIds.filter((tagId) => tagId !== id),
         updatedAt: iso(now),
       })
+      untaggedEntryIds.push(row.id)
     }
     await db().tags.put({ ...tag, deletedAt: iso(now), updatedAt: iso(now) })
+    return { tag, untaggedEntryIds }
   })
-  bumpRevision()
+}
+
+/** What undoing a tag deletion needs (0005 X5). */
+export interface DeleteTagReceipt {
+  tag: Tag
+  untaggedEntryIds: string[]
+}
+
+export async function undoDeleteTag(
+  receipt: DeleteTagReceipt,
+  now: Date,
+): Promise<UndoOutcome> {
+  const { tag, untaggedEntryIds } = receipt
+  return db().transaction('rw', db().entries, db().tags, async () => {
+    const live = await db().tags.get(tag.id)
+    if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
+
+    const conflict = await nameConflictExcluding('tag', tag.name, tag.id, false)
+    if (conflict) {
+      return {
+        ok: false,
+        reason: `Cannot restore "${tag.name}": a tag with that name already exists. The entries are intact and untagged.`,
+      }
+    }
+
+    await db().tags.put({ ...live, deletedAt: null, updatedAt: iso(now) })
+    for (const entryId of untaggedEntryIds) {
+      const row = await db().entries.get(entryId)
+      if (!row || row.deletedAt !== null) continue
+      // Restoring a tag is additive, so this is safe where a restore cannot overwrite:
+      // an entry that has since been deleted is skipped, and one that gained the tag
+      // another way is left with a single reference rather than a duplicate.
+      if (row.tagIds.includes(tag.id)) continue
+      await db().entries.put({ ...row, tagIds: [...row.tagIds, tag.id], updatedAt: iso(now) })
+    }
+    return { ok: true }
+  })
+}
+
+/** How many entries carry a tag, for the confirmation (0005 T3). */
+export async function tagEntryCount(tagId: string): Promise<number> {
+  const entries = await db()
+    .entries.filter((row) => row.tagIds.includes(tagId))
+    .toArray()
+  return entries.filter((row) => row.deletedAt === null).length
 }
 
 /** Palette, exposed so a picker renders exactly what creation would choose from. */

@@ -2,19 +2,36 @@ import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { AppDb, setDbForTests } from './db'
 import { resetRevisionForTests } from './events'
-import { listEntries, startTimer, stopTimer } from './entriesRepo'
 import {
+  getEntry,
+  listEntries,
+  putEntry,
+  softDeleteEntry,
+  startTimer,
+  stopTimer,
+  updateEntry,
+} from './entriesRepo'
+import {
+  clientDeleteImpact,
   createClient,
   createOrFindTag,
   createProject,
   deleteClient,
   deleteProject,
   deleteTag,
+  listClients,
   listProjects,
   listTags,
   mergeTags,
   projectDeleteImpact,
   setArchived,
+  tagEntryCount,
+  undoDeleteClient,
+  undoDeleteProject,
+  undoDeleteTag,
+  updateClient,
+  updateProject,
+  updateTag,
 } from './taxonomyRepo'
 import { T0, entry } from '../test/factories'
 import { PALETTE } from '../domain/taxonomy/colour'
@@ -40,12 +57,22 @@ import type { Client, Project } from '../domain/taxonomy/types'
 let db: AppDb
 let counter = 0
 
-beforeEach(async () => {
+/**
+ * Fresh database, awaited open.
+ *
+ * Awaiting `open()` matters: Dexie applies the schema upgrade asynchronously, so a test
+ * that reached for a table before it committed could find it missing. Shared by every
+ * describe in this file — see useTimer.test.tsx.
+ */
+function installDb(): void {
   db = new AppDb(`taxonomy-${(counter += 1)}`)
   setDbForTests(db)
-  // Await the open so the schema upgrade has committed; see useTimer.test.tsx.
+  void db.open().then(() => resetRevisionForTests())
+}
+
+beforeEach(async () => {
+  installDb()
   await db.open()
-  resetRevisionForTests()
 })
 
 const later = new Date('2026-10-14T09:00:00.000Z')
@@ -285,10 +312,12 @@ describe('deleting a project (0005 X1–X3)', () => {
     expect(orphaned?.updatedAt).toBe(later.toISOString())
   })
 
-  it('is a no-op the second time', async () => {
+  it('is a no-op the second time, and says so', async () => {
+    // Null rather than undefined: the receipt is what the undo window holds, so "nothing
+    // was deleted" has to be distinguishable from "deleted, here is what to undo".
     const project = await withEntries()
     await deleteProject(project.id, later)
-    await expect(deleteProject(project.id, later)).resolves.toBeUndefined()
+    await expect(deleteProject(project.id, later)).resolves.toBeNull()
   })
 })
 
@@ -582,5 +611,304 @@ describe('names freed by deletion', () => {
   it('still refuses a name held by a live project', async () => {
     await createProject({ name: 'Acme', now: T0 })
     await expect(createProject({ name: 'ACME', now: T0 })).rejects.toThrow(/already exists/)
+  })
+})
+
+/**
+ * Amending a record (0005 P1: CRUD, not just create and read).
+ *
+ * Weighted towards what a patch must *not* do. Amending is where a record silently loses
+ * a field, and a project that forgets its client or rate looks fine until a report
+ * resolves the wrong money.
+ */
+describe('amending records', () => {
+  const later = new Date('2026-10-13T18:00:00.000Z')
+
+  beforeEach(() => {
+    installDb()
+  })
+
+  it('changes a project name and leaves everything else alone', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    const project = await createProject({
+      name: 'Acme',
+      clientId: client.id,
+      defaultRateMinor: 5000,
+      currency: 'EUR',
+      now: T0,
+    })
+
+    const updated = await updateProject(project.id, { name: 'Acme Rebuild' }, later)
+
+    expect(updated.name).toBe('Acme Rebuild')
+    expect(updated.clientId).toBe(client.id)
+    expect(updated.defaultRateMinor).toBe(5000)
+    expect(updated.currency).toBe('EUR')
+    expect(updated.updatedAt).toBe(later.toISOString())
+    expect(updated.createdAt).toBe(project.createdAt)
+  })
+
+  it('refuses a rename that collides with a live project', async () => {
+    await createProject({ name: 'Acme', now: T0 })
+    const other = await createProject({ name: 'Other', now: T0 })
+    await expect(updateProject(other.id, { name: 'acme' }, later)).rejects.toThrow(
+      /already exists/,
+    )
+  })
+
+  it('allows a rename to the record its own name', async () => {
+    // Renaming to an unchanged name is not a conflict with itself. Rejecting it would
+    // make the form reject its own initial state on save.
+    const project = await createProject({ name: 'Acme', now: T0 })
+    await expect(updateProject(project.id, { name: 'Acme' }, later)).resolves.toMatchObject({
+      name: 'Acme',
+    })
+  })
+
+  it('clears a currency rather than keeping the old one', async () => {
+    // Null means inherit, so a patch that cannot express "unset" would strand a project
+    // on a currency override the user has removed.
+    const project = await createProject({ name: 'Acme', currency: 'EUR', now: T0 })
+    const updated = await updateProject(project.id, { currency: null }, later)
+    expect(updated.currency).toBeNull()
+  })
+
+  it('clears a rate rather than keeping the old one', async () => {
+    const project = await createProject({ name: 'Acme', defaultRateMinor: 5000, now: T0 })
+    const updated = await updateProject(project.id, { defaultRateMinor: null }, later)
+    expect(updated.defaultRateMinor).toBeNull()
+  })
+
+  it('rejects amending a deleted record', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    await deleteProject(project.id, T0)
+    await expect(updateProject(project.id, { name: 'Nope' }, later)).rejects.toThrow(
+      /no longer exists/,
+    )
+  })
+
+  it('rejects amending one that does not exist', async () => {
+    await expect(updateProject('nope', { name: 'Nope' }, later)).rejects.toThrow(
+      /no longer exists/,
+    )
+  })
+
+  it('rejects a blank name', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    await expect(updateProject(project.id, { name: '   ' }, later)).rejects.toThrow(
+      /needs a name/,
+    )
+  })
+
+  it('changes a client currency without touching its projects', async () => {
+    // 0005 P8: the currency changes what future figures resolve to. Entries keep no
+    // currency of their own (0003 CU6), so nothing needs rewriting — and nothing is.
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    const project = await createProject({ name: 'Acme', clientId: client.id, now: T0 })
+
+    const updated = await updateClient(client.id, { currency: 'EUR' }, later)
+
+    expect(updated.currency).toBe('EUR')
+    expect((await listProjects()).find((p) => p.id === project.id)?.clientId).toBe(client.id)
+  })
+
+  it('rejects a client rename that collides, archived or not', async () => {
+    // A client name is unique regardless of archived state (0003), which is the one
+    // deliberate difference from project naming.
+    const first = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    const second = await createClient({ name: 'Other Ltd', currency: 'GBP', now: T0 })
+    await setArchived('client', first.id, true, T0)
+    await expect(updateClient(second.id, { name: 'Acme Ltd' }, later)).rejects.toThrow(
+      /already exists/,
+    )
+  })
+
+  it('renames a tag', async () => {
+    const { tag } = await createOrFindTag({ name: 'research', now: T0 })
+    const updated = await updateTag(tag.id, { name: 'Research Notes' }, later)
+    expect(updated.name).toBe('Research Notes')
+  })
+
+  it('refuses a tag rename that collides case-insensitively (0005 T2)', async () => {
+    await createOrFindTag({ name: 'research', now: T0 })
+    const { tag } = await createOrFindTag({ name: 'review', now: T0 })
+    await expect(updateTag(tag.id, { name: 'RESEARCH' }, later)).rejects.toThrow(
+      /already exists/,
+    )
+  })
+})
+
+/**
+ * Undoing a taxonomy deletion (0005 X5).
+ *
+ * Each case here is a way the naive implementation — clear the tombstone — would look
+ * correct and still lose something: entries already orphaned, a project adopted from the
+ * wrong record, an edit made inside the undo window quietly reverted.
+ */
+describe('undoing a taxonomy deletion', () => {
+  const later = new Date('2026-10-13T18:00:00.000Z')
+
+  beforeEach(() => {
+    installDb()
+  })
+
+  async function projectWithEntry(name = 'Acme') {
+    const project = await createProject({ name, now: T0 })
+    const stored = await putEntry(entry({ projectId: project.id }))
+    return { project, entryId: stored.id }
+  }
+
+  /**
+   * Delete and hand back the receipt, failing loudly if nothing was deleted.
+   *
+   * The non-null assertion is banned by lint, and asserting then returning is noisier
+   * than saying what the helper assumes: that the record existed and was live.
+   */
+  async function receiptFor<T>(deleted: Promise<T | null>): Promise<T> {
+    const receipt = await deleted
+    if (receipt === null) throw new Error('expected a deletion receipt, got none')
+    return receipt
+  }
+
+  it('restores a deleted project and its entries', async () => {
+    const { project, entryId } = await projectWithEntry()
+    const receipt = await receiptFor(deleteProject(project.id, T0))
+    expect(receipt).not.toBeNull()
+
+    const outcome = await undoDeleteProject(receipt, later)
+
+    expect(outcome).toEqual({ ok: true })
+    expect((await getEntry(entryId))?.projectId).toBe(project.id)
+    expect(await listProjects()).toHaveLength(1)
+  })
+
+  it('leaves entries deleted between the two intact', async () => {
+    const { project, entryId } = await projectWithEntry()
+    const receipt = await receiptFor(deleteProject(project.id, T0))
+    await softDeleteEntry(entryId, later)
+
+    await undoDeleteProject(receipt, later)
+
+    // Resurrecting a deleted entry would defeat the delete entirely.
+    expect((await getEntry(entryId))?.deletedAt).not.toBeNull()
+  })
+
+  it('does not steal an entry reassigned inside the undo window', async () => {
+    const { project, entryId } = await projectWithEntry()
+    const receipt = await receiptFor(deleteProject(project.id, T0))
+    const other = await createProject({ name: 'Other', now: T0 })
+    await updateEntry(entryId, { projectId: other.id }, later)
+
+    await undoDeleteProject(receipt, later)
+
+    expect((await getEntry(entryId))?.projectId).toBe(other.id)
+  })
+
+  it('refuses to restore over a name taken in the meantime, and explains', async () => {
+    const { project } = await projectWithEntry('Acme')
+    const receipt = await receiptFor(deleteProject(project.id, T0))
+    await createProject({ name: 'Acme', now: later })
+
+    const outcome = await undoDeleteProject(receipt, later)
+
+    expect(outcome.ok).toBe(false)
+    expect(outcome.ok === false && outcome.reason).toMatch(/already exists/)
+    // The lesser harm: entries stay, uncategorised.
+    expect((await listProjects()).map((p) => p.name)).toEqual(['Acme'])
+  })
+
+  it('reports a second undo rather than clearing twice', async () => {
+    const { project } = await projectWithEntry()
+    const receipt = await receiptFor(deleteProject(project.id, T0))
+    await undoDeleteProject(receipt, later)
+    const again = await undoDeleteProject(receipt, later)
+    expect(again).toEqual({ ok: false, reason: 'Already restored.' })
+  })
+
+  it('restores a client and relinks its projects', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    const project = await createProject({ name: 'Acme', clientId: client.id, now: T0 })
+    const receipt = await receiptFor(deleteClient(client.id, T0))
+
+    const outcome = await undoDeleteClient(receipt, later)
+
+    expect(outcome).toEqual({ ok: true })
+    expect((await listClients()).map((c) => c.name)).toEqual(['Acme Ltd'])
+    expect((await listProjects()).find((p) => p.id === project.id)?.clientId).toBe(client.id)
+  })
+
+  it('does not revert a project renamed inside the undo window', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    const project = await createProject({ name: 'Acme', clientId: client.id, now: T0 })
+    const receipt = await receiptFor(deleteClient(client.id, T0))
+    await updateProject(project.id, { name: 'Acme Phase Two' }, later)
+
+    await undoDeleteClient(receipt, later)
+
+    const restored = (await listProjects()).find((p) => p.id === project.id)
+    // Relinked, because it is still client-less — but under the new name it now has.
+    expect(restored?.name).toBe('Acme Phase Two')
+    expect(restored?.clientId).toBe(client.id)
+  })
+
+  it('leaves a project that gained a client in the meantime alone', async () => {
+    const first = await createClient({ name: 'First Ltd', currency: 'GBP', now: T0 })
+    const second = await createClient({ name: 'Second Ltd', currency: 'GBP', now: T0 })
+    const project = await createProject({ name: 'Acme', clientId: first.id, now: T0 })
+    const receipt = await receiptFor(deleteClient(first.id, T0))
+    await updateProject(project.id, { clientId: second.id }, later)
+
+    await undoDeleteClient(receipt, later)
+
+    expect((await listProjects()).find((p) => p.id === project.id)?.clientId).toBe(second.id)
+  })
+
+  it('restores a deleted tag onto its entries', async () => {
+    const { tag } = await createOrFindTag({ name: 'research', now: T0 })
+    const stored = await putEntry(entry({ tagIds: [tag.id] }))
+    const receipt = await receiptFor(deleteTag(tag.id, T0))
+    expect((await getEntry(stored.id))?.tagIds).toEqual([])
+
+    const outcome = await undoDeleteTag(receipt, later)
+
+    expect(outcome).toEqual({ ok: true })
+    expect((await getEntry(stored.id))?.tagIds).toEqual([tag.id])
+  })
+
+  it('does not duplicate a tag an entry already carries', async () => {
+    const { tag } = await createOrFindTag({ name: 'research', now: T0 })
+    const stored = await putEntry(entry({ tagIds: [tag.id] }))
+    const receipt = await receiptFor(deleteTag(tag.id, T0))
+    await updateEntry(stored.id, { tagIds: [tag.id] }, later)
+
+    await undoDeleteTag(receipt, later)
+
+    expect((await getEntry(stored.id))?.tagIds).toEqual([tag.id])
+  })
+})
+
+describe('delete impact for confirmations (0005 X1, X4, T3)', () => {
+  beforeEach(() => {
+    installDb()
+  })
+
+  it('counts a client by its projects, not its entries', async () => {
+    // The entries survive a client deletion, so a count of entries would overstate what
+    // changes. Reports move to the client-less bucket and reconcile.
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await createProject({ name: 'One', clientId: client.id, now: T0 })
+    await createProject({ name: 'Two', clientId: client.id, now: T0 })
+    await createProject({ name: 'Free', now: T0 })
+
+    expect(await clientDeleteImpact(client.id)).toEqual({ projectCount: 2 })
+  })
+
+  it('counts a tag by the entries carrying it', async () => {
+    const { tag } = await createOrFindTag({ name: 'research', now: T0 })
+    await putEntry(entry({ tagIds: [tag.id] }))
+    await putEntry(entry({ tagIds: [tag.id] }))
+    await putEntry(entry())
+
+    expect(await tagEntryCount(tag.id)).toBe(2)
   })
 })
