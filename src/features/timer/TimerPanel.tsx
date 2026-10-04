@@ -34,9 +34,24 @@ export interface TimerPanelProps {
   now: Date
   /** Notified after a client is created or edited here, so the caller can refresh. */
   onClientsChanged?: (() => void) | undefined
+  /**
+   * The client whose entries are shown (item 25).
+   *
+   * Held by the app rather than here, because the timer card is where the selection is
+   * made and the entries card is where it takes effect.
+   */
+  selectedClientId?: string | null | undefined
+  onSelectClient?: ((clientId: string | null) => void) | undefined
 }
 
-export function TimerPanel({ timer, onStopped, now, onClientsChanged }: TimerPanelProps) {
+export function TimerPanel({
+  timer,
+  onStopped,
+  now,
+  onClientsChanged,
+  selectedClientId,
+  onSelectClient,
+}: TimerPanelProps) {
   const { running } = timer
   const { dismissed, dismiss } = useUnloadWarning({
     active: running !== null,
@@ -48,6 +63,10 @@ export function TimerPanel({ timer, onStopped, now, onClientsChanged }: TimerPan
   const { clients, projects } = useTaxonomy()
   const { entries } = useEntries()
   const [error, setError] = useState<string | null>(null)
+  // `undefined` is "not editing", the empty string is "creating a new one", and anything
+  // else is the id being edited. Held here rather than in `ClientList` because the button
+  // that opens it sits in the panel header (item 32).
+  const [editingId, setEditingId] = useState<string | null | undefined>(undefined)
 
   /*
    * Time tracked per client, summed over every project that client owns.
@@ -76,6 +95,8 @@ export function TimerPanel({ timer, onStopped, now, onClientsChanged }: TimerPan
     setError(problem instanceof Error ? problem.message : String(problem))
   }, [])
 
+  const noop = () => {}
+
   const reminder = dismissed ? null : (
     <>
       Closing this tab keeps the timer running.{' '}
@@ -87,9 +108,28 @@ export function TimerPanel({ timer, onStopped, now, onClientsChanged }: TimerPan
 
   return (
     <section className="panel timer-panel" aria-labelledby="timer-heading">
-      <h2 id="timer-heading">Timer</h2>
+      {/*
+        Item 32: the add button shares the heading's line. It used to sit alone in a row of
+        its own above the list, which cost a whole row of height on the card the user looks
+        at most often, for a button that is about the list below it.
+      */}
+      <div className="panel-header timer-panel-header">
+        <h2 id="timer-heading">Timer</h2>
+        <button
+          type="button"
+          className="button timer-add-client"
+          onClick={() => setEditingId('')}
+          aria-label="New client"
+          title="New client"
+          data-testid="timer-new-client"
+        >
+          <PlusIcon />
+        </button>
+      </div>
 
       <ClientList
+        editingId={editingId}
+        onEdit={setEditingId}
         clients={clients}
         now={now}
         timer={timer}
@@ -98,6 +138,8 @@ export function TimerPanel({ timer, onStopped, now, onClientsChanged }: TimerPan
         onSaved={onClientsChanged}
         onError={reportError}
         reminder={reminder}
+        selectedClientId={selectedClientId ?? null}
+        onSelectClient={onSelectClient ?? noop}
       />
 
       {error !== null && (
@@ -132,6 +174,10 @@ function ClientList({
   onSaved,
   onError,
   reminder,
+  selectedClientId,
+  onSelectClient,
+  editingId,
+  onEdit,
 }: {
   /** Typed as the real record, so looking one up here is type-checked. */
   clients: Client[]
@@ -144,11 +190,15 @@ function ClientList({
   onError: (problem: unknown) => void
   /** The unload reminder, owned by the panel because it owns the dismissal. */
   reminder: React.ReactNode
+  /** The client whose entries are being shown, or null for all (item 25). */
+  selectedClientId: string | null
+  /** Selecting is deliberately not starting a timer. */
+  onSelectClient: (clientId: string | null) => void
+  /** `''` is "creating a new one"; `undefined` is "not editing" (item 32). */
+  editingId: string | null | undefined
+  onEdit: (next: string | null | undefined) => void
 }) {
   const { running, elapsedMs, start, stop, discard } = timer
-  // `null` is "not editing"; the empty string is "creating a new one". A separate flag
-  // would be the alternative, and it would have two places that can disagree.
-  const [editingId, setEditingId] = useState<string | null | undefined>(undefined)
   const [defaultProjects, setDefaultProjects] = useState<Map<string, string | null> | null>(
     null,
   )
@@ -197,28 +247,6 @@ function ClientList({
 
   return (
     <div className="timer-clients">
-      <div className="timer-clients-header">
-        <span className="timer-clients-heading">
-          {clients.length === 0 ? 'No clients yet' : 'Clients'}
-        </span>
-        {/*
-          A "+" rather than a labelled button: it sits in the corner of a list whose rows
-          are all add-actions already, and a word here would be the loudest thing on the
-          panel. Both `aria-label` and `title` say what it does, so the glyph is a
-          shorthand rather than the only description.
-        */}
-        <button
-          type="button"
-          className="button timer-add-client"
-          onClick={() => setEditingId('')}
-          aria-label="New client"
-          title="New client"
-          data-testid="timer-new-client"
-        >
-          <PlusIcon />
-        </button>
-      </div>
-
       {clients.length === 0 ? (
         <>
           <p className="hint">
@@ -246,10 +274,25 @@ function ClientList({
                 className={`timer-client-row${active ? ' timer-client-row-active' : ''}`}
                 aria-current={active ? 'true' : undefined}
               >
-                <span className="timer-client-name">
+                {/*
+                  The name is a button because it is the selection (item 25): the client is
+                  identified here, by pressing its line, so asking the user to pick the same
+                  client again from a dropdown on another card was the same question twice.
+                  Toggling it off returns to "all clients", which is why this is a toggle
+                  and not a radio.
+                */}
+                <button
+                  type="button"
+                  className="timer-client-name"
+                  aria-pressed={selectedClientId === client.id}
+                  onClick={() =>
+                    onSelectClient(selectedClientId === client.id ? null : client.id)
+                  }
+                  data-testid={`select-client-${client.id}`}
+                >
                   {client.name}
                   {active && <span className="badge badge-active">running</span>}
-                </span>
+                </button>
 
                 {/* The count-up lives on the client's line, not in a separate block. */}
                 <span className="timer-client-live" data-testid={`client-live-${client.id}`}>
@@ -283,12 +326,22 @@ function ClientList({
                       <button
                         type="button"
                         className="button button-primary"
-                        // Disabled while another client is running rather than hidden: one
-                        // timer at a time (0004 T2), and a control that vanishes is a
-                        // control whose position cannot be learned.
-                        disabled={running !== null}
-                        // A client with no project still starts a timer: the time is
-                        // recorded uncategorised rather than refused, because refusing
+                        /*
+                         * Disabled while another client is running rather than hidden: one
+                         * timer at a time (0004 T2), and a control that vanishes is a
+                         * control whose position cannot be learned.
+                         *
+                         * Also disabled until the default projects have been read. This was
+                         * a real bug found by a test that failed once in six runs: the
+                         * lookup is asynchronous, and clicking Start before it resolved
+                         * started the timer with no project at all — so the time was
+                         * recorded uncategorised for a client that *does* have one. Nothing
+                         * said so, and the entry was filed wrongly with no way to tell
+                         * afterwards. Unclickable beats silently wrong.
+                         */
+                        disabled={running !== null || defaultProjects === null}
+                        // A client with genuinely no project still starts a timer: the time
+                        // is recorded uncategorised rather than refused, because refusing
                         // would lose the work.
                         onClick={() => start(projectId ?? null)}
                         aria-label={`Start a timer for ${client.name}`}
@@ -298,7 +351,7 @@ function ClientList({
                       <button
                         type="button"
                         className="button"
-                        onClick={() => setEditingId(client.id)}
+                        onClick={() => onEdit(client.id)}
                         aria-pressed={editingId === client.id}
                         aria-label={`Edit client ${client.name}`}
                       >
@@ -358,7 +411,7 @@ function ClientList({
           client={editingId === '' ? undefined : clients.find((row) => row.id === editingId)}
           takenColours={clients.map((row) => row.colour)}
           now={now}
-          onDone={() => setEditingId(undefined)}
+          onDone={() => onEdit(undefined)}
           onSaved={onSaved}
           report={onError}
         />

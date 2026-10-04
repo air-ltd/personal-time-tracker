@@ -65,7 +65,13 @@ describe('starting a timer per client (item 12)', () => {
 
     const timer = renderPanel()
     const row = await clientRow('Acme Ltd')
-    await user.click(within(row).getByRole('button', { name: 'Start a timer for Acme Ltd' }))
+    const start = within(row).getByRole('button', { name: 'Start a timer for Acme Ltd' })
+    // The default-project lookup is asynchronous, so the button is disabled until it
+    // lands. Clicking before that filed the time uncategorised.
+    await waitFor(() => {
+      expect(start).toBeEnabled()
+    })
+    await user.click(start)
 
     expect(timer.started).toEqual([defaultProject.id])
     expect((await listProjects()).find((row2) => row2.id === defaultProject.id)?.clientId).toBe(
@@ -139,6 +145,26 @@ describe('starting a timer per client (item 12)', () => {
   })
 })
 
+describe('layout (item 32)', () => {
+  it('puts the add button on the same line as the Timer heading', () => {
+    renderPanel()
+
+    // Item 32: it used to sit alone in a row of its own above the list, costing a row of
+    // height on the card the user looks at most often.
+    const heading = screen.getByRole('heading', { name: 'Timer' })
+    const header = heading.closest('div')
+    if (header === null) throw new Error('no timer header')
+    expect(within(header).getByRole('button', { name: 'New client' })).toBeInTheDocument()
+    expect(screen.queryByTestId('timer-clients-header')).toBeNull()
+  })
+
+  it('still opens the client form from there', async () => {
+    renderPanel()
+    await user.click(screen.getByRole('button', { name: 'New client' }))
+    expect(await screen.findByLabelText('Client name')).toBeInTheDocument()
+  })
+})
+
 describe('layout (item 16)', () => {
   it('offers no “no client” option once clients exist', async () => {
     // Item 16 asks for this explicitly. Uncategorised is still reachable from the manual
@@ -163,10 +189,8 @@ describe('layout (item 16)', () => {
   it('puts the add button in the panel header', () => {
     renderPanel()
 
-    const heading = screen.getByText('No clients yet')
-    const header = heading.closest('div')
-    if (header === null) throw new Error('no client header')
-    expect(within(header).getByRole('button', { name: 'New client' })).toBeInTheDocument()
+    // Item 24 removed the "Clients" heading, so the list header has nothing left in it.
+    expect(screen.queryByText('Clients')).toBeNull()
   })
 
   it('puts each client on one line with its own controls', async () => {
