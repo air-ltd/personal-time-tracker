@@ -25,6 +25,7 @@ import { CURRENCY_CODES } from '../domain/taxonomy/currencies'
  */
 
 const DEFAULT_CURRENCY_KEY = 'app-default-currency'
+const VISIBLE_CURRENCIES_KEY = 'visible-currencies'
 
 /**
  * The user's app-wide default currency, or null when they have not chosen one.
@@ -54,5 +55,42 @@ export async function writeDefaultCurrency(code: string | null): Promise<void> {
   }
   const upper = code.trim().toUpperCase()
   await getDb().meta.put({ key: DEFAULT_CURRENCY_KEY, value: upper })
+  bumpRevision()
+}
+
+/**
+ * The currencies offered in pickers, or null when the user has not narrowed them.
+ *
+ * The ISO 4217 list is over 180 entries, almost all of which are currencies this user
+ * will never invoice in. Item 13 of `SPECS/todo.md` asks to be able to keep the
+ * relevant ones and hide the rest.
+ *
+ * Null means "no narrowing chosen" and is deliberately distinct from an empty list: an
+ * empty list would offer nothing, which is never what hiding the irrelevant ones means.
+ *
+ * A stored code the runtime no longer offers is dropped on read, for the same reason as
+ * the default currency above — it can still be displayed, but offering a choice the
+ * user cannot re-select is a trap.
+ */
+export async function readVisibleCurrencies(): Promise<string[] | null> {
+  const record = await getDb().meta.get(VISIBLE_CURRENCIES_KEY)
+  const value = record?.value
+  if (!Array.isArray(value)) return null
+  const codes = value
+    .filter((code): code is string => typeof code === 'string')
+    .map((code) => code.trim().toUpperCase())
+    .filter((code) => CURRENCY_CODES.includes(code))
+  // De-duplicated, because the same code can arrive twice from a merge of two lists.
+  return [...new Set(codes)]
+}
+
+/** Narrow the offered currencies, or pass null to offer all of them again. */
+export async function writeVisibleCurrencies(codes: readonly string[] | null): Promise<void> {
+  if (codes === null) {
+    await getDb().meta.delete(VISIBLE_CURRENCIES_KEY)
+    bumpRevision()
+    return
+  }
+  await getDb().meta.put({ key: VISIBLE_CURRENCIES_KEY, value: [...codes] })
   bumpRevision()
 }

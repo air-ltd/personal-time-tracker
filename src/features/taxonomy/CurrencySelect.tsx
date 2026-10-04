@@ -1,5 +1,6 @@
 import { useId } from 'react'
 import { currencyOptions, currencyLabel } from '../../domain/taxonomy/currencies'
+import { useVisibleCurrencies } from './useVisibleCurrencies'
 
 /**
  * Currency select (0005 P7).
@@ -38,12 +39,21 @@ export function CurrencySelect({
   includeUnknown = true,
 }: CurrencySelectProps) {
   const id = useId()
-  const options = currencyOptions()
+  const { codes: visible } = useVisibleCurrencies()
+  const all = currencyOptions()
 
   // A code restored from a backup can be one this runtime does not list. Dropping it
   // silently would change a stored value on save; offering it keeps what the user chose
   // visible and correctable.
-  const missing = value !== null && !options.some((option) => option.code === value)
+  const missing = value !== null && !all.some((option) => option.code === value)
+
+  // Narrowed to the currencies this user cares about (item 13), but the current value is
+  // always kept. Hiding the currency a record already uses would show a select whose
+  // value is not in it, which reads as a corrupted record rather than as a filter.
+  const options =
+    visible === null
+      ? all
+      : all.filter((option) => visible.includes(option.code) || option.code === value)
 
   return (
     <div className="field">
