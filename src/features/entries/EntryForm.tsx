@@ -366,7 +366,22 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
       )}
 
       <div className="button-row">
-        <button type="submit" className="button button-primary" disabled={submitting}>
+        {/*
+          Item 33: editing an entry focuses Save, because the overwhelmingly common reason
+          to be on this screen is finishing the entry that was just stopped.
+
+          Not on "Add entry" for a new entry, and the difference is deliberate. A new entry
+          has no work in it yet — the times are empty — so Save would either fail
+          validation immediately or, worse, save an entry with nothing in it. Focusing a
+          control that cannot yet succeed is worse than focusing nothing.
+        */}
+        <button
+          type="submit"
+          className="button button-primary"
+          disabled={submitting}
+          autoFocus={entry !== undefined}
+          data-testid="entry-submit"
+        >
           {entry ? 'Save changes' : 'Add entry'}
         </button>
         <a className="button" href="#/">

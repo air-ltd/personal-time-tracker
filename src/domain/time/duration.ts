@@ -28,6 +28,7 @@ export function entryDurationMs(entry: TimeEntry, now: Date): number | null {
   return ms < 0 ? null : ms
 }
 
+const SECOND = 1000
 const MINUTE = 60_000
 
 export interface DurationFormat {
@@ -120,20 +121,44 @@ export function fromLocalInputValue(value: string): Date | null {
 
 /** `HH:mm` for a duration-first input (0004 M3). */
 export function toDurationInputValue(ms: number): string {
-  const totalMinutes = Math.max(0, Math.round(ms / MINUTE))
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
+  const totalSeconds = Math.max(0, Math.round(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(hours)}:${pad(minutes)}`
+  // Seconds only when there are any (item 30).
+  //
+  // Rounding to whole minutes meant a 25-second entry — which is what stopping a timer
+  // after a glance produces, and what the smoke test creates — came back as "00:00" on the
+  // edit page. Saving that without noticing writes an entry of no length at all. The seconds
+  // are dropped when they are zero, so the common case stays "01:30" and the placeholder's
+  // promise still holds.
+  return seconds === 0
+    ? `${pad(hours)}:${pad(minutes)}`
+    : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
 }
 
 /**
- * Parse `HH:mm` into milliseconds. Accepts `90` as 90 minutes, since `90` is what
- * a person types for an hour and a half and a colon-less value is common.
+ * Parse `HH:mm` or `HH:mm:ss` into milliseconds. Accepts `90` as 90 minutes, since `90`
+ * is what a person types for an hour and a half and a colon-less value is common.
+ *
+ * The seconds form is what `toDurationInputValue` writes when there are any (item 30), and
+ * has to round-trip it: an entry edited and saved without a change must keep its length,
+ * which it cannot do if the field cannot express seconds.
+ *
+ * Seconds are accepted on the input even though they are not required: someone typing
+ * `0:00:25` means half a minute, and refusing it would be the field arguing with them.
  */
 export function fromDurationInputValue(value: string): number | null {
   const trimmed = value.trim()
   if (!trimmed) return null
+  const withSeconds = /^(\d{1,3}):([0-5]\d):([0-5]\d)$/.exec(trimmed)
+  if (withSeconds) {
+    return (
+      (Number(withSeconds[1]) * 60 + Number(withSeconds[2])) * MINUTE +
+      Number(withSeconds[3]) * SECOND
+    )
+  }
   const match = /^(\d{1,3}):([0-5]\d)$/.exec(trimmed)
   if (match) {
     const hours = Number(match[1])

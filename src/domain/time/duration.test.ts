@@ -10,6 +10,7 @@ import {
 import type { TimeEntry } from '../entries/types'
 
 const HOUR = 3_600_000
+const SECOND = 1000
 const MINUTE = 60_000
 
 function entry(partial: Partial<TimeEntry>): TimeEntry {
@@ -149,6 +150,49 @@ describe('duration input', () => {
         minutes * MINUTE,
       )
     }
+  })
+
+  /*
+   * Seconds (item 30).
+   *
+   * A stopped timer is very often under a minute, and rounding that to "00:00" on the edit
+   * page invites saving an entry of no length at all. So the field carries seconds when
+   * there are any — and the round-trip has to hold for them, or editing and saving an
+   * untouched short entry would silently change its length.
+   */
+  describe('seconds', () => {
+    it('shows seconds when the duration has any', () => {
+      expect(toDurationInputValue(25 * SECOND)).toBe('00:00:25')
+      expect(toDurationInputValue(90 * MINUTE + 5 * SECOND)).toBe('01:30:05')
+    })
+
+    it('leaves them out when there are none, so the common case is unchanged', () => {
+      expect(toDurationInputValue(90 * MINUTE)).toBe('01:30')
+      expect(toDurationInputValue(0)).toBe('00:00')
+    })
+
+    it('never renders a short entry as zero', () => {
+      // The specific failure this fixes: 25 seconds used to become "00:00".
+      expect(toDurationInputValue(25 * SECOND)).not.toBe('00:00')
+      expect(fromDurationInputValue(toDurationInputValue(25 * SECOND))).toBe(25 * SECOND)
+    })
+
+    it('parses HH:mm:ss', () => {
+      expect(fromDurationInputValue('00:00:25')).toBe(25 * SECOND)
+      expect(fromDurationInputValue('1:30:05')).toBe(90 * MINUTE + 5 * SECOND)
+    })
+
+    it('round-trips sub-minute durations exactly', () => {
+      for (const seconds of [1, 9, 25, 59]) {
+        expect(fromDurationInputValue(toDurationInputValue(seconds * SECOND))).toBe(
+          seconds * SECOND,
+        )
+      }
+    })
+
+    it('still rejects out-of-range seconds rather than carrying them', () => {
+      expect(fromDurationInputValue('00:00:99')).toBeNull()
+    })
   })
 })
 

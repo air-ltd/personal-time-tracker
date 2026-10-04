@@ -11,7 +11,7 @@ import {
   deleteClient,
   listTags,
 } from '../../storage/taxonomyRepo'
-import { listEntries, putEntry } from '../../storage/entriesRepo'
+import { getEntry, listEntries, putEntry } from '../../storage/entriesRepo'
 
 /**
  * Taxonomy on the entry form (0005 T1–T2, P5, U1–U2, N2).
@@ -298,6 +298,43 @@ describe('tags (0005 T1–T2)', () => {
 
     await waitFor(async () => {
       expect((await listEntries())[0]?.projectId).toBe(project.id)
+    })
+  })
+})
+
+describe('duration in seconds (item 30)', () => {
+  it('shows a short entry’s seconds rather than rounding it away', async () => {
+    // A stopped timer is very often under a minute. The field used to show "00:00" for it,
+    // so saving the form without noticing wrote an entry of no length.
+    const start = new Date('2026-10-13T09:00:00.000Z')
+    const stored = await putEntry(entry({ start, end: new Date(start.getTime() + 25_000) }))
+
+    render(<EntryForm now={new Date('2026-10-13T10:00:00.000Z')} entry={stored} />)
+
+    expect(await screen.findByLabelText('Duration')).toHaveValue('00:00:25')
+  })
+
+  it('keeps a whole-minute entry in the shorter form', async () => {
+    const start = new Date('2026-10-13T09:00:00.000Z')
+    const stored = await putEntry(
+      entry({ start, end: new Date(start.getTime() + 90 * 60_000) }),
+    )
+
+    render(<EntryForm now={new Date('2026-10-13T11:00:00.000Z')} entry={stored} />)
+
+    expect(await screen.findByLabelText('Duration')).toHaveValue('01:30')
+  })
+
+  it('saves a short entry without changing its length', async () => {
+    const start = new Date('2026-10-13T09:00:00.000Z')
+    const stored = await putEntry(entry({ start, end: new Date(start.getTime() + 25_000) }))
+
+    render(<EntryForm now={new Date('2026-10-13T10:00:00.000Z')} entry={stored} />)
+    await user.click(await screen.findByRole('button', { name: 'Save changes' }))
+
+    await waitFor(async () => {
+      const saved = await getEntry(stored.id)
+      expect(Date.parse(saved?.end ?? '')).toBe(start.getTime() + 25_000)
     })
   })
 })
