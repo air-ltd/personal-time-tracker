@@ -380,7 +380,7 @@ export async function deleteProject(
   id: string,
   now: Date,
 ): Promise<DeleteProjectReceipt | null> {
-  return db().transaction('rw', db().entries, db().projects, async () => {
+  const receipt = await db().transaction('rw', db().entries, db().projects, async () => {
     const project = await db().projects.get(id)
     if (!project || project.deletedAt !== null) return null
 
@@ -402,6 +402,10 @@ export async function deleteProject(
     await db().projects.put({ ...project, deletedAt: iso(now), updatedAt: iso(now) })
     return { project, orphanedEntryIds }
   })
+  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
+  // that reads while the write transaction is still open would see pre-delete data.
+  bumpRevision()
+  return receipt
 }
 
 /** What undoing a project deletion needs (0005 X5). */
@@ -435,29 +439,40 @@ export async function undoDeleteProject(
   now: Date,
 ): Promise<UndoOutcome> {
   const { project, orphanedEntryIds } = receipt
-  return db().transaction('rw', db().entries, db().projects, async () => {
-    const live = await db().projects.get(project.id)
-    if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
+  const outcome: UndoOutcome = await db().transaction(
+    'rw',
+    db().entries,
+    db().projects,
+    async () => {
+      const live = await db().projects.get(project.id)
+      if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
 
-    const conflict = await nameConflictExcluding('project', project.name, project.id, true)
-    if (conflict) {
-      return {
-        ok: false,
-        reason: `Cannot restore "${project.name}": a project with that name already exists. The entries are still intact and uncategorised.`,
+      const conflict = await nameConflictExcluding('project', project.name, project.id, true)
+      if (conflict) {
+        return {
+          ok: false,
+          reason: `Cannot restore "${project.name}": a project with that name already exists. The entries are still intact and uncategorised.`,
+        }
       }
-    }
 
-    await db().projects.put({ ...live, deletedAt: null, updatedAt: iso(now) })
-    for (const entryId of orphanedEntryIds) {
-      const row = await db().entries.get(entryId)
-      // Skip anything deleted or already pointed elsewhere: within the undo window a
-      // device may have assigned it deliberately, and overwriting that would lose the
-      // newer choice.
-      if (!row || row.deletedAt !== null || row.projectId !== null) continue
-      await db().entries.put({ ...row, projectId: project.id, updatedAt: iso(now) })
-    }
-    return { ok: true }
-  })
+      await db().projects.put({ ...live, deletedAt: null, updatedAt: iso(now) })
+      for (const entryId of orphanedEntryIds) {
+        const row = await db().entries.get(entryId)
+        // Skip anything deleted or already pointed elsewhere: within the undo window a
+        // device may have assigned it deliberately, and overwriting that would lose the
+        // newer choice.
+        if (!row || row.deletedAt !== null || row.projectId !== null) continue
+        await db().entries.put({ ...row, projectId: project.id, updatedAt: iso(now) })
+      }
+      return { ok: true }
+    },
+  )
+
+  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
+  // reading while the write is still open would read pre-undo data. Only on success —
+  // a refused restore wrote nothing, so there is nothing to re-read.
+  if (outcome.ok) bumpRevision()
+  return outcome
 }
 
 /**
@@ -487,7 +502,7 @@ async function nameConflictExcluding(
  * client-less bucket, which is what makes the report totals reconcile (0005 X4, R3).
  */
 export async function deleteClient(id: string, now: Date): Promise<DeleteClientReceipt | null> {
-  return db().transaction('rw', db().clients, db().projects, async () => {
+  const receipt = await db().transaction('rw', db().clients, db().projects, async () => {
     const client = await db().clients.get(id)
     if (!client || client.deletedAt !== null) return null
 
@@ -500,6 +515,8 @@ export async function deleteClient(id: string, now: Date): Promise<DeleteClientR
     await db().clients.put({ ...client, deletedAt: iso(now), updatedAt: iso(now) })
     return { client, unlinkedProjectIds: projects.map((project) => project.id) }
   })
+  bumpRevision()
+  return receipt
 }
 
 /**
@@ -520,29 +537,40 @@ export async function undoDeleteClient(
   now: Date,
 ): Promise<UndoOutcome> {
   const { client, unlinkedProjectIds } = receipt
-  return db().transaction('rw', db().clients, db().projects, async () => {
-    const live = await db().clients.get(client.id)
-    if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
+  const outcome: UndoOutcome = await db().transaction(
+    'rw',
+    db().clients,
+    db().projects,
+    async () => {
+      const live = await db().clients.get(client.id)
+      if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
 
-    const conflict = await nameConflictExcluding('client', client.name, client.id, false)
-    if (conflict) {
-      return {
-        ok: false,
-        reason: `Cannot restore "${client.name}": a client with that name already exists. Its projects are intact and no longer belong to a client.`,
+      const conflict = await nameConflictExcluding('client', client.name, client.id, false)
+      if (conflict) {
+        return {
+          ok: false,
+          reason: `Cannot restore "${client.name}": a client with that name already exists. Its projects are intact and no longer belong to a client.`,
+        }
       }
-    }
 
-    await db().clients.put({ ...live, deletedAt: null, updatedAt: iso(now) })
-    for (const id of unlinkedProjectIds) {
-      const project = await db().projects.get(id)
-      // Only adopt projects that are still live and still client-less, for the same
-      // reason entries are not overwritten above. A rename in between is untouched:
-      // only `clientId` is written, so the newer name survives the restore.
-      if (!project || project.deletedAt !== null || project.clientId !== null) continue
-      await db().projects.put({ ...project, clientId: client.id, updatedAt: iso(now) })
-    }
-    return { ok: true }
-  })
+      await db().clients.put({ ...live, deletedAt: null, updatedAt: iso(now) })
+      for (const id of unlinkedProjectIds) {
+        const project = await db().projects.get(id)
+        // Only adopt projects that are still live and still client-less, for the same
+        // reason entries are not overwritten above. A rename in between is untouched:
+        // only `clientId` is written, so the newer name survives the restore.
+        if (!project || project.deletedAt !== null || project.clientId !== null) continue
+        await db().projects.put({ ...project, clientId: client.id, updatedAt: iso(now) })
+      }
+      return { ok: true }
+    },
+  )
+
+  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
+  // reading while the write is still open would read pre-undo data. Only on success —
+  // a refused restore wrote nothing, so there is nothing to re-read.
+  if (outcome.ok) bumpRevision()
+  return outcome
 }
 
 /**
@@ -602,7 +630,7 @@ export async function mergeTags(fromId: string, toId: string, now: Date): Promis
  * a label.
  */
 export async function deleteTag(id: string, now: Date): Promise<DeleteTagReceipt | null> {
-  return db().transaction('rw', db().entries, db().tags, async () => {
+  const receipt = await db().transaction('rw', db().entries, db().tags, async () => {
     const tag = await db().tags.get(id)
     if (!tag || tag.deletedAt !== null) return null
 
@@ -621,6 +649,8 @@ export async function deleteTag(id: string, now: Date): Promise<DeleteTagReceipt
     await db().tags.put({ ...tag, deletedAt: iso(now), updatedAt: iso(now) })
     return { tag, untaggedEntryIds }
   })
+  bumpRevision()
+  return receipt
 }
 
 /** What undoing a tag deletion needs (0005 X5). */
@@ -634,30 +664,41 @@ export async function undoDeleteTag(
   now: Date,
 ): Promise<UndoOutcome> {
   const { tag, untaggedEntryIds } = receipt
-  return db().transaction('rw', db().entries, db().tags, async () => {
-    const live = await db().tags.get(tag.id)
-    if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
+  const outcome: UndoOutcome = await db().transaction(
+    'rw',
+    db().entries,
+    db().tags,
+    async () => {
+      const live = await db().tags.get(tag.id)
+      if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
 
-    const conflict = await nameConflictExcluding('tag', tag.name, tag.id, false)
-    if (conflict) {
-      return {
-        ok: false,
-        reason: `Cannot restore "${tag.name}": a tag with that name already exists. The entries are intact and untagged.`,
+      const conflict = await nameConflictExcluding('tag', tag.name, tag.id, false)
+      if (conflict) {
+        return {
+          ok: false,
+          reason: `Cannot restore "${tag.name}": a tag with that name already exists. The entries are intact and untagged.`,
+        }
       }
-    }
 
-    await db().tags.put({ ...live, deletedAt: null, updatedAt: iso(now) })
-    for (const entryId of untaggedEntryIds) {
-      const row = await db().entries.get(entryId)
-      if (!row || row.deletedAt !== null) continue
-      // Restoring a tag is additive, so this is safe where a restore cannot overwrite:
-      // an entry that has since been deleted is skipped, and one that gained the tag
-      // another way is left with a single reference rather than a duplicate.
-      if (row.tagIds.includes(tag.id)) continue
-      await db().entries.put({ ...row, tagIds: [...row.tagIds, tag.id], updatedAt: iso(now) })
-    }
-    return { ok: true }
-  })
+      await db().tags.put({ ...live, deletedAt: null, updatedAt: iso(now) })
+      for (const entryId of untaggedEntryIds) {
+        const row = await db().entries.get(entryId)
+        if (!row || row.deletedAt !== null) continue
+        // Restoring a tag is additive, so this is safe where a restore cannot overwrite:
+        // an entry that has since been deleted is skipped, and one that gained the tag
+        // another way is left with a single reference rather than a duplicate.
+        if (row.tagIds.includes(tag.id)) continue
+        await db().entries.put({ ...row, tagIds: [...row.tagIds, tag.id], updatedAt: iso(now) })
+      }
+      return { ok: true }
+    },
+  )
+
+  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
+  // reading while the write is still open would read pre-undo data. Only on success —
+  // a refused restore wrote nothing, so there is nothing to re-read.
+  if (outcome.ok) bumpRevision()
+  return outcome
 }
 
 /** How many entries carry a tag, for the confirmation (0005 T3). */

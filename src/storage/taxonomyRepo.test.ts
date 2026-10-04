@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { AppDb, setDbForTests } from './db'
-import { resetRevisionForTests } from './events'
+import { getRevision, resetRevisionForTests, subscribe } from './events'
 import {
   getEntry,
   listEntries,
@@ -910,5 +910,109 @@ describe('delete impact for confirmations (0005 X1, X4, T3)', () => {
     await putEntry(entry())
 
     expect(await tagEntryCount(tag.id)).toBe(2)
+  })
+})
+
+/**
+ * Revision notification (0005 X1–X5).
+ *
+ * Every write here has to tell the views, because every view subscribes to a revision
+ * counter rather than to IndexedDB. A write that lands correctly but stays quiet is
+ * invisible in a test that only inspects the database and obvious in the app, where the
+ * row simply never comes back.
+ *
+ * This block exists because two of these bumps were missing: the deletes, and then the
+ * undos. Both were found by the browser suite rather than by a unit test, because a test
+ * that only reads back the rows cannot tell a quiet write from an unobserved one.
+ */
+describe('notifying views', () => {
+  beforeEach(() => {
+    installDb()
+  })
+
+  /** Counts notifications raised while `run` executes, after the setup has settled. */
+  async function notificationsFrom(run: () => Promise<unknown>): Promise<number> {
+    let notified = 0
+    const unsubscribe = subscribe(() => {
+      notified += 1
+    })
+    try {
+      await run()
+      return notified
+    } finally {
+      unsubscribe()
+    }
+  }
+
+  /** A project holding one entry, deleted, so there is a receipt to undo. */
+  async function deletedProjectWithEntry(name = 'Acme') {
+    const project = await createProject({ name, now: T0 })
+    await putEntry(entry({ projectId: project.id }))
+    return { project, receipt: await deleteProject(project.id, T0) }
+  }
+
+  it('notifies on delete', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    const before = getRevision()
+
+    await notificationsFrom(async () => {
+      await deleteProject(project.id, T0)
+    })
+
+    expect(getRevision()).toBeGreaterThan(before)
+  })
+
+  it('notifies on undo of a delete', async () => {
+    const { receipt } = await deletedProjectWithEntry()
+    if (receipt === null) throw new Error('expected a deletion receipt, got none')
+    const before = getRevision()
+
+    await notificationsFrom(async () => {
+      await undoDeleteProject(receipt, T0)
+    })
+
+    expect(getRevision()).toBeGreaterThan(before)
+  })
+
+  it('notifies on undo of a client delete', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await createProject({ name: 'One', clientId: client.id, now: T0 })
+    const receipt = await deleteClient(client.id, T0)
+    if (receipt === null) throw new Error('expected a deletion receipt, got none')
+    const before = getRevision()
+
+    await notificationsFrom(async () => {
+      await undoDeleteClient(receipt, T0)
+    })
+
+    expect(getRevision()).toBeGreaterThan(before)
+  })
+
+  it('notifies on undo of a tag delete', async () => {
+    const { tag } = await createOrFindTag({ name: 'research', now: T0 })
+    const receipt = await deleteTag(tag.id, T0)
+    if (receipt === null) throw new Error('expected a deletion receipt, got none')
+    const before = getRevision()
+
+    await notificationsFrom(async () => {
+      await undoDeleteTag(receipt, T0)
+    })
+
+    expect(getRevision()).toBeGreaterThan(before)
+  })
+
+  it('stays quiet when a restore is refused, because nothing was written', async () => {
+    const project = await createProject({ name: 'Acme', now: T0 })
+    const receipt = await deleteProject(project.id, T0)
+    if (receipt === null) throw new Error('expected a deletion receipt, got none')
+    // Take the name, which is the one way a restore can legitimately be refused.
+    await createProject({ name: 'Acme', now: T0 })
+
+    const notified = await notificationsFrom(async () => {
+      const outcome = await undoDeleteProject(receipt, T0)
+      expect(outcome.ok).toBe(false)
+    })
+
+    expect(notified).toBe(0)
   })
 })
