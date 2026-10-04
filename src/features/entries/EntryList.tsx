@@ -120,59 +120,71 @@ function EntryRow({
       <div className="entry-duration" data-testid={`duration-${entry.id}`}>
         {formatDuration(duration)}
       </div>
-      <div className="entry-taxonomy">
-        {project === null ? (
-          // U1/U2: uncategorised is named rather than shown as a blank, so an entry that
-          // lost its project — or never had one — reads as a state rather than as missing
-          // information.
-          <span className="entry-project entry-uncategorised">Uncategorised</span>
-        ) : (
-          <>
-            {/* N2: the project name is always text, and the client is named beside it.
-                The swatch repeats information already in words, so colour is never the
-                only carrier of meaning. */}
-            <span className="entry-project">
-              <span
-                className="tag-swatch"
-                style={{ background: project.colour }}
-                aria-hidden="true"
-              />
-              {project.name}
-              {project.archived && <span className="badge badge-archived">archived</span>}
-              {client !== null && <span className="entry-client"> · {client.name}</span>}
-            </span>
-          </>
-        )}
-        {entry.billable && (
-          <span className="badge badge-billable" data-testid={`billable-${entry.id}`}>
-            Billable
-          </span>
-        )}
-      </div>
-
-      {tags.length > 0 && (
-        <ul className="entry-tags" data-testid={`tags-${entry.id}`}>
-          {tags.map((tag) => (
-            <li key={tag.id} className="chip">
-              <span
-                className="tag-swatch"
-                style={{ background: tag.colour }}
-                aria-hidden="true"
-              />
-              {tag.name}
-            </li>
-          ))}
-        </ul>
-      )}
-
       {/*
+        One wrapper for everything textual (item 27).
+
+        These were separate children of the grid, so with the pencil pulled into a column
+        of its own they landed in columns 1 and 2 of a second row — the tags and the note
+        appearing to the left of the project they belong to. A grid wants a fixed number of
+        columns; the flexible part belongs inside one of them.
+      */}
+      <div className="entry-content">
+        <div className="entry-taxonomy">
+          {project === null ? (
+            // U1/U2: uncategorised is named rather than shown as a blank, so an entry that
+            // lost its project — or never had one — reads as a state rather than as missing
+            // information.
+            <span className="entry-project entry-uncategorised">Uncategorised</span>
+          ) : (
+            <>
+              {/* N2: the project name is always text, and the client is named beside it.
+                  The swatch repeats information already in words, so colour is never the
+                  only carrier of meaning. */}
+              <span className="entry-project">
+                <span
+                  className="tag-swatch"
+                  style={{ background: project.colour }}
+                  aria-hidden="true"
+                />
+                {project.name}
+                {project.archived && <span className="badge badge-archived">archived</span>}
+                {client !== null && <span className="entry-client"> · {client.name}</span>}
+              </span>
+            </>
+          )}
+          {entry.billable && (
+            <span className="badge badge-billable" data-testid={`billable-${entry.id}`}>
+              Billable
+            </span>
+          )}
+        </div>
+
+        {tags.length > 0 && (
+          <ul className="entry-tags" data-testid={`tags-${entry.id}`}>
+            {tags.map((tag) => (
+              <li key={tag.id} className="chip">
+                <span
+                  className="tag-swatch"
+                  style={{ background: tag.colour }}
+                  aria-hidden="true"
+                />
+                {tag.name}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/*
         On one line with the times and duration (item 20): a row per entry with its edit
         control on a line of its own made a day of modest work taller than the screen. The
         note still gets its own line when there is one, because a long note squeezed into
         a single row is unreadable — it is the length, not the fact of a note, that earns
         the space.
       */}
-      {entry.note && <p className="entry-note">{entry.note}</p>}
+        {entry.note && <p className="entry-note">{entry.note}</p>}
+      </div>
+
+      {/* Item 27: the pencil shares the entry's first line, pinned to its right edge. */}
       <a
         className="entry-edit"
         href={`#/entries/${entry.id}`}
