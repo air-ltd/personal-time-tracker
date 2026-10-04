@@ -102,11 +102,22 @@ export async function findRunningEntry(): Promise<TimeEntry | undefined> {
  * Guarded so a second start cannot create a second running entry (0004 T1) even if
  * the UI is bypassed or clicked twice in the same tick.
  */
-export async function startTimer(now: Date): Promise<TimeEntry> {
+/**
+ * Start a timer, optionally against a project.
+ *
+ * `projectId` comes from the client whose button was pressed (item 12 of
+ * `SPECS/todo.md`), so the time is recorded against that client's default project without
+ * anyone having to classify it afterwards. Null keeps the previous behaviour of an
+ * uncategorised timer, which is still right for work with no client.
+ */
+export async function startTimer(
+  now: Date,
+  projectId: string | null = null,
+): Promise<TimeEntry> {
   return db().transaction('rw', db().entries, async () => {
     const running = await findRunningEntry()
     if (running) return running
-    return putEntry(makeEntry({ start: now, end: null, source: 'timer', now }))
+    return putEntry(makeEntry({ start: now, end: null, source: 'timer', projectId, now }))
   })
 }
 

@@ -16,7 +16,12 @@ beforeEach(() => {
 describe('root route', () => {
   it('renders the timer and entries panels', () => {
     render(<App />)
-    expect(screen.getByRole('heading', { level: 1, name: 'Time Tracker' })).toBeInTheDocument()
+    // Named "Time Tracker, home" rather than just "Time Tracker": the heading is a link
+    // (item 23), and a link whose name is identical to the page title does not tell a
+    // screen reader user that pressing it goes anywhere.
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Time Tracker, home' }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Timer' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Entries' })).toBeInTheDocument()
   })
@@ -249,14 +254,29 @@ describe('delete and undo (0003 D1–D4)', () => {
   })
 })
 
-describe('theme control', () => {
+describe('theme control (item 9)', () => {
+  // These moved to the settings page: a three-way radio group sat in the header of every
+  // screen, for a preference nobody changes mid-entry.
+  it('is not in the header', () => {
+    render(<App />)
+    expect(screen.queryByRole('radio', { name: 'Dark' })).toBeNull()
+  })
+
+  it('is on the settings page', () => {
+    window.location.hash = '#/settings'
+    render(<App />)
+    expect(screen.getByRole('radio', { name: 'System' })).toBeInTheDocument()
+  })
+
   it('defaults to following the system preference', () => {
+    window.location.hash = '#/settings'
     render(<App />)
     expect(screen.getByRole('radio', { name: 'System' })).toBeChecked()
   })
 
   it('applies and persists a chosen theme', async () => {
     const user = userEvent.setup()
+    window.location.hash = '#/settings'
     render(<App />)
     await user.click(screen.getByRole('radio', { name: 'Dark' }))
     expect(document.documentElement.dataset.theme).toBe('dark')

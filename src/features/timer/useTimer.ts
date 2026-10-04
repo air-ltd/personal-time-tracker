@@ -13,7 +13,15 @@ export interface TimerState {
   running: TimeEntry | null
   /** Elapsed ms for the running entry, ticking once a second. Null when idle. */
   elapsedMs: number | null
-  start: () => void
+  /**
+   * Start a timer, optionally against a project.
+   *
+   * Takes the project because the timer panel offers a button per client (item 12), and
+   * that client's default project is the obvious place for the time to land — the user
+   * chose the client by pressing its button, so choosing the project too is not an extra
+   * decision, it is the one already made.
+   */
+  start: (projectId?: string | null) => void
   /**
    * Resolves once the entry is written.
    *
@@ -66,8 +74,8 @@ export function useTimer(): TimerState {
     }
   }, [runningId])
 
-  const start = useCallback(() => {
-    void startTimer(new Date())
+  const start = useCallback((projectId: string | null = null) => {
+    void startTimer(new Date(), projectId)
   }, [])
 
   const stop = useCallback(async () => {

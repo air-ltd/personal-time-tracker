@@ -365,6 +365,315 @@ code {
   min-height: 1.4rem;
 }
 
+/* Entries controls: the client filter and the period (items 21, 22). */
+.entries-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.entries-filter {
+  min-width: 12rem;
+}
+
+.period-control {
+  display: flex;
+  gap: 0.6rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.period-control-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The client filter is forced by a running timer, and says so. */
+.entries-filter select:disabled {
+  opacity: 0.7;
+}
+
+/* Summary (item 22). */
+.entry-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.summary-bucket {
+  border-top: 1px dotted var(--border);
+  padding-top: 0.4rem;
+}
+
+.summary-bucket-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.summary-bucket-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.summary-bucket-total,
+.summary-row-total {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.summary-rows {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  align-items: baseline;
+}
+
+.summary-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.summary-row-projects {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Header home link and favicon (item 23). */
+.app-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-home:hover .app-home-icon {
+  transform: scale(1.06);
+}
+
+.app-home-icon {
+  display: block;
+  /* Scaled up from the favicon's own 32-unit grid, so the corner radius is scaled with
+     it: a fixed rem radius on a 36px mark reads as visibly tighter corners than the
+     16px one the browser draws in the tab. */
+  border-radius: 0.47rem;
+  transition: transform 120ms ease-out;
+}
+
+/* Header menu (item 18). */
+.header-menu {
+  position: relative;
+}
+
+.header-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+}
+
+.header-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 20;
+  width: min(22rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+/* The panel supplies the chrome here, so the nested sections should not draw their own. */
+.header-menu-panel .panel {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: none;
+}
+
+/* An icon beside a label, sized to the text rather than to its own viewBox. */
+.button .icon {
+  flex: none;
+  vertical-align: -0.15em;
+  margin-right: 0.35rem;
+}
+
+.button .icon:only-child {
+  margin-right: 0;
+}
+
+/* Timer: one line per client (item 16 of SPECS/todo.md). */
+.timer-clients-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.timer-clients-heading {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+/* A plus rather than a word: the rows beneath are all add-actions already. Sized for a
+   fingertip rather than matched to the small text buttons beside it. */
+.timer-add-client {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.6rem;
+  min-width: 2.4rem;
+}
+
+.timer-client-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px dotted var(--border);
+}
+
+.timer-client-row {
+  display: grid;
+  /* name, total, actions, optional badge */
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.timer-client-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The count-up while running, and the lifetime total while not (items 16, 19). */
+.timer-client-live {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.timer-client-row-active .timer-client-live {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.badge-active {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  border: 1px solid currentColor;
+  border-radius: 0.2rem;
+  padding: 0 0.25rem;
+  margin-left: 0.35rem;
+}
+
+.timer-orphan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.4rem;
+}
+
+.timer-client-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+/* Currency preferences (items 13–14): chosen first, then the rest. */
+.currency-picker-list {
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.currency-group h4 {
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.currency-picker-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  columns: 2;
+  column-gap: 1rem;
+}
+
+.currency-picker-options li {
+  break-inside: avoid;
+  padding: 0.1rem 0;
+}
+
+/* The header sync indicator (item 10). */
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sync-indicator-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.sync-indicator-ok .sync-indicator-dot {
+  background: #2e8b57;
+}
+
+.sync-indicator-warn .sync-indicator-dot {
+  background: #c98a12;
+}
+
+.sync-indicator-error .sync-indicator-dot {
+  background: #c0392b;
+}
+
+.sync-indicator-idle .sync-indicator-dot {
+  background: var(--fg-muted);
+}
+
 /*
  * A tag chip. The name is the content; the swatch repeats it, so colour is never the only
  * carrier of meaning (0005 N2), and removing one is a labelled button rather than an "×"
@@ -411,6 +720,19 @@ code {
   border: 1px solid var(--border);
   border-radius: 0.2rem;
   padding: 0 0.25rem;
+}
+
+/* Item 20: an icon rather than the word, so the row needs no width for it. */
+.entry-edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.2rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
+.entry-edit:hover {
+  background: var(--surface-2, rgb(127 127 127 / 12%));
 }
 
 .entry-edit {
@@ -886,10 +1208,49 @@ code {
     grid-row: 3;
   }
 
+  /* Item 20: an icon rather than the word, so the row needs no width for it. */
+  .entry-edit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.2rem 0.35rem;
+    border-radius: 0.25rem;
+  }
+
+  .entry-edit:hover {
+    background: var(--surface-2, rgb(127 127 127 / 12%));
+  }
+
   .entry-edit {
     grid-column: 2;
     grid-row: 2;
     justify-self: end;
+  }
+
+  /* Two columns of currencies become one, and the client row drops its total onto the
+     name's line rather than squeezing five columns into 320px. */
+  .currency-picker-options {
+    columns: 1;
+  }
+
+  /* The period control and the filter stack rather than compete for one row. */
+  .entries-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .timer-client-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.2rem;
+  }
+
+  .timer-client-live {
+    grid-column: 1;
+  }
+
+  .timer-client-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
 
   /* The form is already a single column, so it only needs roomer tap targets. */

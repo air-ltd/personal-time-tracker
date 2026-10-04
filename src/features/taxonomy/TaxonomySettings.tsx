@@ -4,13 +4,13 @@ import { ColorPicker } from './ColorPicker'
 import { CurrencySelect } from './CurrencySelect'
 import { RateField } from './RateField'
 import { DeleteConfirm } from './DeleteConfirm'
+import { ClientForm } from './ClientForm'
 import { ProjectUndoBar, type TaxonomyUndo } from './TaxonomyUndoBar'
 import {
   clientDeleteImpact,
   type DeleteClientReceipt,
   type DeleteProjectReceipt,
   type DeleteTagReceipt,
-  createClient,
   createOrFindTag,
   createProject,
   deleteClient,
@@ -23,7 +23,6 @@ import {
   undoDeleteClient,
   undoDeleteProject,
   undoDeleteTag,
-  updateClient,
   updateProject,
   updateTag,
 } from '../../storage/taxonomyRepo'
@@ -342,67 +341,18 @@ function ClientSection({
   onDelete: (client: Client) => void
 }) {
   const [creating, setCreating] = useState(false)
-  const [name, setName] = useState('')
-  const [currency, setCurrency] = useState('GBP')
-  const [rate, setRate] = useState<number | null>(null)
-  const [colour, setColour] = useState<string>(() => suggestColour([]))
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    try {
-      await createClient({ name, currency, defaultRateMinor: rate, colour, now })
-      setName('')
-      setRate(null)
-      setCreating(false)
-    } catch (problem) {
-      report(problem)
-    }
-  }
 
   return (
     <div className="settings-block">
       <h3>Clients</h3>
 
       {creating ? (
-        <form className="taxonomy-form" onSubmit={(e) => void submit(e)}>
-          <div className="field">
-            <label htmlFor="client-name">Client name</label>
-            <input
-              id="client-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <CurrencySelect
-            label="Billing currency"
-            inheritLabel="Choose a currency"
-            value={currency}
-            onChange={(code) => setCurrency(code ?? 'GBP')}
-          />
-          <RateField
-            label="Default hourly rate"
-            currency={currency}
-            value={rate}
-            onChange={setRate}
-            hint="Used by this client's projects unless they set their own."
-          />
-          <ColorPicker
-            label="Client colour"
-            value={colour}
-            onChange={setColour}
-            takenColours={allClients.map((c) => c.colour)}
-          />
-          <div className="button-row">
-            <button type="submit" className="button button-primary">
-              Add client
-            </button>
-            <button type="button" className="button" onClick={() => setCreating(false)}>
-              Cancel
-            </button>
-          </div>
-        </form>
+        <ClientForm
+          takenColours={allClients.map((row) => row.colour)}
+          now={now}
+          onDone={() => setCreating(false)}
+          report={report}
+        />
       ) : (
         <button type="button" className="button" onClick={() => setCreating(true)}>
           Add client
@@ -450,70 +400,16 @@ function ClientRow({
   onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(client.name)
-  const [currency, setCurrency] = useState(client.currency)
-  const [rate, setRate] = useState<number | null>(client.defaultRateMinor)
-  const [colour, setColour] = useState(client.colour)
-  const [currencyChanged, setCurrencyChanged] = useState(false)
-
-  async function save() {
-    try {
-      await updateClient(client.id, { name, currency, defaultRateMinor: rate, colour }, now)
-      setEditing(false)
-      setCurrencyChanged(false)
-    } catch (problem) {
-      report(problem)
-    }
-  }
 
   if (editing) {
     return (
       <div className="taxonomy-edit">
-        <div className="field">
-          <label htmlFor={`client-${client.id}-name`}>Client name</label>
-          <input
-            id={`client-${client.id}-name`}
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <CurrencySelect
-          label="Billing currency"
-          inheritLabel="Choose a currency"
-          value={currency}
-          onChange={(code) => {
-            setCurrency(code ?? client.currency)
-            setCurrencyChanged(code !== null && code !== client.currency)
-          }}
+        <ClientForm
+          client={client}
+          now={now}
+          onDone={() => setEditing(false)}
+          report={report}
         />
-        <RateField
-          label="Default hourly rate"
-          currency={currency}
-          value={rate}
-          onChange={setRate}
-        />
-        <ColorPicker label="Client colour" value={colour} onChange={setColour} />
-        {/* 0005 P8: historical figures display in the new currency, and the user has to be
-            told, because relabelling money already billed retroactively would be worse. */}
-        {currencyChanged && (
-          <p
-            className="alert alert-warning"
-            role="status"
-            data-testid="currency-change-warning"
-          >
-            Entries already recorded will display in {currencyLabel(currency)} from now on.
-            Money already billed is not rewritten.
-          </p>
-        )}
-        <div className="button-row">
-          <button type="button" className="button button-primary" onClick={() => void save()}>
-            Save
-          </button>
-          <button type="button" className="button" onClick={() => setEditing(false)}>
-            Cancel
-          </button>
-        </div>
       </div>
     )
   }

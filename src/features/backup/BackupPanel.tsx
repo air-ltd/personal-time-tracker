@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { createBackup, restoreBackup, type BackupDeps } from '../../export/backup'
 import { readSnapshot, writeSnapshot } from '../../storage/snapshotRepo'
 import { SCHEMA_VERSION } from '../../storage/db'
+import { DownloadIcon, RestoreIcon } from '../../app/Icons'
 
 /**
  * Backup controls (0008 J1–J12).
@@ -17,7 +18,18 @@ type State =
   | { kind: 'done'; message: string }
   | { kind: 'error'; message: string; issues: string[] }
 
-export function BackupPanel({ deps = defaultDeps }: { deps?: BackupDeps }) {
+export interface BackupPanelProps {
+  deps?: BackupDeps
+  /**
+   * Called after a restore, so a caller that mounted this inside a menu can close it.
+   *
+   * Restoring replaces everything in the browser, so any panel showing data read before
+   * the restore is now showing the wrong data.
+   */
+  onNavigate?: (() => void) | undefined
+}
+
+export function BackupPanel({ deps = defaultDeps, onNavigate }: BackupPanelProps) {
   const [state, setState] = useState<State>({ kind: 'idle' })
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -64,6 +76,9 @@ export function BackupPanel({ deps = defaultDeps }: { deps?: BackupDeps }) {
             kind: 'done',
             message: `Restored. This device now holds ${count} ${count === 1 ? 'entry' : 'entries'}.${when}`,
           })
+          // Notified after the state is set, so the caller sees the result and can close
+          // around it. A restore replaces everything in the browser.
+          onNavigate?.()
         })
         .catch((error: unknown) => {
           setState({
@@ -73,7 +88,7 @@ export function BackupPanel({ deps = defaultDeps }: { deps?: BackupDeps }) {
           })
         })
     },
-    [deps],
+    [deps, onNavigate],
   )
 
   return (
@@ -95,6 +110,10 @@ export function BackupPanel({ deps = defaultDeps }: { deps?: BackupDeps }) {
           onClick={onExport}
           disabled={state.kind === 'working'}
         >
+          {/* Icons beside the words rather than instead of them: these are two of the
+              least reversible actions in the app, so they should not have to be inferred
+              from a glyph. */}
+          <DownloadIcon />
           {state.kind === 'working' ? 'Working…' : 'Download backup'}
         </button>
 
@@ -104,6 +123,7 @@ export function BackupPanel({ deps = defaultDeps }: { deps?: BackupDeps }) {
           onClick={() => fileInput.current?.click()}
           disabled={state.kind === 'working'}
         >
+          <RestoreIcon />
           Restore from file
         </button>
 
