@@ -119,6 +119,13 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     nowhere to say that restoring merges rather than replaces, and that sentence is why the
     buttons are safe to press. The two surfaces share one `useBackup`, so they cannot
     disagree about what "restore" means.
+    **Now four buttons**: About was added to the menu later, at your request, which reverses
+    the count half of this item and nothing else. It is still a menu of named actions with no
+    explanatory text. What item 26 actually settled was that a menu has nowhere to explain a
+    button, so the backup explanation stays on settings; About is the one entry that earns its
+    place in a menu because it answers "what is this, and is it safe to leave running?", which
+    is the question a menu is the obvious place to ask. Settings keeps its own About link,
+    since someone already reading settings is looking for it there.
 27. [x] pencil icon should be on same line as the rest of the text for the entry (left
     hand end). Done, at the left-hand end of the row's first line. Getting there took three
     attempts, all of which looked fine in the DOM and were wrong in a browser:

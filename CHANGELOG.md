@@ -89,7 +89,10 @@ Nothing has been released yet. This is the first release candidate.
 - Settings page carrying theme, taxonomy, currencies, sync and backup.
 - Sync status in the header, with the detail on the settings page. When disconnected the
   indicator is the button that connects.
-- A header menu of three named actions, and a favicon beside the title linking home.
+- A header menu of named actions — settings, download, import, About — and a favicon beside
+  the title linking home. About is also linked from settings, and reachable from anywhere via
+  the menu, because "what is this, and is it safe to leave running?" is a question worth asking
+  where the menu already is.
 
 ### Added — security and release gates
 
@@ -175,6 +178,11 @@ several silent ones:
 - A comment in the name-comparison code said the opposite of what the code did, on the
   question of Unicode normalisation — the kind of comment that makes a future reader "fix"
   correct code.
+- The browser suite could silently test the wrong build. `--strictPort` makes its preview
+  server exit rather than pick another port, and its output was discarded — so a port left
+  held by an earlier interrupted run meant every check after that was a verdict on a stale
+  `dist/` rather than on the build the run had just made. It now refuses to start and says
+  how to clear the port.
 
 ### Changed
 

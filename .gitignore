@@ -8,5 +8,11 @@ dist
 coverage
 *.tsbuildinfo
 
+# Reviews and review responses. Working artifacts rather than project source: they
+# describe a moment, they are written by more than one agent at once, and a
+# half-finished one is noise in the history of a repository whose value is in its
+# code and specifications.
+review
+
 # Local logs
 *.log

@@ -1,24 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
-import { DownloadIcon, MenuIcon, RestoreIcon, SettingsIcon } from '../../app/Icons'
+import { DownloadIcon, InfoIcon, MenuIcon, RestoreIcon, SettingsIcon } from '../../app/Icons'
 import { BackupFileInput, BackupStatus } from '../backup/BackupParts'
 import { useBackup } from '../backup/useBackup'
 
 /**
- * The header menu (items 18 and 26).
+ * The header menu (items 18 and 26, plus About).
  *
  * Item 18 put settings and backup here; item 26 then reduced it to "just the 3 buttons
  * which should be arranged vertically", with none of the surrounding text; item 29 put the
  * words back beside the icons.
  *
  * Read together, those three say something narrower than "no text": drop the explanatory
- * paragraphs, keep the three actions stacked, and keep each action named. An icon alone
- * makes the user guess, and writing out versus reading in is exactly the distinction they
- * must not have to infer from a shape.
+ * paragraphs, keep the actions stacked, and keep each action named. An icon alone makes the
+ * user guess, and writing out versus reading in is exactly the distinction they must not have
+ * to infer from a shape. What item 26 fixed was the number *and* the absence of prose, and
+ * the reason it was deliberate was that a menu has nowhere to explain what a button does —
+ * which is why the backup explanation moved to the settings page rather than the menu growing.
+ *
+ * About is now a fourth item, so the count is four. That reverses the count half of item 26
+ * and nothing else: it is still a menu of named actions with no explanatory text, and the
+ * reasoning above is unchanged. About is the one entry that earns its place in a menu,
+ * because it is the answer to "what is this, and is it safe to leave running?" — a question a
+ * menu is the obvious place to ask. The settings page keeps its own link, since someone
+ * already reading settings is looking for it there.
  *
  * The labels are one word each, lower case — "download", "import" — rather than the full
  * "Download backup" / "Restore from file". The long forms live on the settings panel, where
- * there is room to finish the sentence; here they crowd three buttons into a strip that is
- * only ever three buttons wide.
+ * there is room to finish the sentence; here they crowd the buttons into a strip.
  *
  * The labels are visible, so no `aria-label` is added: a control whose visible text and
  * accessible name differ is announced twice and confuses voice-control users. The name is
@@ -28,9 +36,17 @@ import { useBackup } from '../backup/useBackup'
 export interface HeaderMenuProps {
   /** Where "Settings" goes. Item 15 makes the title the home link instead. */
   settingsHref: string
+  /**
+   * Where "About" goes.
+   *
+   * Passed rather than hard-coded to `#/about`, for the same reason `settingsHref` is: the
+   * header is assembled by `App`, which owns the routes, and a menu that hard-codes a path
+   * is a second place to change when routing does.
+   */
+  aboutHref: string
 }
 
-export function HeaderMenu({ settingsHref }: HeaderMenuProps) {
+export function HeaderMenu({ settingsHref, aboutHref }: HeaderMenuProps) {
   const [open, setOpen] = useState(false)
   const container = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -76,7 +92,14 @@ export function HeaderMenu({ settingsHref }: HeaderMenuProps) {
       </button>
 
       {open && (
-        <div className="header-menu-panel" id="header-menu-panel">
+        <div
+          className="header-menu-panel"
+          id="header-menu-panel"
+          // Present so the tests can ask whether the panel is mounted. Without it, a query
+          // for it returns nothing whether it is closed or was never rendered — which is a
+          // check that passes for the wrong reason.
+          data-testid="header-menu-panel"
+        >
           <a
             className="header-menu-item"
             href={settingsHref}
@@ -108,6 +131,21 @@ export function HeaderMenu({ settingsHref }: HeaderMenuProps) {
             <RestoreIcon />
             <span>import</span>
           </button>
+
+          {/*
+            Last, and after the two actions rather than first. Settings and About are places
+            to go; download and import are things to do, and a destructive-sounding pair
+            reads better together and away from navigation.
+          */}
+          <a
+            className="header-menu-item"
+            href={aboutHref}
+            onClick={() => setOpen(false)}
+            data-testid="header-menu-about"
+          >
+            <InfoIcon />
+            <span>About</span>
+          </a>
 
           <BackupFileInput input={fileInput} onChange={backup.onFileChange} />
 

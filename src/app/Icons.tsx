@@ -155,6 +155,30 @@ export function SettingsIcon({ size = 16, weight }: IconProps) {
   )
 }
 
+/**
+ * A circled "i" — "About".
+ *
+ * The universally recognised "what is this" mark, chosen over a book or a document because
+ * those read as *documentation* — which would promise something to read rather than a page
+ * describing the app and what has changed in it.
+ *
+ * Drawn as a circle plus two strokes rather than as a glyph, so it matches the cog and the
+ * menu mark in weight and optical size. The stem stops short of the dot by a full stroke
+ * width: joining them makes the two merge into an exclamation mark at 16px, which says
+ * warning rather than information.
+ */
+export function InfoIcon({ size = 16, weight = 2 }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5.5" />
+      {/* Filled rather than stroked: a 2px round cap at this radius reads as a smudge, and
+          the dot has to survive being 2px across. */}
+      <path d="M12 7.6h.01" strokeWidth={weight + 0.6} />
+    </Svg>
+  )
+}
+
 /** A chevron, for the collapsible cards (items 25, 26). */
 export function ChevronIcon({ size = 16, weight }: IconProps) {
   return (

@@ -58,9 +58,10 @@ export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
       <BackupPanel />
 
       {/*
-        About lives here rather than in the header menu, which item 26 fixed at three
-        buttons. A settings page is where someone looks for it, and a fourth menu button
-        would undo a decision that was made on purpose.
+        Also in the header menu, which is where "what is this?" is usually asked. This link
+        stays because someone already reading settings is looking for it here, and the two
+        are one line each rather than a shared abstraction — there is nothing here that
+        needs to change if the route moves, because the menu's href is passed in by `App`.
       */}
       <p className="settings-footer">
         <a href="#/about">About this app and what has changed</a>

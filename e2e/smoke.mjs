@@ -109,6 +109,32 @@ async function main() {
   // After the build, because it is the build that decides the base.
   const URL = `${URL_BASE}${deriveBasePath()}`
 
+  /*
+   * Refuse to start if something is already serving this URL.
+   *
+   * `--strictPort` makes the preview server exit rather than pick another port, and its
+   * output is discarded — so if the port is taken, this process dies quietly, and
+   * `waitForServer` then succeeds against *someone else's* server. Every check after that
+   * would be a verdict on a build this run never served, and the results would be neither
+   * right nor wrong: they would be about a stale `dist/`.
+   *
+   * Found the hard way. A run interrupted by a step timeout leaves its preview server
+   * behind, and the next run connects to it instead of failing.
+   */
+  const alreadyServing = await fetch(URL).then(
+    () => true,
+    () => false,
+  )
+  if (alreadyServing) {
+    console.error(
+      `\nSomething is already serving ${URL}.\n` +
+        'That is usually a preview server left behind by an interrupted run. This suite ' +
+        'would test that server rather than the build it just made, so it is stopping ' +
+        'instead.\n\n  pkill -f "vite preview"\n',
+    )
+    process.exit(1)
+  }
+
   const server = spawn(
     process.execPath,
     [
@@ -437,27 +463,58 @@ async function main() {
     )
     await page.getByTestId('header-menu-toggle').click()
     await page.getByTestId('header-menu-settings').waitFor()
-    // Item 26/29: three named buttons, stacked, and no prose. The heading moved to the
-    // settings page, where there is room to explain what a backup is.
+    // Item 26/29: named buttons, stacked, and no prose. The heading moved to the
+    // settings page, where there is room to explain what a backup is. Four items now —
+    // About joined the three, and it keeps the same one-word-named rule.
     check(
-      'the menu holds three named buttons and no prose',
-      (await page.locator('.header-menu-panel .header-menu-item').count()) === 3 &&
+      'the menu holds four named buttons and no prose',
+      (await page.locator('.header-menu-panel .header-menu-item').count()) === 4 &&
         (await page.getByRole('heading', { name: /^Backup/ }).count()) === 0,
     )
     check(
       'the menu buttons are stacked vertically',
       await page.evaluate(() => {
         const items = [...document.querySelectorAll('.header-menu-panel .header-menu-item')]
-        if (items.length !== 3) return false
+        if (items.length !== 4) return false
         const tops = items.map((item) => item.getBoundingClientRect().top)
-        return tops[0] < tops[1] && tops[1] < tops[2]
+        return tops.every((top, index) => index === 0 || tops[index - 1] < top)
       }),
     )
     check(
       'each menu button has its word beside the icon',
       (await page.getByTestId('header-menu-download').innerText()).trim() === 'download' &&
-        (await page.getByTestId('header-menu-restore').innerText()).trim() === 'import',
+        (await page.getByTestId('header-menu-restore').innerText()).trim() === 'import' &&
+        (await page.getByTestId('header-menu-about').innerText()).trim() === 'About',
     )
+    check(
+      'every menu button carries an icon',
+      await page.evaluate(() =>
+        [...document.querySelectorAll('.header-menu-panel .header-menu-item')].every(
+          (item) => item.querySelector('svg') !== null,
+        ),
+      ),
+    )
+
+    // About, reached the way a user would reach it. Checked here rather than by asserting
+    // the href, because a link with the right href that does not navigate — or that leaves
+    // the panel open over the page it just opened — passes a URL assertion and fails a person.
+    await page.getByTestId('header-menu-about').click()
+    await page.waitForURL(/#\/about$/, { timeout: 10_000 }).catch(() => undefined)
+    check('About opens from the menu', page.url().endsWith('#/about'), page.url())
+    check(
+      'the menu closes behind it',
+      (await page.getByTestId('header-menu-panel').count()) === 0,
+    )
+    check(
+      'About renders the changelog, not a blank page',
+      (await page.getByRole('heading', { level: 2 }).count()) > 0 &&
+        (await page.locator('main').innerText()).length > 40,
+    )
+
+    // Back to the list, so the backup checks below start from a known route.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.getByTestId('header-menu-toggle').click()
+    await page.getByTestId('header-menu-settings').waitFor()
 
     const download = page.waitForEvent('download', { timeout: 10_000 })
     // Scoped to the menu, and matched on its one-word label (item 29): the settings panel

@@ -15,8 +15,6 @@ sequence and each phase's gate.
 - Cutting a release: [`docs/RELEASING.md`](docs/RELEASING.md).
 - Outstanding work: [`SPECS/todo.md`](SPECS/todo.md).
 - Accepted limitations: [`SPECS/README.md`](SPECS/README.md#known-limitations).
-- The whole-repository review and what was done about it:
-  [`review/code_review_response.md`](review/code_review_response.md).
 
 | Phase | What it covers | State |
 | --- | --- | --- |

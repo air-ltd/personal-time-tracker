@@ -165,7 +165,7 @@ export function App() {
                 stops growing a button for every setting and the entries get the room back.
                 0005 P1 still holds — the menu is one interaction, then the form is the
                 second. */}
-            <HeaderMenu settingsHref="#/settings" />
+            <HeaderMenu settingsHref="#/settings" aboutHref="#/about" />
           </div>
         </header>
 
