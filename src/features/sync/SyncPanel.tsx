@@ -1,4 +1,5 @@
 import { useSync, type Connection } from './syncContext'
+import { CloudIcon } from '../../app/Icons'
 import { DropboxSetup } from './DropboxSetup'
 
 /**
@@ -75,10 +76,14 @@ export function SyncPanel() {
         ) : (
           <button
             type="button"
-            className="button button-primary"
+            className="button button-primary button-with-icon"
             onClick={connect}
             disabled={busy}
           >
+            {/* Item 17 asked for a cloud here and the icon had been drawn but never
+                placed. Decorative: the button text is the name, so announcing the SVG as
+                well would read the label twice. */}
+            <CloudIcon />
             Connect Dropbox
           </button>
         )}
@@ -135,6 +140,11 @@ function SyncStatusLine({
   }
   return (
     <p className="hint" data-testid="sync-status">
+      {/* 0012 C8 requires pending changes to be visible, and "Last synced 10:04" does not
+          answer the question the user is actually asking after recording work: is it on
+          the other device yet? Shown first when there is something waiting, because a
+          successful sync is not news. */}
+      {status.pending && 'Not yet synced — changes are waiting to go out. '}
       {status.lastSyncAt
         ? `Last synced ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(status.lastSyncAt))}.`
         : 'Connected. Waiting for the first sync.'}

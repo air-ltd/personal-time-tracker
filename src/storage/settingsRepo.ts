@@ -66,8 +66,13 @@ export async function writeDefaultCurrency(code: string | null): Promise<void> {
  * will never invoice in. Item 13 of `SPECS/todo.md` asks to be able to keep the
  * relevant ones and hide the rest.
  *
- * Null means "no narrowing chosen" and is deliberately distinct from an empty list: an
- * empty list would offer nothing, which is never what hiding the irrelevant ones means.
+ * Null means "no narrowing chosen". An empty list is normalised to it rather than
+ * reported as itself, because the two are indistinguishable to a user — "I hid the
+ * ones I don't use" and "I hid all of them" both describe leaving nothing ticked, and
+ * only one of them is a thing anybody meant. Treating `[]` as its own meaning would
+ * leave every picker in the app offering the single currency each record already had,
+ * with no way to say so. Nothing writes `[]` any more; normalising on read means a
+ * value written by an older build, or by hand, cannot become a trap.
  *
  * A stored code the runtime no longer offers is dropped on read, for the same reason as
  * the default currency above — it can still be displayed, but offering a choice the
@@ -82,7 +87,8 @@ export async function readVisibleCurrencies(): Promise<string[] | null> {
     .map((code) => code.trim().toUpperCase())
     .filter((code) => CURRENCY_CODES.includes(code))
   // De-duplicated, because the same code can arrive twice from a merge of two lists.
-  return [...new Set(codes)]
+  const unique = [...new Set(codes)]
+  return unique.length === 0 ? null : unique
 }
 
 /** Narrow the offered currencies, or pass null to offer all of them again. */

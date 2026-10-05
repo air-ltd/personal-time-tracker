@@ -8,7 +8,7 @@ import type { Client, Project, Tag } from '../domain/taxonomy/types'
  * IndexedDB rather than localStorage: localStorage is synchronous, string-only and
  * capped at roughly 5 MB, which entries with notes will eventually exceed, and a
  * quota error thrown mid-write loses the write (0007 S1). Dexie's versioned schema
- * is also the migration registry 0007 M1–M6 requires, rather than something to
+ * is also the migration registry 0007 M-1–M-6 requires, rather than something to
  * hand-roll and only exercise during an upgrade.
  *
  * Version history:
@@ -60,7 +60,7 @@ export class AppDb extends Dexie {
       meta: 'key',
     })
     // v2: additive only. No data is rewritten, so this cannot lose anything, and
-    // Dexie applies it inside the upgrade transaction (0007 M2, M3).
+    // Dexie applies it inside the upgrade transaction (0007 M-2, M-3).
     this.version(2).stores({
       entries: 'id, start, projectId, end, deletedAt',
       meta: 'key',
@@ -92,4 +92,15 @@ export function getDb(): AppDb {
 
 export function setDbForTests(db: AppDb | null): void {
   singleton = db
+}
+
+/**
+ * The installed database, or null if none has been created or injected yet.
+ *
+ * `getDb()` would *create* one as a side effect, which is the wrong answer to "is there
+ * one to clean up?". The test harness uses this to close the database the previous test
+ * left open.
+ */
+export function peekDb(): AppDb | null {
+  return singleton
 }

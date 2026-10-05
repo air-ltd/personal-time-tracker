@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   FORMAT,
   FORMAT_VERSION,
+  envelopeSchema,
   parseEnvelope,
   serialiseEnvelope,
   toEnvelope,
@@ -9,6 +10,7 @@ import {
 import type { Mergeable, Snapshot } from '../domain/merge'
 import { entryDurationMs } from '../domain/time/duration'
 import type { TimeEntry } from '../domain/entries/types'
+import { AppDb } from '../storage/db'
 
 const AT = new Date('2026-10-13T09:00:00.000Z')
 
@@ -229,6 +231,10 @@ describe('parseEnvelope', () => {
           },
         ],
       },
+      // The count travels with the record, because a real later-phase build writes it
+      // through `toEnvelope`. Left stale it would read as a truncated file, which is
+      // what the J5 check exists to catch.
+      counts: { ...envelope.counts, projects: 1 },
     }
 
     const result = parseEnvelope(withProject, 1)
@@ -250,6 +256,61 @@ describe('parseEnvelope', () => {
     }
     expect(parseEnvelope(broken, 1).ok).toBe(false)
   })
+
+  /**
+   * 0008 J5: counts exist so the importer can tell a complete file from a truncated
+   * one. Without the comparison they are decoration.
+   */
+  describe('a file that lost records in transit is refused rather than half-imported', () => {
+    it('rejects a table with fewer records than it claims', () => {
+      const envelope = toEnvelope(snapshotOf([entry('a'), entry('b'), entry('c')]), AT)
+
+      const result = parseEnvelope(
+        { ...envelope, counts: { ...envelope.counts, entries: 5 } },
+        1,
+      )
+
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.error.message).toMatch(/incomplete/i)
+      expect(result.error.issues).toContain('entries: expected 5 records')
+    })
+
+    it('rejects a table with more records than it claims', () => {
+      // A hand-edited or maliciously padded file: importing it would write records
+      // the document never accounted for.
+      const envelope = toEnvelope(snapshotOf([entry('a')]), AT)
+
+      const result = parseEnvelope(
+        { ...envelope, counts: { ...envelope.counts, projects: 3 } },
+        1,
+      )
+
+      expect(result.ok).toBe(false)
+    })
+
+    it('accepts counts that match, including a table this build does not know', () => {
+      // J6 forward compatibility: an older build must be able to carry a table a newer
+      // build added, and a count naming it is not an error.
+      const envelope = toEnvelope(snapshotOf([entry('a')]), AT)
+      const later = {
+        ...envelope,
+        counts: { ...envelope.counts, capacityPlans: 2 },
+      }
+
+      expect(parseEnvelope(later, 1).ok).toBe(true)
+    })
+
+    it('does not treat a missing count for a known table as a mismatch', () => {
+      // The count is optional in the schema, and an older writer may not have emitted
+      // one. Nothing is claimed, so nothing is contradicted.
+      const envelope = toEnvelope(snapshotOf([entry('a')]), AT)
+      const counts = { ...envelope.counts }
+      delete counts['projects']
+
+      expect(parseEnvelope({ ...envelope, counts }, 1).ok).toBe(true)
+    })
+  })
 })
 
 describe('credentials never appear in a payload (0012 AU6, 0008 S2)', () => {
@@ -258,6 +319,24 @@ describe('credentials never appear in a payload (0012 AU6, 0008 S2)', () => {
     expect(serialised).not.toMatch(/token/i)
     expect(serialised).not.toMatch(/secret/i)
     expect(serialised).not.toMatch(/refresh/i)
+  })
+
+  it('has no slot for a credential store in the format itself', () => {
+    // The test above proves the *writer* emits nothing; this proves the *format*
+    // cannot carry it. They fail differently, and only together do they hold: adding
+    // `secrets` to the envelope schema leaves the test above green, because a
+    // snapshot that contains no secrets still serialises without them — while a
+    // hand-crafted or older build's backup could plant credentials the app never
+    // wrote, and the restore path would carry them into the database.
+    const carried = Object.keys(envelopeSchema.shape.data.shape)
+    expect(carried).not.toContain('secrets')
+    expect(carried).not.toContain('meta')
+    // And the exclusions have to be exclusions rather than an artefact of a schema
+    // that names nothing: the stores really do exist, and entities really are carried.
+    const stored = new AppDb('envelope-schema-probe').tables.map((table) => table.name)
+    expect(stored).toContain('secrets')
+    expect(stored).toContain('meta')
+    expect(carried).toContain('entries')
   })
 })
 

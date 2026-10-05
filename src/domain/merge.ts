@@ -127,14 +127,6 @@ export function mergeSnapshots(
 /**
  * Drop references to records that exist in neither snapshot.
  *
- * After a union, references normally resolve, so this is close to a no-op. It
- * matters when a table was lost outright — a hand-edited import, or a device whose
- * database predates an entity type — and the alternative would be entries carrying
- * a project id nothing can display (0003 F1, F2).
- */
-/**
- * Drop references to records that exist in neither snapshot.
- *
  * After a union, references normally resolve, so this is close to a no-op. It matters
  * when a table was lost outright — a hand-edited import, or a device whose database
  * predates an entity type — and the alternative would be entries carrying a project id

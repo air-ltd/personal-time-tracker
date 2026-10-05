@@ -5,12 +5,24 @@ finished and is not.
 
 ## Before you start
 
-- [ ] `npm run verify` — typecheck, formatting, lint, unit tests, build.
+- [ ] `npm run verify` — typecheck, formatting, lint, the two repository gates, unit tests,
+      build.
 - [ ] `npm run test:e2e` — builds the site, then drives it in a real browser. **Not** part of
-      `verify`, and it is the only gate that catches layout, focus and geometry defects.
+      `verify`, and it is the only gate that catches layout, focus and geometry defects. It
+      also asserts the Content Security Policy is served and is not blocking anything the app
+      needs, including the inline theme bootstrap.
 - [ ] `npm run check:silent` — the mutation gate. Every planted silent failure must be
-      caught. A dropped `bumpRevision()` once made undo look like it worked, and only this
-      gate and the browser suite could see it.
+      caught **by a failing test**, not merely by a non-zero exit; the script enforces the
+      distinction, and tightening it is how a mutation that only broke a file turned out to
+      have been counted as coverage. A dropped `bumpRevision()` once made undo look like it
+      worked, and only this gate and the browser suite could see it.
+- [ ] `npm run check:secrets` — no `VITE_*` variable may name a secret. Already in `verify`,
+      and listed separately here because it is the one gate whose failure would ship a
+      credential to every visitor rather than merely break something.
+- [ ] `npm run check:citations` — every `NNNN XX` citation in the source resolves to a
+      requirement that exists. Already in `verify`; listed because a spec amendment that
+      renames an id should fail the build, not wait for someone to notice a comment pointing
+      at nothing.
 - [ ] `npm run format:check` — separate from `verify`'s other steps only because `verify`
       already runs it; listed here so it is obvious it is not optional.
 
@@ -40,6 +52,14 @@ finished and is not.
       confirmation when billable time is involved.
 - [ ] Keyboard only: the header menu opens, closes on Escape, and returns focus to the button
       that opened it.
+- [ ] The Content Security Policy is present in the deployed HTML, `connect-src` names only
+      the provider's API origins, and nothing in the app is blocked by it. Checked in the
+      browser suite against the built site, but worth one look in the deployed response —
+      the whole database is the asset here, and this is the defence that keeps it on the
+      device.
+- [ ] Sync actually fires after recording something, without needing a tab switch or a
+      reload. This was wired, debounced, tested and never called; the browser suite cannot
+      see it because it has no provider, so check it by hand against the real Dropbox app.
 
 ## Dropbox
 

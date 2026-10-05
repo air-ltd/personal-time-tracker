@@ -628,7 +628,7 @@ describe('deleting a project leaves existing tombstones untouched', () => {
 /**
  * Names freed by deletion.
  *
- * 0005 F4 says deleting exists for projects created by mistake, so the mistake most
+ * 0003 F4 says deleting exists for projects created by mistake, so the mistake most
  * worth fixing is the one where the intended project cannot be created afterwards.
  */
 describe('names freed by deletion', () => {
@@ -658,7 +658,7 @@ describe('names freed by deletion', () => {
   })
 
   it('frees the name when a project is archived rather than deleted', async () => {
-    // Archiving is the intended way to retire a project (0005 F4, A1), and a name freed
+    // Archiving is the intended way to retire a project (0003 F4, 0005 A1), and a name freed
     // by archiving has to be reusable or archiving becomes a one-way door.
     const first = await createProject({ name: 'Acme', now: T0 })
     await setArchived('project', first.id, true, T0)

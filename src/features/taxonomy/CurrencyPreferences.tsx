@@ -179,7 +179,15 @@ export function CurrencyPreferences() {
           type="button"
           className="button button-primary"
           disabled={!dirty}
-          onClick={() => set(chosen.size === all.length ? null : [...chosen])}
+          // An empty selection means "offer everything", exactly as the hint above
+          // says. Storing `[]` instead would be a different thing entirely — every
+          // picker in the app would offer only the one currency each record already
+          // had — and the panel promises the opposite in the text a user follows to get
+          // there. `null` is that promise; the full list is already what `null` means
+          // everywhere else, including on read.
+          onClick={() =>
+            set(chosen.size === 0 || chosen.size === all.length ? null : [...chosen])
+          }
         >
           Save currency selection
         </button>

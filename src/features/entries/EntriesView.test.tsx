@@ -189,7 +189,7 @@ describe('the period (item 22)', () => {
   })
 
   it('shows the empty state when nothing has ever been recorded', async () => {
-    // 0007 FB3, and it must survive the new period control: a summary reading "nothing in
+    // 0007 FB-3, and it must survive the new period control: a summary reading "nothing in
     // this period" is a different and more alarming claim than "no work yet".
     render(<EntriesView now={NOW} selectedClientId={null} />)
 

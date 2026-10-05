@@ -70,6 +70,17 @@ export function selectBuiltInKey(hostname: string): string {
  */
 const APP_KEY_PATTERN = /^[a-z0-9]{8,64}$/i
 
+/**
+ * Whether a value has the shape of a Dropbox client id.
+ *
+ * Exported for tests only, and that is deliberate rather than an oversight. Nothing in
+ * the app calls it at runtime: rejecting a malformed `VITE_DROPBOX_APP_KEY` and falling
+ * back to a built-in key would silently discard a deliberate deploy-time decision, and
+ * the user who typed it would get a key they did not choose. What the check *is* for is
+ * the thing that cannot be diagnosed at runtime — a typo in one of the built-in keys,
+ * which otherwise surfaces as an opaque "Invalid client_id" from Dropbox at the moment
+ * somebody tries to connect.
+ */
 export function isValidAppKey(value: string): boolean {
   return APP_KEY_PATTERN.test(value.trim())
 }

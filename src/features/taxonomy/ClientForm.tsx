@@ -1,9 +1,9 @@
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 import { CurrencySelect } from './CurrencySelect'
 import { RateField } from './RateField'
 import { ColorPicker } from './ColorPicker'
 import { createClientWithDefaultProject, updateClient } from '../../storage/taxonomyRepo'
-import { readDefaultCurrency } from '../../storage/settingsRepo'
+import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 import { currencyLabel } from '../../domain/taxonomy/currencies'
 import { FALLBACK_CURRENCY } from '../../domain/taxonomy/money'
 import type { Client } from '../../domain/taxonomy/types'
@@ -52,28 +52,12 @@ export function ClientForm({
    * The picked currency is derived, not seeded once. Seeding it in `useState` captured
    * whatever was known on the first render — which is the fallback, because the stored
    * default has not been read yet — and then the late read had nothing to update. That is
-   * why it is `picked ?? appDefault ?? FALLBACK` rather than a single initial value.
+   * why it is `picked ?? appDefaultCurrency ?? FALLBACK_CURRENCY` rather than a single
+   * initial value.
    */
-  const [appDefaultCurrency, setAppDefaultCurrency] = useState<string | null>(null)
+  const appDefaultCurrency = useAppDefaultCurrency()
   const [picked, setPicked] = useState<string | null>(client?.currency ?? null)
   const currency = picked ?? appDefaultCurrency ?? FALLBACK_CURRENCY
-
-  useEffect(() => {
-    if (client !== undefined) return
-    let cancelled = false
-    void readDefaultCurrency()
-      .then((stored) => {
-        if (!cancelled) setAppDefaultCurrency(stored)
-      })
-      // Swallowed deliberately: the fallback is a usable currency, and an unhandled
-      // rejection here would fail a whole test file on an error nothing displays.
-      .catch(() => {
-        if (!cancelled) setAppDefaultCurrency(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [client])
 
   const [rate, setRate] = useState<number | null>(client?.defaultRateMinor ?? null)
   const [colour, setColour] = useState(client?.colour ?? '#2e6aae')

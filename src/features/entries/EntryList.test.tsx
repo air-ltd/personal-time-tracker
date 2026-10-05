@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EntryList } from './EntryList'
 import { installTestDb } from '../../test/harness'
 import { entry } from '../../test/factories'
@@ -10,6 +10,7 @@ import {
   setArchived,
 } from '../../storage/taxonomyRepo'
 import { putEntry } from '../../storage/entriesRepo'
+import * as entriesRepo from '../../storage/entriesRepo'
 
 /**
  * Taxonomy on an entry row (0005 U1–U2, N2, A1, T3).
@@ -113,5 +114,40 @@ describe('entry rows', () => {
 
     await screen.findByTestId(`duration-${stored.id}`)
     expect(screen.queryByTestId(`billable-${stored.id}`)).toBeNull()
+  })
+})
+
+/**
+ * Which path reads the database.
+ *
+ * `EntryList` accepts pre-filtered entries because the caller above it has already decided
+ * what to show. It used to subscribe to the store *as well*, even when it was handed a
+ * list — so every write ran two full read-and-filter cycles on the home screen. Nothing
+ * about that is visible on screen, which is why it survived: it only costs time.
+ *
+ * So the assertion is on the read, not on the output. The rendered rows are already covered
+ * by the tests above, on both paths.
+ */
+describe('reads the database only when it has to', () => {
+  it('does not read when the caller passed entries in', async () => {
+    await putEntry(entry({ end: new Date('2026-10-13T10:30:00.000Z') }))
+    const reads = vi.spyOn(entriesRepo, 'listEntries')
+
+    render(
+      <EntryList now={NOW} entries={[entry({ end: new Date('2026-10-13T10:30:00.000Z') })]} />,
+    )
+
+    expect(await screen.findByText('Uncategorised')).toBeVisible()
+    expect(reads).not.toHaveBeenCalled()
+  })
+
+  it('does read when it has to load them itself', async () => {
+    await putEntry(entry({ end: new Date('2026-10-13T10:30:00.000Z') }))
+    const reads = vi.spyOn(entriesRepo, 'listEntries')
+
+    render(<EntryList now={NOW} />)
+
+    expect(await screen.findByText('Uncategorised')).toBeVisible()
+    expect(reads).toHaveBeenCalled()
   })
 })

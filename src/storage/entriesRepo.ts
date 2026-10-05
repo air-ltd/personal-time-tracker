@@ -71,6 +71,17 @@ export async function listEntries(): Promise<TimeEntry[]> {
     .sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0))
 }
 
+/**
+ * Soft-deleted rows, oldest deletion first.
+ *
+ * Unused by the UI so far, and deliberately so: this is what 0007 E-ERASE needs — the
+ * privacy obligation to erase everything, which cannot be implemented by deleting rows
+ * that this function cannot find. It is written and tested now because "show me every
+ * deleted entry" is the one query an erase feature must be able to run, and a query
+ * written under time pressure at the point it is needed is a query nobody has tested.
+ *
+ * Assigns a phase in `SPECS/0014-development-plan.md` before it gets a caller.
+ */
 export async function listDeletedEntries(): Promise<TimeEntry[]> {
   const all = await db().entries.toArray()
   return all
@@ -97,13 +108,10 @@ export async function findRunningEntry(): Promise<TimeEntry | undefined> {
 }
 
 /**
- * Start the timer.
+ * Start a timer, optionally against a project.
  *
  * Guarded so a second start cannot create a second running entry (0004 T1) even if
  * the UI is bypassed or clicked twice in the same tick.
- */
-/**
- * Start a timer, optionally against a project.
  *
  * `projectId` comes from the client whose button was pressed (item 12 of
  * `SPECS/todo.md`), so the time is recorded against that client's default project without

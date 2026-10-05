@@ -193,7 +193,7 @@ Record the **App key**. You need it.
 The **App secret is not needed** and must not be used. The app is a public client
 using PKCE (0012 AU2), so there is no secret to keep — and there is nowhere safe to
 put one anyway, since the app is a static site with every byte shipped to the
-browser (0012 AR6).
+browser (0011 AR6).
 
 Dropbox's OAuth guide states this case explicitly: a client-side web application in
 pure JavaScript should use the code flow with short-lived tokens and PKCE, **and no

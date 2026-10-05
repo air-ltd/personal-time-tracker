@@ -40,6 +40,16 @@ export function ColorPicker({ value, onChange, label, takenColours = [] }: Color
   const groupId = useId()
   const normalised = normaliseColour(value)
   const assessment = normalised === null ? null : assessColour(normalised)
+  /*
+   * Whether the current colour is one of the offered swatches.
+   *
+   * A `Set` rather than `PALETTE.includes(colour as never)`. The cast was working around
+   * the palette being a readonly tuple of literal types, so `includes` demands one of
+   * those exact literals and a `string` does not qualify — and `as never` silenced it by
+   * disabling the check that was the point. It also meant the answer was decided by an
+   * assertion rather than a comparison.
+   */
+  const offPalette = normalised !== null && !new Set<string>(PALETTE).has(normalised)
 
   return (
     <fieldset className="colour-picker">
@@ -82,14 +92,12 @@ export function ColorPicker({ value, onChange, label, takenColours = [] }: Color
             type="radio"
             name={groupId}
             value="custom"
-            checked={custom || normalised === null || !PALETTE.includes(normalised as never)}
+            checked={custom || normalised === null || offPalette}
             onChange={() => {
               setCustom(true)
               // Pre-fill only a colour that is genuinely off-palette; a palette value is
               // not what the user is here to change, so starting from it just gets in the way.
-              setCustomText(
-                normalised !== null && !PALETTE.includes(normalised as never) ? value : '',
-              )
+              setCustomText(offPalette ? value : '')
             }}
           />
           <span aria-hidden="true">+</span>

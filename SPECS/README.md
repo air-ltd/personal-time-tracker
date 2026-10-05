@@ -20,6 +20,37 @@ Each spec carries a `Status`:
 > alternatives that were rejected, and the limitations we are knowingly
 > accepting are recorded at the bottom of this file.
 
+### On the `Status` field
+
+**No spec file carries a `Status:` field, and this section is the status instead.**
+
+That is a deliberate departure from the convention above, and it is worth being explicit
+about rather than quietly fixing. A per-file status field is only useful if something
+maintains it; when fourteen files each assert a status that drifts from the code, the
+assertion is worse than nothing because it looks checked. The table below is derived from
+what the phases in `0014` actually shipped and what the gates actually verified, so it can
+be contradicted by running `npm run verify`.
+
+The convention above is retained because it is still the right vocabulary — the statuses
+below use it.
+
+| Spec | Status | What is and is not built |
+| --- | --- | --- |
+| 0001 Product overview | `Accepted` | Product decisions only; nothing to implement. |
+| 0002 Architecture | `Implemented` | Phase 1. Two amendments recorded in-file (directory tree, and the `script-src` shape of N5's sibling TH3). |
+| 0003 Data model | `Implemented` | Phases 1–4. All entity invariants hold. |
+| 0004 Timer and entries | `Implemented` | Phase 2A, plus M4 and ED1 closed in review. O3/L3/W2 remain (see §Known limitations). |
+| 0005 Taxonomy | `Implemented` | Phase 4. |
+| 0006 Reporting and billing | `Draft` | Phase 6. Not started. The pure aggregation half exists because `0003`/`0004` need day totals; the view half does not. |
+| 0007 Persistence and data safety | `Accepted` | Phases 2B–3. F-EXPORT-5 amended to merge-only; **E-ERASE is not built and has no phase** — see §Known limitations. |
+| 0008 Export formats | `Accepted` | JSON envelope shipped (Phase 2B). CSV writers are Phase 6. |
+| 0009 Deployment | `Implemented` | Phase 1. |
+| 0010 Testing and quality | `Accepted` | Cross-cutting. Q5 (coverage thresholds), Q6 and Q10 (pre-commit hook) are open — see §Known limitations. |
+| 0011 Privacy and security | `Accepted` | Phases 2B and 8. N5 (Content Security Policy) now ships. |
+| 0012 Cross-device sync | `Implemented` | Phase 2B. SY6 amended (see in-file). |
+| 0013 Capacity | `Draft` | Phases 6–7. Not started. |
+| 0014 Development plan | `Implemented` | Phases 1–4 complete. |
+
 ## Index
 
 | # | Spec | Covers |
@@ -145,4 +176,22 @@ an oversight.
 - **The remote file is plaintext.** The provider can read it, and so can anyone
   with access to the account (0011 AR1, AR2, AR4).
 - **No undo across a page reload** beyond the soft-delete undo window (0003 D3).
+- **The unload dialog has no text.** `beforeunload` cannot carry custom copy, so the
+  native prompt says nothing; the running timer and its elapsed time are shown in the
+  page instead (0004 W2, amended).
+- **`npm run dev` is not covered by the Content Security Policy.** The policy is
+  injected by the build, because the dev server rewrites `index.html` and injects its
+  own inline preamble. A policy loose enough for the dev server would be no policy at
+  all; the built site is what the policy protects (0011 N5).
+- **The CSP cannot prevent clickjacking.** `frame-ancestors` is ignored when a policy
+  arrives via `<meta>`, and GitHub Pages cannot set response headers. No framing defence
+  is claimed (0011 N5).
+- **No coverage threshold and no pre-commit hook.** 0010 Q5 and Q10 are open; CI runs
+  `format:check`, `lint`, `test` and the two repository gates instead. A hook would be a
+  local convenience that CI already covers, and a threshold nobody chose would be a number
+  that drifts.
+- **Two repository gates are not in CI's required set.** `check:silent` (mutation) is run
+  deliberately on demand rather than on every push — it re-introduces bugs and runs the
+  suite once per mutation — while `check:secrets` and `check:citations` do run in
+  `verify`.
 

@@ -87,16 +87,6 @@ export function formatClock(value: Date): string {
   }).format(value)
 }
 
-/** Wall-clock date in the viewer's locale, for day group headings. */
-export function formatDayHeading(value: Date): string {
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(value)
-}
-
 /** `YYYY-MM-DDTHH:mm` in local time, the value format `datetime-local` expects. */
 export function toLocalInputValue(value: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')

@@ -1,9 +1,14 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { App } from './App'
 import { installTestDb } from '../test/harness'
-import { createManualEntry, listEntries } from '../storage/entriesRepo'
+import {
+  createManualEntry,
+  findRunningEntry,
+  listEntries,
+  startTimer,
+} from '../storage/entriesRepo'
 import { dayKey } from '../domain/time/days'
 
 beforeEach(() => {
@@ -26,7 +31,7 @@ describe('root route', () => {
     expect(screen.getByRole('heading', { name: 'Entries' })).toBeInTheDocument()
   })
 
-  it('shows an empty state before anything is recorded (0007 FB3)', async () => {
+  it('shows an empty state before anything is recorded (0007 FB-3)', async () => {
     render(<App />)
     expect(await screen.findByTestId('empty-state')).toHaveTextContent(/No entries yet/)
   })
@@ -222,6 +227,65 @@ describe('manual entry (0004 M1–M4)', () => {
     await user.click(screen.getByRole('button', { name: 'Add entry' }))
     expect(await screen.findByTestId('form-errors')).toBeInTheDocument()
     expect(await listEntries()).toHaveLength(0)
+  })
+
+  /**
+   * 0004 M4 has three clauses, and each is a separate thing that can go wrong: the manual
+   * entry must not be creatable, the UI must prompt, and the app must not stop the timer
+   * on the user's behalf. The third is the one a convenience would break, so it is
+   * asserted rather than assumed.
+   */
+  describe('while a timer is running (0004 M4)', () => {
+    /**
+     * Start a timer through the storage layer, then render the new-entry route.
+     *
+     * Not through the button: the route has to be the app's first render, because changing
+     * `location.hash` after mount needs an `act` around it, and a test whose subject is
+     * the new-entry screen should not also be testing the router's event handling.
+     */
+    async function renderNewEntryWithTimerRunning(): Promise<UserEvent> {
+      await startTimer(new Date())
+      window.location.hash = '#/entries/new'
+      const user = userEvent.setup()
+      render(<App />)
+      await screen.findByTestId('timer-running-notice')
+      return user
+    }
+
+    it('prompts instead of showing the form', async () => {
+      await renderNewEntryWithTimerRunning()
+
+      expect(screen.getByTestId('timer-running-notice')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add entry' })).not.toBeInTheDocument()
+    })
+
+    it('does not stop the timer on the user\u2019s behalf', async () => {
+      await renderNewEntryWithTimerRunning()
+
+      // Reaching this route has already stopped nothing. An implementation that resolved
+      // M4 by calling `stop()` as a side effect of navigating here would silently end an
+      // hour of work, which is the outcome the clause exists to forbid.
+      const running = await findRunningEntry()
+      expect(running).toBeDefined()
+      expect(running?.end).toBeNull()
+    })
+
+    it('lets the entry be added once the timer is stopped on request', async () => {
+      const user = await renderNewEntryWithTimerRunning()
+
+      await user.click(screen.getByRole('button', { name: 'Stop the timer and add the entry' }))
+
+      expect(await screen.findByRole('button', { name: 'Add entry' })).toBeInTheDocument()
+      expect(await findRunningEntry()).toBeUndefined()
+    })
+
+    it('lets the form be reached without stopping anything at all', async () => {
+      await renderNewEntryWithTimerRunning()
+
+      // Abandoning the prompt must leave the timer alone. Stopping it to get out of the
+      // screen would lose work for a navigation the user could have undone.
+      expect(await findRunningEntry()).toBeDefined()
+    })
   })
 })
 

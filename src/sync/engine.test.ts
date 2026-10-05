@@ -50,6 +50,8 @@ class FakeProvider implements SyncProvider {
   failNextPush: SyncError | null = null
   failNextPull: SyncError | null = null
   concurrentWriteOnPush: Mergeable[] | null = null
+  /** Runs inside `push`, i.e. while the round trip is outstanding. */
+  onPush: (() => void) | null = null
 
   ensureAuth(): Promise<void> {
     return this.authenticated
@@ -63,9 +65,12 @@ class FakeProvider implements SyncProvider {
   }
 
   status(): Promise<ProviderStatus> {
+    // No `account`: `ProviderStatus` does not declare one (0012 SY6, amended), and a
+    // double that returns a field the type dropped keeps compiling only because the
+    // freshness is lost through `Promise.resolve`. It was the last trace of a shape the
+    // app deliberately moved away from.
     return Promise.resolve({
       authenticated: this.authenticated,
-      account: this.authenticated ? 'fake@example' : null,
     })
   }
 
@@ -81,6 +86,10 @@ class FakeProvider implements SyncProvider {
 
   push(_path: string, body: string, expectedRev: string | null): Promise<{ rev: string }> {
     this.pushCount += 1
+    // A write made here is genuinely mid-flight: the body being pushed was serialised
+    // before this line, and the engine has not read local since.
+    this.onPush?.()
+    this.onPush = null
     if (this.failNextPush) {
       const error = this.failNextPush
       this.failNextPush = null
@@ -114,6 +123,8 @@ interface Harness {
    * pre-merge state and make every merge test pass or fail for the wrong reason.
    */
   readonly local: Snapshot
+  /** Swap the local snapshot mid-cycle, as a user saving an entry would. */
+  replaceLocal: (next: Snapshot) => void
   lastRev: { value: string | null }
   logs: SyncLogEntry[]
 }
@@ -126,6 +137,9 @@ function harness(initial: Snapshot, provider = new FakeProvider()): Harness {
     provider,
     get local() {
       return state.local
+    },
+    replaceLocal(next: Snapshot) {
+      state.local = next
     },
     lastRev,
     logs,
@@ -291,6 +305,34 @@ describe('runSync — concurrency (0012 C5)', () => {
     // The other device's record survived rather than being clobbered.
     const ids = (h.local.entities['entries'] ?? []).map((e) => e.id)
     expect(ids).toContain('from-other-device')
+  })
+
+  it('publishes an entry saved while the round trip was in flight', async () => {
+    // The conflict branch used to merge the snapshot the cycle *started* with. An entry
+    // created after that read was in neither argument to the merge, so it was neither
+    // merged nor pushed — and "Sync now" reported success while omitting the thing the
+    // user had just done. No data was lost; the next cycle picked it up. But a success
+    // message that is not true of what you just did is worse than no message.
+    const h = harness(snapshotOf([entry('a')]))
+    await runSync(h.deps)
+
+    // Local now differs from remote, so a push is warranted and there is something to
+    // race with.
+    h.replaceLocal(snapshotOf([entry('a'), entry('typed-first')]))
+    h.provider.concurrentWriteOnPush = [entry('a'), entry('from-other-device')]
+    // Fires *inside* the push, which is the only moment that makes this a race: a write
+    // made before `runSync` would simply be part of the cycle's first read.
+    h.provider.onPush = () => {
+      h.replaceLocal(snapshotOf([entry('a'), entry('typed-first'), entry('saved-mid-flight')]))
+    }
+
+    const result = await runSync(h.deps)
+    expect(result).toMatchObject({ status: 'pushed', merged: true })
+
+    const published = JSON.parse(h.provider.remote?.body ?? '{}') as {
+      data: { entries: { id: string }[] }
+    }
+    expect(published.data.entries.map((row) => row.id)).toContain('saved-mid-flight')
   })
 
   it('gives up after a bounded number of retries', async () => {

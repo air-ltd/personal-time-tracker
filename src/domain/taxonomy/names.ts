@@ -10,10 +10,16 @@
 /**
  * Comparison key for a name.
  *
- * Trimmed and lowercased. Deliberately not Unicode-normalised: NFC and NFD forms of the
- * same accented character would compare unequal here, so "café" typed two ways could
- * both be created. Normalising means a name round-tripped through a backup — where
- * decomposition can differ — still compares equal to itself.
+ * Trimmed and lowercased, then normalised to NFC — deliberately, because NFC and NFD
+ * forms of the same accented character are different byte sequences and would compare
+ * unequal here. "café" typed on a Mac and "café" typed on Linux could otherwise both be
+ * created, and both would survive to a report as two projects that look identical.
+ * Normalising also means a name round-tripped through a backup — where the form can
+ * differ from the one it was typed in — still compares equal to itself, so a restore on
+ * a different device cannot fail a uniqueness check the original creation passed.
+ *
+ * Applied last so the lowercasing is the final step before comparison: normalisation can
+ * in principle reintroduce a character that lowercasing would have folded differently.
  */
 export function nameKey(name: string): string {
   return name.trim().toLowerCase().normalize('NFC')

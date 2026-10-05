@@ -67,9 +67,29 @@ Resolved: warn, and **default to continuing**.
 **W1** — When a timer is running and the user attempts to close the tab, close the
 window, or navigate away, the app MUST prompt for confirmation.
 
-**W2** — The prompt MUST state that a timer is running and how long it has been
-running, so the user can tell a deliberate session from a forgotten one. A bare
+**W2** — The user MUST be able to tell that a timer is running and how long it has been
+running, so they can distinguish a deliberate session from a forgotten one. A bare
 "are you sure?" gets dismissed without reading.
+
+> **Amended — where the information lives, and why not in the dialog.** As originally
+> written this asked the *prompt* to state the timer and its elapsed time, which cannot
+> be done: `beforeunload` handlers may set a boolean-ish `returnValue` and nothing else,
+> and the text a browser shows is its own localised chrome that no page can influence.
+> W4 already forbids a custom modal on this path for the same reason, so the original
+> wording was self-defeating — the only way to satisfy it was to build something W4
+> prohibits.
+>
+> The requirement is therefore placed where it can actually be met: the app's own UI must
+> state that a timer is running and show elapsed time **at all times while one is**, which
+> it does on the timer panel (`Elapsed 1:24:07`, beside the running client's row). The
+> native dialog is a backstop that fires only if the user navigates away without reading
+> the page. Read together, W2 asks for the information and W4 asks that it not be faked
+> in a place the browser controls; both are satisfied by keeping the information in the
+> page.
+>
+> The genuine residual limitation: a user who has scrolled past the timer panel and
+> navigates away sees a dialog with no text. No implementation of a static site fixes
+> that, and recording it is better than pretending the requirement was met differently.
 
 **W3** — **Continuing to run is the default outcome.** Dismissing the prompt, or
 confirming the leave, MUST both leave the timer running. Leaving must never stop

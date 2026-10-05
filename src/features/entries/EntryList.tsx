@@ -28,9 +28,43 @@ export function EntryList({
   now: Date
   entries?: readonly TimeEntry[] | undefined
 }) {
-  const stored = useEntries()
-  const entries = provided ?? stored.entries
-  const loading = provided === undefined && stored.loading
+  /*
+   * Subscribed even when the caller passed `entries` in.
+   *
+   * Every write therefore ran two full `listEntries()` + filter + sort cycles on the home
+   * screen: once here and once in `EntriesView`, which does the filtering. The second is
+   * pure waste at any volume and grows with every write.
+   *
+   * `useEntries` cannot be called conditionally, so the split is into two components and
+   * the hook lives only in the one that can need it. Rendering `<StoredEntryList>` is
+   * equivalent to the old conditional, and keeps the rule of hooks intact — which a
+   * `if (provided === undefined) useEntries()` would violate.
+   */
+  if (provided !== undefined) return <FilteredEntryList now={now} entries={provided} />
+  return <StoredEntryList now={now} />
+}
+
+/** Subscribes to the store, for callers that have not already loaded the entries. */
+function StoredEntryList({ now }: { now: Date }) {
+  const { entries, loading } = useEntries()
+  return <FilteredEntryList now={now} entries={entries} loading={loading} />
+}
+
+/**
+ * The list itself.
+ *
+ * Split out so the taxonomy subscription is shared by both paths rather than duplicated,
+ * and so a row's lookup maps are built once per list rather than once per subscriber.
+ */
+function FilteredEntryList({
+  now,
+  entries,
+  loading = false,
+}: {
+  now: Date
+  entries: readonly TimeEntry[]
+  loading?: boolean | undefined
+}) {
   const { projects, clients, tags } = useTaxonomy()
   const groups = groupEntriesByDay(entries, now)
 

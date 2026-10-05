@@ -140,6 +140,31 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     }
   }
 
+  // J5: counts are the cheap integrity check — they let the importer confirm nothing
+  // was truncated in transit. Validating the field was the easy half; comparing it to
+  // what actually arrived is the half that catches a file cut short by a quota, a
+  // half-finished upload, or a hand edit. A mismatch means the document is incomplete,
+  // and importing it would silently drop records the user believes they backed up.
+  //
+  // Only tables this build parsed are compared. `counts` is an open record, so a newer
+  // build's tables arrive as a count naming something that `envelopeSchema` stripped —
+  // and refusing that file would break 0008 J6, which requires an older build to be
+  // able to carry a newer build's backup. Not being able to see a table is not
+  // evidence that its records are missing.
+  const data = parsed.data.data as Record<string, unknown[] | undefined>
+  const mismatched = Object.entries(parsed.data.counts).filter(
+    ([name, count]) => data[name] !== undefined && count !== data[name]?.length,
+  )
+  if (mismatched.length > 0) {
+    return {
+      ok: false,
+      error: new EnvelopeError(
+        'Backup is incomplete: it says it contains records that are not there.',
+        mismatched.map(([name, count]) => `${name}: expected ${count} records`),
+      ),
+    }
+  }
+
   const entities: Record<string, Mergeable[]> = parsed.data.data
   return { ok: true, snapshot: { schemaVersion: parsed.data.schemaVersion, entities } }
 }

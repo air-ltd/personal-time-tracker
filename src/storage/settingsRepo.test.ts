@@ -3,8 +3,10 @@ import { installTestDb } from '../test/harness'
 import {
   readDefaultCurrency,
   readEntryPeriod,
+  readVisibleCurrencies,
   writeDefaultCurrency,
   writeEntryPeriod,
+  writeVisibleCurrencies,
 } from './settingsRepo'
 import { getDb } from './db'
 import { resolveCurrency } from '../domain/taxonomy/money'
@@ -110,5 +112,57 @@ describe('entry period (item 28)', () => {
     await getDb().meta.put({ key: 'entry-period', value: 'fortnightly' })
 
     expect(await readEntryPeriod()).toBe('all')
+  })
+})
+
+/**
+ * Visible currencies (item 13).
+ *
+ * The distinction these protect is between "offer everything" and "offer nothing",
+ * because they are stored differently and only one of them is a thing a user can mean
+ * by leaving a list empty.
+ */
+describe('visible currencies', () => {
+  beforeEach(() => {
+    installTestDb()
+  })
+
+  it('is unnarrowed before anything is chosen', async () => {
+    expect(await readVisibleCurrencies()).toBeNull()
+  })
+
+  it('round-trips a narrowed selection', async () => {
+    await writeVisibleCurrencies(['GBP', 'JPY'])
+    expect(await readVisibleCurrencies()).toEqual(['GBP', 'JPY'])
+  })
+
+  it('normalises an empty selection to "offer everything" rather than "offer nothing"', async () => {
+    // Written directly, as an older build or a hand-edited database would leave it.
+    // Taken literally it leaves every picker in the app offering only the currency each
+    // record already had, and the panel gives the user no way to describe that.
+    await getDb().meta.put({ key: 'visible-currencies', value: [] })
+
+    expect(await readVisibleCurrencies()).toBeNull()
+  })
+
+  it('normalises a selection whose codes are all unrecognised', async () => {
+    // Every code was dropped, so what remains says nothing — the same case as an empty
+    // list, reached a different way.
+    await getDb().meta.put({ key: 'visible-currencies', value: ['ZZZ', 'QQQ'] })
+
+    expect(await readVisibleCurrencies()).toBeNull()
+  })
+
+  it('still narrows when only some codes are unrecognised', async () => {
+    await getDb().meta.put({ key: 'visible-currencies', value: ['GBP', 'ZZZ'] })
+
+    expect(await readVisibleCurrencies()).toEqual(['GBP'])
+  })
+
+  it('deletes the record rather than storing null, so there is one absence', async () => {
+    await writeVisibleCurrencies(['GBP'])
+    await writeVisibleCurrencies(null)
+
+    expect(await getDb().meta.get('visible-currencies')).toBeUndefined()
   })
 })

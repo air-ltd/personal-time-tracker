@@ -13,7 +13,10 @@ sequence and each phase's gate.
 - What has changed: [`CHANGELOG.md`](CHANGELOG.md), also readable in the app under
   **About**.
 - Cutting a release: [`docs/RELEASING.md`](docs/RELEASING.md).
-- Outstanding and accepted limitations: [`SPECS/todo.md`](SPECS/todo.md).
+- Outstanding work: [`SPECS/todo.md`](SPECS/todo.md).
+- Accepted limitations: [`SPECS/README.md`](SPECS/README.md#known-limitations).
+- The whole-repository review and what was done about it:
+  [`review/code_review_response.md`](review/code_review_response.md).
 
 | Phase | What it covers | State |
 | --- | --- | --- |
@@ -21,7 +24,7 @@ sequence and each phase's gate.
 | 2A | Timer, entries, day-grouped list, soft delete | Done |
 | 2B | Dropbox sync, cross-device merge, backup/restore | Done |
 | 3 | Test suite, property tests, silent-failure gate | Done |
-| 4 | Projects, clients, tags | Data layer done; UI not started |
+| 4 | Projects, clients, tags | Done |
 | 5+ | Reports, capacity, invoicing | Not started |
 
 ## Documentation
@@ -37,7 +40,7 @@ sequence and each phase's gate.
 ```bash
 npm install
 npm run dev        # http://localhost:5173/personal-time-tracker/
-npm run verify     # typecheck, format, lint, tests, build
+npm run verify     # typecheck, format, lint, two repository gates, tests, build
 ```
 
 Two commands are deliberately **not** part of `npm run verify`, because both are slow
@@ -50,9 +53,17 @@ npm run check:silent              # introduces each silent failure, requires a t
 npm run test:coverage             # coverage for domain, storage, export and sync
 ```
 
-`check:silent` rewrites source files and runs the suite eleven times. It restores each
-file afterwards, and reports `stale` for any mutation that no longer matches the code —
-which is the signal to update it.
+`check:silent` rewrites source files and runs the suite once per mutation. It restores
+each file afterwards, and reports `stale` for any mutation that no longer matches the
+code — which is the signal to update it.
+
+The two gates that *are* in `verify` are cheap and catch things no test asserts:
+
+- `check:secrets` — rejects a `VITE_*` variable whose name implies a secret. Vite inlines
+  every `VITE_*` value into the shipped JavaScript, and a static site cannot keep one.
+- `check:citations` — resolves every `NNNN XX` requirement citation in the source against
+  the ids `SPECS/` actually defines. A citation that resolves to nothing is the one
+  comment a reader cannot check.
 
 ## Design notes worth knowing before reading the code
 

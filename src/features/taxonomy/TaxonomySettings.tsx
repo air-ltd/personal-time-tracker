@@ -27,7 +27,9 @@ import {
   updateProject,
   updateTag,
 } from '../../storage/taxonomyRepo'
-import { readDefaultCurrency, writeDefaultCurrency } from '../../storage/settingsRepo'
+import { writeDefaultCurrency } from '../../storage/settingsRepo'
+import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
+import { FALLBACK_CURRENCY, resolveCurrency } from '../../domain/taxonomy/money'
 import { currencyLabel } from '../../domain/taxonomy/currencies'
 import { suggestColour } from '../../domain/taxonomy/colour'
 import { formatDuration } from '../../domain/time/duration'
@@ -68,18 +70,15 @@ interface DeleteState {
 export function TaxonomySettings({ now }: { now: Date }) {
   const { projects, clients, tags, loading, error: loadError } = useTaxonomy()
   const [showArchived, setShowArchived] = useState(false)
-  const [defaultCurrency, setDefaultCurrency] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [undo, setUndo] = useState<TaxonomyUndo | null>(null)
   const [pendingDelete, setPendingDelete] = useState<DeleteState | null>(null)
 
-  // Load the app default once. Not part of `useTaxonomy` because it lives in `meta` rather
-  // than a taxonomy table, and mixing the two would make the hook's name a lie.
-  const [loadedCurrency, setLoadedCurrency] = useState(false)
-  if (!loadedCurrency) {
-    setLoadedCurrency(true)
-    void readDefaultCurrency().then(setDefaultCurrency)
-  }
+  // The app-wide default, from `meta` rather than a taxonomy table — which is why it is
+  // its own hook instead of another field on `useTaxonomy`, whose name would then be a
+  // lie. It also feeds the project forms below, so the resolution that used to be
+  // reimplemented there with a hardcoded `GBP` is now the domain chain.
+  const defaultCurrency = useAppDefaultCurrency()
 
   const visibleProjects = showArchived ? projects : projects.filter((p) => !p.archived)
   const visibleClients = showArchived ? clients : clients.filter((c) => !c.archived)
@@ -261,12 +260,13 @@ export function TaxonomySettings({ now }: { now: Date }) {
         <h3>Default currency</h3>
         <CurrencySelect
           label="Currency for work with no client"
-          inheritLabel="Not set — fall back to USD"
+          inheritLabel={`Not set — fall back to ${FALLBACK_CURRENCY}`}
           value={defaultCurrency}
-          onChange={(code) => {
-            setDefaultCurrency(code)
-            void writeDefaultCurrency(code)
-          }}
+          // No local copy: `writeDefaultCurrency` bumps the revision, and the hook
+          // re-reads on that. A second copy of this value in component state is the
+          // thing 0002 S2 exists to avoid, and it is how the value being displayed and
+          // the value being resolved could come to disagree.
+          onChange={(code) => void writeDefaultCurrency(code)}
         />
         <p className="hint">
           Reports show money in the project&apos;s currency, then the client&apos;s, then this
@@ -288,6 +288,7 @@ export function TaxonomySettings({ now }: { now: Date }) {
         projects={visibleProjects}
         allProjects={projects}
         clients={clients}
+        defaultCurrency={defaultCurrency}
         showArchived={showArchived}
         onToggleArchived={setShowArchived}
         onDelete={(project) => void askToDelete('project', project)}
@@ -444,6 +445,7 @@ function ProjectSection({
   projects,
   allProjects,
   clients,
+  defaultCurrency,
   showArchived,
   onToggleArchived,
   onDelete,
@@ -453,6 +455,7 @@ function ProjectSection({
   projects: Project[]
   allProjects: Project[]
   clients: Client[]
+  defaultCurrency: string | null
   showArchived: boolean
   onToggleArchived: (value: boolean) => void
   onDelete: (project: Project) => void
@@ -465,9 +468,11 @@ function ProjectSection({
   const [colour, setColour] = useState<string>(() => suggestColour([]))
 
   const client = clients.find((c) => c.id === clientId) ?? null
-  // The rate field needs a currency to know the exponent, so it follows the client when
-  // the project has no override of its own.
-  const effectiveCurrency = currency ?? client?.currency ?? 'GBP'
+  // The rate field needs a currency to know the exponent, so it follows the same chain
+  // the saved record will resolve by: what this form has picked, then the client, then
+  // the app default. It used to end at a hardcoded `GBP`, so a user whose default is JPY
+  // was shown a rate in pounds and saved a rate that is interpreted in yen.
+  const effectiveCurrency = resolveCurrency({ currency }, client, defaultCurrency).code
 
   async function submit(event: React.FormEvent) {
     event.preventDefault()
@@ -577,6 +582,7 @@ function ProjectSection({
                   project={project}
                   clientName={owner?.name ?? null}
                   clients={clients}
+                  defaultCurrency={defaultCurrency}
                   now={now}
                   report={report}
                   onDelete={() => onDelete(project)}
@@ -601,6 +607,7 @@ function ProjectRow({
   project,
   clientName,
   clients,
+  defaultCurrency,
   now,
   report,
   onDelete,
@@ -608,6 +615,7 @@ function ProjectRow({
   project: Project
   clientName: string | null
   clients: Client[]
+  defaultCurrency: string | null
   now: Date
   report: (problem: unknown) => void
   onDelete: () => void
@@ -620,7 +628,7 @@ function ProjectRow({
   const [colour, setColour] = useState(project.colour)
 
   const client = clients.find((c) => c.id === clientId) ?? null
-  const effectiveCurrency = currency ?? client?.currency ?? 'GBP'
+  const effectiveCurrency = resolveCurrency({ currency }, client, defaultCurrency).code
 
   async function save() {
     try {

@@ -1,5 +1,3 @@
-import type { EntryDraft } from './types'
-
 /**
  * Entry validation (0004 V1–V5).
  *
@@ -33,13 +31,22 @@ export interface ValidatedEntry {
  * `now` is a parameter so tests pin time (0002 A2). Warnings do not block saving:
  * a 13-hour entry is usually legitimate, whereas a 25-hour one is nearly always a
  * typo or an unattended timer.
+ *
+ * `end: null` means the entry is still running (0003 E4). It is not merely "an end I
+ * have not got yet": only the caller that already holds the open-ended entry may say
+ * so, via `running`. Without that flag a null end is an error, because the alternative
+ * reading — "submit with no end" — would let a manual entry be created open-ended, and
+ * 0003 E4 allows exactly one such row. The flag is what keeps ED1 and M4 from
+ * contradicting each other.
  */
 export function validateEntry(
-  input: { start: Date; end: Date; note: string },
+  input: { start: Date; end: Date | null; note: string },
   now: Date,
+  options: { running?: boolean } = {},
 ): ValidatedEntry {
   const issues: ValidationIssue[] = []
   const { start, end } = input
+  const staysRunning = end === null
 
   if (Number.isNaN(start.getTime())) {
     issues.push({
@@ -49,7 +56,21 @@ export function validateEntry(
       severity: 'error',
     })
   }
-  if (Number.isNaN(end.getTime())) {
+
+  if (staysRunning && !options.running) {
+    issues.push({
+      field: 'end',
+      code: 'end_required',
+      message: 'Enter how long this took.',
+      severity: 'error',
+    })
+  }
+
+  // Every end-dependent rule is skipped while the entry is still running. Its duration is
+  // a function of the clock rather than something the user entered, so "too long" would
+  // be a statement about the wall clock, and it would block the very edit ED1 requires —
+  // someone fixing a typo on a timer that has been left running since yesterday.
+  if (!staysRunning && Number.isNaN(end.getTime())) {
     issues.push({
       field: 'end',
       code: 'end_invalid',
@@ -58,7 +79,7 @@ export function validateEntry(
     })
   }
 
-  if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+  if (!staysRunning && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
     const ms = end.getTime() - start.getTime()
 
     // 0004 V1 / 0003 E2: end must be strictly after start.
@@ -112,8 +133,4 @@ export function validateEntry(
 
 export function blockingIssues(issues: ValidationIssue[]): ValidationIssue[] {
   return issues.filter((i) => i.severity === 'error')
-}
-
-export function draftFrom(input: { start: Date; end: Date; note: string }): EntryDraft {
-  return { start: input.start, end: input.end, note: input.note }
 }

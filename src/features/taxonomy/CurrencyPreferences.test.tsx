@@ -5,6 +5,7 @@ import { CurrencyPreferences } from './CurrencyPreferences'
 import { CurrencySelect } from './CurrencySelect'
 import { installTestDb } from '../../test/harness'
 import { readVisibleCurrencies } from '../../storage/settingsRepo'
+import { getDb } from '../../storage/db'
 
 /**
  * Currency preferences (items 13 and 14 of `SPECS/todo.md`).
@@ -122,6 +123,74 @@ describe('applying (item 13)', () => {
     await waitFor(async () => {
       expect(await readVisibleCurrencies()).toBeNull()
     })
+  })
+
+  it('treats clearing the list as "offer everything", not as "offer nothing"', async () => {
+    // The hint above the list promises exactly this. Storing `[]` would instead leave
+    // every picker in the app offering only the currency each record already had — a
+    // state reached by following the instructions, and one the user cannot describe.
+    //
+    // Asserted against the stored record rather than `readVisibleCurrencies()`, which
+    // normalises `[]` to `null` on read. Reading back `null` would pass whether the save
+    // wrote the right thing or the read repaired it, and the two fail independently —
+    // an older build or a hand-edited database has the bad value without this panel.
+    const user = setup()
+    await user.click(screen.getByTestId('currency-toggle'))
+    await user.click(screen.getByRole('checkbox', { name: /^GBP/ }))
+    await user.click(screen.getByRole('button', { name: 'Save currency selection' }))
+    await waitFor(async () => {
+      expect(await readVisibleCurrencies()).toEqual(['GBP'])
+    })
+
+    await user.click(screen.getByRole('checkbox', { name: /^GBP/ }))
+    await user.click(screen.getByRole('button', { name: 'Save currency selection' }))
+    await waitFor(async () => {
+      expect(await getDb().meta.get('visible-currencies')).toBeUndefined()
+    })
+  })
+
+  it('treats unticking everything one by one the same way', async () => {
+    const user = setup()
+    await user.click(screen.getByTestId('currency-toggle'))
+    await user.click(screen.getByRole('checkbox', { name: /^GBP/ }))
+    await user.click(screen.getByRole('checkbox', { name: /^JPY/ }))
+    await user.click(screen.getByRole('button', { name: 'Save currency selection' }))
+    await waitFor(async () => {
+      expect(await readVisibleCurrencies()).toEqual(['GBP', 'JPY'])
+    })
+
+    await user.click(screen.getByRole('checkbox', { name: /^GBP/ }))
+    await user.click(screen.getByRole('checkbox', { name: /^JPY/ }))
+    await user.click(screen.getByRole('button', { name: 'Save currency selection' }))
+    await waitFor(async () => {
+      expect(await readVisibleCurrencies()).toBeNull()
+    })
+  })
+
+  it('leaves the pickers offering everything after a cleared selection', async () => {
+    // The end-to-end consequence of the previous test: not "no currencies", which is
+    // what the raw stored value would do to a `CurrencySelect`.
+    const user: UserEvent = userEvent.setup()
+    render(
+      <>
+        <CurrencyPreferences />
+        <CurrencySelect
+          label="Billing currency"
+          inheritLabel="Choose a currency"
+          value="GBP"
+          onChange={() => {}}
+        />
+      </>,
+    )
+    await user.click(screen.getByTestId('currency-toggle'))
+    await user.click(screen.getByRole('button', { name: 'Clear selection' }))
+    await user.click(screen.getByRole('button', { name: 'Save currency selection' }))
+
+    await waitFor(async () => {
+      expect(await readVisibleCurrencies()).toBeNull()
+    })
+    const options = screen.getAllByRole('option').length
+    expect(options).toBeGreaterThan(100)
   })
 })
 

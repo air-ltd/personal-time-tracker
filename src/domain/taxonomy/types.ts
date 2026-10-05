@@ -62,12 +62,6 @@ export interface Tag {
  * Declared rather than imported from `merge.ts` so this module stays free of
  * dependencies on sync, matching the layering the architecture requires (0002 A1).
  */
-export interface TaxonomyEntity {
-  id: string
-  updatedAt: string
-  deletedAt: string | null
-}
-
 /** Name and id fields a picker needs, without loading the whole record. */
 export interface TaxonomyOption {
   id: string

@@ -124,8 +124,6 @@ export const PALETTE = [
   '#f20dad', // pink
 ] as const
 
-export type PaletteColour = (typeof PALETTE)[number]
-
 /**
  * Minimum contrast a palette colour must reach against a chart background.
  *

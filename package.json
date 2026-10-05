@@ -16,9 +16,11 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "npm run typecheck && npm run format:check && npm run lint && npm run test && npm run build",
+    "verify": "npm run typecheck && npm run format:check && npm run lint && npm run check:secrets && npm run check:citations && npm run test && npm run build",
     "test:e2e": "node e2e/smoke.mjs",
     "check:silent": "node scripts/check-silent-failures.mjs",
+    "check:secrets": "node scripts/check-no-bundled-secrets.mjs",
+    "check:citations": "node scripts/check-citations.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {

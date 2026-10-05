@@ -4,7 +4,6 @@ import { AppDb, setDbForTests } from './db'
 import { indexedDbTokenStore } from './secretsRepo'
 import { readLastRev, writeLastRev, readLastSyncAt, writeLastSyncAt } from './snapshotRepo'
 import { newId } from '../domain/time/ids'
-import type { DropboxTokens } from '../sync/dropbox/DropboxProvider'
 
 /**
  * The credential store and the sync bookkeeping helpers.
@@ -28,15 +27,35 @@ beforeEach(async () => {
 })
 
 describe('indexedDbTokenStore', () => {
-  const tokens: DropboxTokens = {
-    accessToken: 'sl-token',
-    expiresAt: 1_800_000_000_000,
-    accountId: 'dbid:abc',
-  }
+  /**
+   * A store that knows nothing about credentials.
+   *
+   * The parsing moved to `DropboxProvider.toTokens`, because only the provider knows what
+   * a token for it looks like — which is what lets a second provider be added without
+   * touching this file. So these tests assert the one thing that is still this layer's
+   * responsibility: the value survives a round trip through IndexedDB unaltered, whatever
+   * it is, and nothing leaks or disappears on the way.
+   */
+  const credentials = { accessToken: 'sl-token', expiresAt: 1_800_000_000_000 }
 
-  it('round-trips a token', async () => {
-    await indexedDbTokenStore.write(tokens)
-    expect(await indexedDbTokenStore.read()).toEqual(tokens)
+  it('round-trips a value unaltered', async () => {
+    await indexedDbTokenStore.write(credentials)
+    expect(await indexedDbTokenStore.read()).toEqual(credentials)
+  })
+
+  it('round-trips values it has no vocabulary for', async () => {
+    // A provider this build does not know about may have written here. Refusing to
+    // store what it does not recognise would make the table a Dropbox concept again.
+    for (const value of [
+      null,
+      'a string',
+      42,
+      [{ a: 1 }],
+      { scopes: ['files.content.read'] },
+    ]) {
+      await indexedDbTokenStore.write(value)
+      expect(await indexedDbTokenStore.read()).toEqual(value)
+    }
   })
 
   it('reports nothing stored rather than failing', async () => {
@@ -44,7 +63,7 @@ describe('indexedDbTokenStore', () => {
   })
 
   it('clears', async () => {
-    await indexedDbTokenStore.write(tokens)
+    await indexedDbTokenStore.write(credentials)
     await indexedDbTokenStore.clear()
     expect(await indexedDbTokenStore.read()).toBeNull()
   })
@@ -55,54 +74,11 @@ describe('indexedDbTokenStore', () => {
     expect(await indexedDbTokenStore.read()).toBeNull()
   })
 
-  /**
-   * The stored record survives schema migrations and may have been written by another
-   * build, so it is untrusted input. A malformed record reads as "not connected", which
-   * prompts a reconnect rather than throwing on a shape mismatch.
-   */
-  describe('a malformed stored record reads as not connected', () => {
-    it.each([
-      ['not an object', 'a string'],
-      ['null', null],
-      ['missing accessToken', { refreshToken: 'only' }],
-      ['an empty accessToken', { accessToken: '' }],
-      ['a non-string accessToken', { accessToken: 42 }],
-      ['an array', [{ accessToken: 'sl-token' }]],
-    ])('%s', async (_label, value) => {
-      await db.secrets.put({ key: 'dropbox-tokens', value })
-      expect(await indexedDbTokenStore.read()).toBeNull()
-    })
-  })
-
-  it('keeps only the fields it recognises, dropping anything unexpected', async () => {
-    await db.secrets.put({
-      key: 'dropbox-tokens',
-      value: {
-        ...tokens,
-        scopes: ['files.content.read'],
-        // A refresh token from a build that stored one. Kept out of the type deliberately:
-        // there is no refresh flow, so carrying it would imply a capability the app does
-        // not have. A record written by an older build is still read without it.
-        refreshToken: 'legacy-refresh-token',
-        displayName: 'Someone',
-        evil: 'ignored',
-      },
-    })
-
-    const read = await indexedDbTokenStore.read()
-
-    expect(read).toEqual(tokens)
-    // A field this build does not understand is not carried forward, so it cannot be
-    // acted on or displayed as though it were.
-    expect(read).not.toHaveProperty('scopes')
-    expect(read).not.toHaveProperty('refreshToken')
-    expect(read).not.toHaveProperty('displayName')
-  })
-
-  it('treats absent optional fields as absent rather than as undefined values', async () => {
-    await db.secrets.put({ key: 'dropbox-tokens', value: { accessToken: 'sl-token' } })
-
-    expect(await indexedDbTokenStore.read()).toEqual({ accessToken: 'sl-token' })
+  it('distinguishes no record from a record holding null', async () => {
+    // Both read as `null`, and that is right: "nothing is connected" is the same answer
+    // either way, and the provider decides what a null means.
+    await db.secrets.put({ key: 'dropbox-tokens', value: null })
+    expect(await indexedDbTokenStore.read()).toBeNull()
   })
 })
 

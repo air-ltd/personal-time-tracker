@@ -151,6 +151,7 @@ describe('the indicator by state (item 10)', () => {
           lastOutcome: null,
           lastSyncAt: null,
           lastRev: null,
+          pending: false,
         },
       }),
     )

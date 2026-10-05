@@ -40,10 +40,13 @@ export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
 
       <TaxonomySettings now={now} />
 
-      <section className="panel" aria-labelledby="currencies-heading">
-        <h2 id="currencies-heading" className="visually-hidden">
-          Currencies
-        </h2>
+      {/*
+        Named with `aria-label` rather than a visually-hidden `<h2>`: the panel already
+        contains a visible heading of its own, and a second one in the accessibility tree
+        — also called "Currencies", one level up — gives a screen-reader user two
+        identical headings in the same card and no way to tell them apart.
+      */}
+      <section className="panel" aria-label="Currencies">
         <CurrencyPreferences />
       </section>
 

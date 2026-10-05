@@ -58,10 +58,10 @@ Get a static app live on GitHub Pages. Nothing else.
 - Empty app shell, themed
 - GitHub Actions workflow: typecheck, lint, test, build, deploy to Pages (0009 CI1–CI5)
 - Action versions pinned to full commit SHAs per repo policy
-- `base` configured for the project-site subpath (0002 B1–B5)
+- `base` configured for the project-site subpath (0002 R1, 0009 B1–B5)
 
 **Why first, and why so small:** it exists purely to find out whether GitHub
-Pages serves this correctly. The base-path failure (0002 B2) produces a blank page
+Pages serves this correctly. The base-path failure (0002 R1) produces a blank page
 with a fully passing local build and a fully green CI, and it is discovered far
 more cheaply in the first hour than in the last.
 
@@ -271,9 +271,18 @@ Notes from implementation:
   bugs came back" — a green suite is equally consistent with correct code and with code
   nobody asserted.
 - **Deliberately not part of `npm run verify`.** It rewrites source files and runs the
-  suite eleven times, which is too slow and too risky for the ordinary loop. It is a
-  gate to run on purpose, and it will report `stale` when a mutation no longer matches
-  the code, which is itself the signal to update it.
+  suite once per mutation — eighteen times today — which is too slow and too risky for
+  the ordinary loop. It is a gate to run on purpose, and it will report `stale` when a
+  mutation no longer matches the code, which is itself the signal to update it.
+- **It requires a failed _test_, not a non-zero exit.** Found the hard way: one of the
+  original eleven mutations was missing a brace, so it broke the file rather than the
+  behaviour, and the gate counted the parse failure as coverage. `11/11` was eleven
+  behaviours out of twelve, and the `token-in-export` claim — that the suite notices if
+  credentials reach an export — was not true. The mutation was corrected, which then
+  reported a genuine gap, which was closed with a test asserting the envelope's schema
+  has no slot for a credential store rather than one that serialises a snapshot
+  containing none. The existing test was incidental; only the structural one fails if
+  the format gains a slot.
 - **First run found a real gap and two dead mutations.** Nothing caught a table added
   to the schema and forgotten in the snapshot bridge — the silent failure being 0012 M2
   itself. Two further mutations had drifted out of date and were silently passing,
@@ -284,7 +293,9 @@ Notes from implementation:
   off-by-one, reconciliation and CSV quoting are all Phase 6 arithmetic that does not
   exist. The script lists them as pending with the phase that introduces them, so the
   gap is visible rather than assumed away. Base path is covered by the browser smoke
-  test, which loads the built site at `/personal-time-tracker/`.
+  test, which reads the base out of `dist/index.html` rather than repeating it — so a
+  `VITE_BASE_PATH` override is covered too, which a hard-coded path in the suite could
+  never have been.
 - **Coverage, measured rather than targeted.** `npm run test:coverage` reports 94%
   statements / 81% branches over `domain/`, `export/`, `storage/` and `sync/`, with
   `domain/merge.ts` at 100% statements. No threshold is configured, per 0010 Q6: a
@@ -339,6 +350,12 @@ Notes from implementation:
 - Range presets, calendar week/month, custom range (0006 DR1–DR5)
 - Entry-only reports: daily totals, breakdown by project/client/tag, trends,
   week-over-week, billable summary, unbilled work (0006 R1–R7)
+- Entry-list filtering by project, client, tag, billable, source and free-text
+  note (0004 L3) — a MUST that had no phase until now. It belongs here because
+  filtering the list and breaking down a report are the same query, and building
+  one without the other means writing it twice.
+- Overlap marking in the entry list (0004 O3, a SHOULD) — alongside L3, since
+  both are list presentation over the same loaded set
 - Hand-rolled SVG chart primitives, shared palette (0002 CH1–CH4)
 - Tabular equivalent for every chart, keyboard reachable (0006 C3, 0010 AC4–AC5)
 - Billable rounding at 15 minutes, with raw and rounded both shown
@@ -385,7 +402,9 @@ sync wire format. This phase completes export as a *reporting* tool.
 - Per-currency `TOTAL` rows rather than a meaningless combined figure (0008 C11)
 - Non-working day `days` column computed against the work pattern, de-duplicated
   (0008 C12, C14)
-- Import summary: what was added, replaced, skipped, and why (0007 F-EXPORT-6–7)
+- Import summary: what will be added before the import and what was merged or
+  skipped after it (0007 F-EXPORT-6–7, amended to merge-only — see 0007
+  §Restore modes)
 
 **Gate**
 - A CSV containing commas, quotes and newlines in project names parses cleanly
@@ -401,7 +420,7 @@ history as the thing to verify against, not an empty database.
 
 - Accessibility pass against 0010 AC1–AC10, including the theme-flash check
 - Backup nudges and data-loss warning states (0007 F-NUDGE-1–4, FB3, FB7)
-- First-run versus empty-after-data states must look different (0007 FB3)
+- First-run versus empty-after-data states must look different (0007 FB-3)
 - Storage quota and private-browsing handling (0007 FB1–FB2, FB5)
 - Erase-all, typed confirmation, no undo (0007 E-ERASE-1–4)
 - CSP finalised: `connect-src` limited to the provider (0011 N1–N6)
@@ -434,7 +453,7 @@ around it changes.
 | Utilisation divide-by-zero | `NaN`, `Infinity` or a misleading `0%` | 0013 CP-A6 |
 | Weekday off-by-one | Every expected-minute figure shifts by a day | 0013 K3 |
 | Breakdown does not reconcile to total | Silent; looks like normal rounding | 0006 RP2 |
-| Base path wrong | Blank page in production, green local build and green CI | 0002 B2 |
+| Base path wrong | Blank page in production, green local build and green CI | 0002 R1 |
 | New entity type added, forgotten in merge | That data never syncs, with no warning | 0012 M2 |
 | CSV quoting missed | Spreadsheet silently mis-parses a row | 0008 C2 |
 | Theme flash | Cosmetic, but tells the user the app is unpolished | 0002 TH4 |

@@ -99,7 +99,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 22. [x] entries to have a "period setting": daily, weekly, all entries - daily and weekly
     should cause it to summarise to that level per client. Done. It defaults to **all**, so
     the home screen still shows the day-grouped list 0004 L1–L2 asks for and the empty state
-    (0007 FB3) is not hidden behind a summary reading "nothing in this period".
+    (0007 FB-3) is not hidden behind a summary reading "nothing in this period".
 23. [x] a larger version of favicon should be to the left of the title "Time Tracker" -
     this icon should be link to the basic page. Done.
 24. [x] timer card doesn't need the text clients, please remove and then compress a little
@@ -132,7 +132,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
     Out of flow, so it cannot be pushed onto its own row, but still in the document, so it
     keeps its place in the tab order. Moving it to the left also overflowed the row at 320px
-    for a while, which is the 0002 B7 constraint and is checked in a browser for that reason.
+    for a while, which is the 0002 R1 constraint and is checked in a browser for that reason.
 
 28. [x] entry type (daily/weekly/all) should be remembered. Done. A control that resets on
     every reload is one the user sets again every time. Stored in IndexedDB `meta`, since

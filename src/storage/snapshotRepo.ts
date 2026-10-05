@@ -2,7 +2,6 @@ import { getDb, SCHEMA_VERSION } from './db'
 import { bumpRevision } from './events'
 import type { Table } from 'dexie'
 import type { Mergeable, Snapshot } from '../domain/merge'
-import type { TimeEntry } from '../domain/entries/types'
 
 /**
  * Snapshot bridge between the database and the sync engine.
@@ -123,5 +122,3 @@ export async function readLastSyncAt(): Promise<string | null> {
 export async function writeLastSyncAt(at: string): Promise<void> {
   await getDb().meta.put({ key: LAST_SYNC_KEY, value: at })
 }
-
-export type { TimeEntry }

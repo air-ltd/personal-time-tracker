@@ -57,10 +57,17 @@ export const FALLBACK_CURRENCY = 'USD'
  * Order: project override, then client, then the app-wide default, then USD. The source
  * is returned alongside the code because a project overriding its client is the case
  * 0005 P6 exists for, and it is invisible without being told.
+ *
+ * The parameters are narrowed to the one field this function reads. That is not
+ * convenience: three call sites have a currency but no record yet — a project form
+ * mid-edit, a client picker before the row exists — and typing them as `Project` and
+ * `Client` would force each of those to either cast or, worse, reimplement the chain
+ * with a different fallback. The narrowing is what keeps `resolveCurrency` the only
+ * place the order is written down.
  */
 export function resolveCurrency(
-  project: Project | null,
-  client: Client | null,
+  project: { currency: string | null } | null,
+  client: { currency: string | null } | null,
   appDefault: string | null,
 ): CurrencyResolution {
   if (project?.currency) return { code: project.currency, source: 'project' }

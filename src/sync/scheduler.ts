@@ -2,6 +2,7 @@ import { runSync, type SyncLogEntry, type SyncOutcome } from './engine'
 import type { SyncProvider } from './provider'
 import type { Snapshot } from '../domain/merge'
 import { SCHEMA_VERSION } from '../storage/db'
+import { subscribe } from '../storage/events'
 import {
   readLastRev,
   readLastSyncAt,
@@ -17,6 +18,14 @@ import {
  * Triggers: app open, a debounced local write, returning to the tab, `pagehide`,
  * and a manual button. Deliberately no background polling (C6): there is no inbound
  * push path, so a timer produces only empty cycles and keeps the device awake.
+ *
+ * The local-write trigger is the storage layer's revision counter rather than an
+ * argument passed in by whichever view happened to make the change. That inversion
+ * matters: with the trigger supplied from outside, `schedule()` was reachable only if
+ * every write path remembered to call it, none did, and the debounce behaviour it
+ * implements (0012 C2) was unreachable in production while its tests passed. Every
+ * write already bumps the revision, so subscribing to it here means the trigger cannot
+ * be forgotten — there is nowhere else for it to live.
  */
 
 export const DEBOUNCE_MS = 5_000
@@ -54,6 +63,16 @@ export interface SyncStatus {
    */
   lastRev: string | null
   message: string | null
+  /**
+   * A local change is waiting to be published.
+   *
+   * 0012 C8 requires pending changes to be visible, and it is the one part of that
+   * requirement with no other source: `lastSyncAt` is about the past, and `state` is
+   * about the current cycle. Without this the honest answer to "is my work on the other
+   * device yet?" is "I cannot tell", which is what 0012 C8 exists to prevent — and on a
+   * laptop that is closed rather than tab-switched it can be hours.
+   */
+  pending: boolean
 }
 
 /** Failures that mean the stored token cannot be used and must be replaced. */
@@ -78,6 +97,19 @@ export class SyncScheduler {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private onVisibilityChange: (() => void) | null = null
   private onPageHide: (() => void) | null = null
+  private onRevision: (() => void) | null = null
+  private detachRevision: (() => void) | null = null
+  /**
+   * True while this scheduler is the one writing, so the bump its own write causes is
+   * not mistaken for the user having changed something.
+   *
+   * Without this every sync that merged remote data would schedule another cycle to
+   * publish the write it had just made — a second round trip that finds nothing. It has
+   * to be a flag around `writeLocal` rather than a revision comparison because a user
+   * write that lands *during* a cycle must still be noticed; the two are indistinguishable
+   * by revision number, and only by asking who caused it.
+   */
+  private writingLocally = false
   private stopped = false
   private running = false
   private queuedWhileRunning = false
@@ -88,6 +120,7 @@ export class SyncScheduler {
     lastOutcome: null,
     lastSyncAt: null,
     message: null,
+    pending: false,
   }
 
   constructor(config: SyncConfig) {
@@ -98,7 +131,17 @@ export class SyncScheduler {
     this.onStatus = config.onStatus
     this.logSink = config.onLog
     this.readLocal = config.readLocal ?? readSnapshot
-    this.writeLocal = config.writeLocal ?? writeSnapshot
+    // Wrapped rather than assigned directly: this is the only place the scheduler can
+    // cause a revision bump, and the subscription below has to be able to tell.
+    const writeLocal = config.writeLocal ?? writeSnapshot
+    this.writeLocal = async (snapshot: Snapshot) => {
+      this.writingLocally = true
+      try {
+        await writeLocal(snapshot)
+      } finally {
+        this.writingLocally = false
+      }
+    }
     this.readLastRev = config.readLastRev ?? readLastRev
     this.writeLastRev = config.writeLastRev ?? writeLastRev
     this.writeLastSyncAt = config.writeLastSyncAt ?? writeLastSyncAt
@@ -140,6 +183,19 @@ export class SyncScheduler {
     }
     window.addEventListener('pagehide', this.onPageHide)
 
+    // Local writes (0012 C1, C2). Subscribed here rather than passed in, because the
+    // signal already exists and every write path already produces it — the earlier
+    // arrangement depended on each write path remembering, and none did.
+    //
+    // Stored before the first `await` so `stop()` can detach it even if it is called
+    // while `start()` is still waiting on storage. Registering it afterwards left a
+    // live subscription belonging to a scheduler nobody held, still scheduling cycles.
+    this.onRevision = () => {
+      if (this.writingLocally) return
+      this.schedule()
+    }
+    this.detachRevision = subscribe(this.onRevision)
+
     await this.loadLastSyncAt()
     // Once per app start, not per cycle: the revision is a reportable fact, not an input
     // to any decision.
@@ -159,6 +215,9 @@ export class SyncScheduler {
     this.stopped = true
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = null
+    this.detachRevision?.()
+    this.detachRevision = null
+    this.onRevision = null
     if (this.onVisibilityChange) {
       document.removeEventListener('visibilitychange', this.onVisibilityChange)
       this.onVisibilityChange = null
@@ -174,12 +233,18 @@ export class SyncScheduler {
    *
    * Coalesces a burst of edits into one cycle, and flushes on a timer even if
    * editing continues, so an extended session still syncs (0012 C2).
+   *
+   * Called by the revision subscription above on every local write, which is what makes
+   * "syncs after you record something" true without any view knowing sync exists.
    */
   schedule(): void {
     // Ignored once stopped, so a late write cannot resurrect a scheduler the app has
     // already torn down.
     if (this.stopped) return
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
+    // Announced the moment the change is registered rather than when the cycle runs, so
+    // "pending" covers the whole debounce window rather than only the round trip.
+    this.emit({ pending: true })
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null
       void this.syncNow()
@@ -235,7 +300,21 @@ export class SyncScheduler {
         this.emit({ state: 'disabled', lastOutcome: outcome, message: null })
       } else if (outcome.status === 'failed' && isAuthFailure(outcome.kind)) {
         // Already discarded above; the panel will offer Connect again.
-        this.emit({ state: 'error', lastOutcome: outcome, message: outcome.message })
+        //
+        // `scope-missing` is usually the Dropbox *app console* missing a scope, not a
+        // bad token: reauthorising cannot fix it, and the Connect button reappearing
+        // with no explanation is the only clue the user would otherwise get. Say so,
+        // and name the two settings that have to agree.
+        this.emit({
+          state: 'error',
+          lastOutcome: outcome,
+          message:
+            outcome.kind === 'scope-missing'
+              ? 'Dropbox rejected the app for a missing permission. Check the app’s ' +
+                'scopes and redirect URI in the Dropbox App Console match the Connect ' +
+                'screen, then connect again.'
+              : outcome.message,
+        })
       } else {
         this.emit({
           state: 'error',
@@ -247,6 +326,11 @@ export class SyncScheduler {
       return outcome
     } finally {
       this.running = false
+      // Cleared here rather than on the success path: a failed cycle has still resolved
+      // whatever it could, and leaving the indicator lit forever would train the user to
+      // ignore it. A queued cycle re-arms it immediately below if work did arrive
+      // mid-flight.
+      this.emit({ pending: false })
       if (this.queuedWhileRunning) {
         this.queuedWhileRunning = false
         void this.syncNow()

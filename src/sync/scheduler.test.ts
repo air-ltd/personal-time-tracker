@@ -2,13 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SyncScheduler, type SyncStatus } from './scheduler'
 import { SyncError, type ProviderStatus, type RemoteFile, type SyncProvider } from './provider'
 import type { Snapshot } from '../domain/merge'
+import { bumpRevision, resetRevisionForTests } from '../storage/events'
 
 /**
- * Token recovery (0012 AU11).
+ * Token recovery.
  *
- * A token the provider has rejected is provably unusable — expired, or granted before
- * the app had the permissions it needs. Discarding it turns a dead end into a single
- * reconnect rather than a message explaining that disconnecting is the fix.
+ * Cites 0012 AU7 (sign-out clears tokens and sync metadata but not local data) and
+ * SY8 (provider errors are normalised into a small shared set). The recovery rule itself
+ * is this project's: a token the provider has rejected is provably unusable — expired, or
+ * granted before the app had the permissions it needs — so discarding it turns a dead end
+ * into a single reconnect rather than a message explaining that disconnecting is the fix.
+ *
+ * There was no `AU11`; an earlier version of this comment cited one, and a citation that
+ * resolves to nothing is the one comment a reader cannot check.
  */
 
 class StubProvider implements SyncProvider {
@@ -75,13 +81,28 @@ describe('a rejected token', () => {
   })
 
   it('leaves the reason visible instead of silently recovering', async () => {
+    const { scheduler, statuses } = build(new SyncError('auth', 'token expired'))
+
+    await scheduler.syncNow()
+
+    const last = statuses.at(-1)
+    expect(last?.state).toBe('error')
+    expect(last?.message).toBe('token expired')
+    scheduler.stop()
+  })
+
+  it('points a missing-scope failure at the app console, not at reauthorising', async () => {
+    // The token is discarded either way, so the Connect button reappearing is the
+    // user's only clue. A missing scope is a Dropbox *app* setting: reconnecting
+    // with the same app cannot fix it, so the message has to say where to look.
     const { scheduler, statuses } = build(new SyncError('scope-missing', 'no file permissions'))
 
     await scheduler.syncNow()
 
     const last = statuses.at(-1)
     expect(last?.state).toBe('error')
-    expect(last?.message).toMatch(/no file permissions/)
+    expect(last?.message).toMatch(/App Console/)
+    expect(last?.message).toMatch(/redirect URI/)
     scheduler.stop()
   })
 
@@ -132,6 +153,9 @@ describe('serialising cycles', () => {
 describe('triggers', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    // The revision counter is module-level, so a scheduler left subscribed by an earlier
+    // test would still be listening and would make these counts depend on test order.
+    resetRevisionForTests()
   })
   afterEach(() => {
     vi.useRealTimers()
@@ -148,7 +172,12 @@ describe('triggers', () => {
       pulls += 1
       return original()
     }
-    return { scheduler: built.scheduler, provider: built.provider, pulls: () => pulls }
+    return {
+      scheduler: built.scheduler,
+      provider: built.provider,
+      statuses: built.statuses,
+      pulls: () => pulls,
+    }
   }
 
   it('syncs once when the app opens (C1)', async () => {
@@ -164,6 +193,125 @@ describe('triggers', () => {
     await scheduler.start()
     // A second mount-time sync would push a redundant revision on every remount.
     expect(pulls()).toBe(1)
+    scheduler.stop()
+  })
+
+  it('syncs after a local write, without anything asking it to (C1, C2)', async () => {
+    // The trigger that was missing. `schedule()` was implemented, debounced and tested,
+    // and nothing in the app ever called it — so 0012 C1's "a local write" was the one
+    // trigger of five that did not fire, and it did so silently: no error, no status
+    // change, just two devices open side by side that never saw each other's work.
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    const afterOpen = pulls()
+
+    // Exactly what every write path already does.
+    bumpRevision()
+
+    expect(pulls()).toBe(afterOpen)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(pulls()).toBe(afterOpen + 1)
+    scheduler.stop()
+  })
+
+  it('does not schedule a cycle for the write its own merge made', async () => {
+    // Without this the scheduler would publish what it had just written: a pull that
+    // brings remote data writes locally, bumps the revision, and triggers a second
+    // round trip that finds nothing to do. Every pull would cost two cycles.
+    let writes = 0
+    const provider = new StubProvider()
+    const statuses: SyncStatus[] = []
+    const scheduler = new SyncScheduler({
+      provider,
+      path: 'data.json',
+      now: () => new Date('2026-10-13T09:00:00.000Z'),
+      onStatus: (status) => statuses.push(status),
+      readLocal: () => Promise.resolve({ schemaVersion: 1, entities: { entries: [] } }),
+      // Stands in for a merge: a write that bumps the revision, as `writeSnapshot` does.
+      writeLocal: () => {
+        writes += 1
+        bumpRevision()
+        return Promise.resolve()
+      },
+      readLastRev: () => Promise.resolve(null),
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+    })
+
+    // Remote has an entry this device does not, so the engine merges and writes locally.
+    provider.pull = () =>
+      Promise.resolve({
+        rev: 'r9',
+        body: JSON.stringify({
+          format: 'personal-time-tracker-backup',
+          formatVersion: 1,
+          schemaVersion: 1,
+          exportedAt: '2026-10-13T09:00:00.000Z',
+          counts: { entries: 1 },
+          data: {
+            entries: [
+              {
+                id: 'from-elsewhere',
+                projectId: null,
+                tagIds: [],
+                start: '2026-10-13T08:00:00.000Z',
+                end: '2026-10-13T09:00:00.000Z',
+                note: '',
+                billable: false,
+                rateOverrideMinor: null,
+                source: 'manual',
+                createdAt: '2026-10-13T08:00:00.000Z',
+                updatedAt: '2026-10-13T08:00:00.000Z',
+                deletedAt: null,
+              },
+            ],
+            projects: [],
+            clients: [],
+            tags: [],
+            contractPeriods: [],
+            nonWorkingDays: [],
+          },
+        }),
+      })
+
+    await scheduler.start()
+    expect(writes).toBe(1)
+
+    // The scheduler's own write must not arm the debounce.
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(writes).toBe(1)
+    expect(scheduler.getStatus().pending).toBe(false)
+    scheduler.stop()
+  })
+
+  it('stops responding to writes once stopped', async () => {
+    const { scheduler, pulls } = counting()
+    await scheduler.start()
+    scheduler.stop()
+    const afterStop = pulls()
+
+    bumpRevision()
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    // The subscription has to be detached in `stop()`, not just the timer cleared, or a
+    // torn-down scheduler keeps syncing.
+    expect(pulls()).toBe(afterStop)
+  })
+
+  it('reports a pending change while one is waiting to go out (C8)', async () => {
+    // 0012 C8 requires pending changes to be visible. `lastSyncAt` is about the past and
+    // `state` is about the current cycle, so neither can answer "is my work on the other
+    // device yet?" — which is the question the indicator exists for.
+    const { scheduler, statuses } = counting()
+    await scheduler.start()
+
+    bumpRevision()
+    expect(scheduler.getStatus().pending).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(scheduler.getStatus().pending).toBe(false)
+    expect(statuses.at(-1)?.pending).toBe(false)
     scheduler.stop()
   })
 

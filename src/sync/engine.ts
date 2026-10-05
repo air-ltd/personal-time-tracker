@@ -203,11 +203,23 @@ async function pushWithRetry(
         if (fresh) {
           const parsed = parseEnvelope(JSON.parse(fresh.body), deps.supportedSchemaVersion)
           if (parsed.ok) {
-            const outcome = mergeSnapshots(
-              snapshot,
-              parsed.snapshot,
-              deps.supportedSchemaVersion,
-            )
+            /*
+             * Read local *again*, not the snapshot this cycle started with.
+             *
+             * The in-flight `snapshot` was read before the round trip, so anything the
+             * user saved while the network was in flight is in neither argument to the
+             * merge: it would not be merged, and it would not be pushed either. "Sync
+             * now" would then report success while omitting the entry that was added a
+             * second earlier — a success message that is not true of what the user just
+             * did. One extra IndexedDB read on the already-rare conflict path is a good
+             * trade for a result that means what it says.
+             *
+             * Read outside the merge so a write that lands during the *merge* itself is
+             * not lost either; `writeLocal` is an upsert, so whatever it carries over an
+             * unchanged row is preserved.
+             */
+            const local = await deps.readLocal()
+            const outcome = mergeSnapshots(local, parsed.snapshot, deps.supportedSchemaVersion)
             if (outcome.ok) {
               snapshot = repairReferences(outcome.merged)
               await deps.writeLocal(snapshot)

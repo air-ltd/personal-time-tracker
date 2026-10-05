@@ -25,7 +25,7 @@ From 0001's non-goals, these are hard constraints rather than preferences:
 | UI | React | The reporting views are heavily interactive (range pickers, chart drill-down). Declarative rendering keeps that manageable. |
 | Build | Vite | Fast, produces a plain static `dist/`, native `base` option for GitHub Pages subpaths. |
 | Routing | Hash-based (`#/reports`) | See "Routing" below. This is a forced choice, not a preference. |
-| Storage | IndexedDB via **Dexie** | Asynchronous and structured, unlike `localStorage` (0007 S1). Dexie's versioned schema is essentially the migration registry that 0007 M1–M6 requires, already built and tested. Migrations are code that only gets exercised during an upgrade, which is exactly when you don't want bugs. |
+| Storage | IndexedDB via **Dexie** | Asynchronous and structured, unlike `localStorage` (0007 S1). Dexie's versioned schema is essentially the migration registry that 0007 M-1–M-6 requires, already built and tested. Migrations are code that only gets exercised during an upgrade, which is exactly when you don't want bugs. |
 | Charts | **Hand-rolled SVG**, Chart.js fallback | See "Charts" below. |
 | Dates | Native `Date` + small helpers | At the confirmed volume a large date library earns nothing. Rendered via `Intl` (0006 DT5). |
 | Validation | Zod | Export/import and sync boundaries need runtime validation that types alone cannot give. |
@@ -116,24 +116,55 @@ features.
 
 ```
 src/
-  app/          Shell, layout, router definition, error boundaries
+  app/          Shell, layout, router, theme, icons
   domain/       Pure logic. No React, no IndexedDB, no Date.now().
-    models/     Entity and value types (mirrors 0003)
+    entries/    Entry types, validation, day grouping, summarising
+    taxonomy/   Projects, clients, tags; names, money, colour, currencies
     time/       Interval math, DST handling, rounding, date bucketing
-    aggregate/  Report computation (groupBy, totals, trends)
     merge.ts    Sync/import union-and-resolve (see 0012)
-  storage/      IndexedDB wrapper, schema definition, migrations
+  storage/      IndexedDB wrapper, schema definition, migrations, repositories
   features/
-    timer/      Running-entry state machine
+    timer/      Running-entry state machine, per-client timers
     entries/    Entry list, create/edit/delete forms
     taxonomy/   Projects, clients, tags
-    reports/    Report views and charts
-    billing/    Billable totals, rate resolution, invoice line items
+    settings/   Settings page, app preferences
+    sync/       Connection state, provider factory, sync status UI
+    backup/     Export and restore
+    reports/    Report views and charts            (Phase 6)
+    billing/    Billable totals, invoice line items (Phase 6)
   sync/         Provider abstraction, Dropbox impl, engine, scheduler
-  ui/           Shared presentational components
-  export/       JSON backup + CSV writers
-  import/       Backup reader, validation, merge strategy
+  export/       JSON backup envelope + CSV writers   (CSV in Phase 6)
+  test/         Test harness and factories
 ```
+
+> **Amended to match the code as built.** The original tree listed
+> `domain/models/`, `domain/aggregate/`, `import/` and `ui/`. None of those exist, and
+> the two directories that do — `domain/entries/` and `domain/taxonomy/` — were missing
+> from it, so the structure a new contributor would have expected was not the structure
+> they would find.
+>
+> What changed and why:
+>
+> - **`domain/models/` → `domain/entries/` and `domain/taxonomy/`.** Entities are split by
+>   the concern that owns them rather than pooled into one folder, so a change to money
+>   resolution does not put an entry type anywhere near it. `0003`'s types are mirrored by
+>   the folder, not the reverse.
+> - **`domain/aggregate/` → `domain/entries/group.ts` and `summarise.ts`.** Report
+>   computation was written next to the records it aggregates rather than in its own
+>   layer, because at the confirmed volume (0006 P1) there is nothing to aggregate that
+>   does not need the records. It moves to `domain/reports/` if Phase 6 makes that a real
+>   boundary.
+> - **`import/` is gone; `export/envelope.ts` holds both directions.** Import and export
+>   are the same envelope read forwards and backwards (`0012 SY4`), and two folders would
+>   have been two schemas to keep in step.
+> - **`ui/` is gone.** There was no shared presentational component that more than one
+>   feature used. A3 covers the rule that replaces it: a component shared between
+>   features belongs in `domain/`'s consumers, not in a folder of its own.
+> - **`features/settings/`, `features/sync/` and `features/backup/` are new**, because
+>   those surfaces exist now.
+>
+> `A1`–`A5` are unchanged. The tree is a description of where code lives; the rules below
+> it are what constrain it.
 
 **A1** — `domain/` MUST remain free of React and storage imports. This is what
 makes the aggregation logic testable without a browser and is the single most

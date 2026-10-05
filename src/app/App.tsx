@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRevision } from '../storage/useRevision'
 import { matchPath, usePath, type Route } from './router'
 import {
   applyTheme,
@@ -70,6 +71,10 @@ export function App() {
   // instances with separate dismissal state, so dismissing the prompt in the panel
   // left this copy still firing.
   const timer = useTimer()
+  // Read once rather than dereferenced inline at the route below, because the guard is
+  // about whether a timer is running at all, not about which entry: M4 has nothing to say
+  // about a manual entry that duplicates the running one, only about there being one.
+  const timerRunning = timer.running !== null
 
   // 0001 US2: stopping routes to the entry form, so classification happens while
   // the work is still fresh.
@@ -79,7 +84,13 @@ export function App() {
 
   // Load the entry being edited. `undefined` means "not resolved yet", which is
   // distinct from `null` for "no such entry".
+  //
+  // Keyed on the revision as well as the id, because the record can change underneath an
+  // open form — a sync merging the same entry from another device, a taxonomy delete, an
+  // undo in another tab. Without the revision the form kept the stale copy and a save
+  // wrote it back over the newer one, losing whatever the other device had changed.
   const editId = match?.params['id']
+  const editRevision = useRevision()
   useEffect(() => {
     if (!editId || editId === 'new') return
     let cancelled = false
@@ -89,7 +100,10 @@ export function App() {
     return () => {
       cancelled = true
     }
-  }, [editId])
+    // `editRevision` rather than the store's `getRevision()` read inline, because a bare
+    // call is not a dependency React can see. `loadedEdit` is deliberately not one: it
+    // is set here, and including it would re-run this effect on its own result.
+  }, [editId, editRevision])
 
   // Derived rather than reset in an effect: `undefined` means not resolved yet,
   // `null` means no such entry, and the three states must stay distinguishable.
@@ -172,7 +186,40 @@ export function App() {
             </>
           )}
 
-          {match?.route.path === '/entries/new' && <EntryForm now={now} />}
+          {match?.route.path === '/entries/new' &&
+            (timerRunning ? (
+              /*
+               * 0004 M4: a manual entry MUST NOT be created while a timer runs, because
+               * 0003 E4 allows exactly one open-ended row and the two would both count
+               * towards the day's total (0004 O2).
+               *
+               * Stopping is offered but never performed on the user's behalf — the
+               * alternative loses an hour of work they did not mean to end. The form
+               * appears by itself once the stop lands, because that is the only action
+               * that can unblock this screen and the user has just asked for it.
+               */
+              <div className="panel" data-testid="timer-running-notice">
+                <h2>A timer is running</h2>
+                <p className="hint">
+                  Stop the timer before adding an entry by hand — only one piece of work can be
+                  running at a time.
+                </p>
+                <div className="button-row">
+                  <button
+                    type="button"
+                    className="button button-primary"
+                    onClick={() => void timer.stop()}
+                  >
+                    Stop the timer and add the entry
+                  </button>
+                  <a className="button" href="#/">
+                    Back to entries
+                  </a>
+                </div>
+              </div>
+            ) : (
+              <EntryForm now={now} />
+            ))}
 
           {match?.route.path === '/settings' && (
             <SettingsPage now={now} theme={theme} onThemeChange={onThemeChange} />

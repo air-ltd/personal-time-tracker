@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { EntryForm } from './EntryForm'
@@ -12,6 +12,8 @@ import {
   listTags,
 } from '../../storage/taxonomyRepo'
 import { getEntry, listEntries, putEntry } from '../../storage/entriesRepo'
+import type { TimeEntry } from '../../domain/entries/types'
+import { writeDefaultCurrency } from '../../storage/settingsRepo'
 
 /**
  * Taxonomy on the entry form (0005 T1–T2, P5, U1–U2, N2).
@@ -336,5 +338,178 @@ describe('duration in seconds (item 30)', () => {
       const saved = await getEntry(stored.id)
       expect(Date.parse(saved?.end ?? '')).toBe(start.getTime() + 25_000)
     })
+  })
+})
+
+/**
+ * Editing a running entry (0004 ED1, ED2).
+ *
+ * ED1 says every entry is editable after creation, "including a running one"; ED2 says
+ * editing `end` on a running entry stops it. Both can only be true together if saving
+ * without stating an end leaves it running.
+ *
+ * They were not: the duration and end fields both started empty for a running entry, so
+ * submitting produced "Enter how long this took" — and the only way to fix a typo in the
+ * note of a running entry was to also state a duration, which stopped the timer as a
+ * side effect. The user opened the pencil to correct a word and was told their note was
+ * invalid.
+ */
+describe('editing a running entry (0004 ED1, ED2)', () => {
+  const START = new Date('2026-10-13T09:00:00.000Z')
+  const LATER = new Date('2026-10-13T10:30:00.000Z')
+
+  async function running(): Promise<TimeEntry> {
+    return putEntry(entry({ start: START, end: null, note: 'Fixme', source: 'timer' }))
+  }
+
+  it('saves a corrected note without stopping the timer', async () => {
+    const stored = await running()
+
+    render(<EntryForm now={LATER} entry={stored} />)
+    const note = await screen.findByLabelText('Note')
+    await user.clear(note)
+    await user.type(note, 'Fixed')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(async () => {
+      const saved = await getEntry(stored.id)
+      expect(saved?.note).toBe('Fixed')
+      // The whole point: editing something other than the end does not end it.
+      expect(saved?.end).toBeNull()
+    })
+  })
+
+  it('says the entry is still running, so a blank duration is not a mystery', async () => {
+    const stored = await running()
+
+    render(<EntryForm now={LATER} entry={stored} />)
+
+    // 90 minutes from the start to `now`. Stating what would be saved is what makes the
+    // blank field a decision rather than an oversight.
+    expect(await screen.findByTestId('running-preview')).toHaveTextContent(/1h 30m/)
+  })
+
+  it('still validates the parts that do apply', async () => {
+    // A running entry skips the duration rules because its length is the clock's doing,
+    // but a future start is the user's own error and must still block the save.
+    const stored = await putEntry(
+      entry({ start: new Date('2026-10-13T12:00:00.000Z'), end: null, source: 'timer' }),
+    )
+
+    render(<EntryForm now={LATER} entry={stored} />)
+    await user.click(await screen.findByRole('button', { name: 'Save changes' }))
+
+    expect(await screen.findByText('Start is in the future.')).toBeInTheDocument()
+  })
+
+  it('stops the entry when a duration is stated (0004 ED2)', async () => {
+    const stored = await running()
+
+    render(<EntryForm now={LATER} entry={stored} />)
+    await user.type(await screen.findByLabelText('Duration'), '30')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(async () => {
+      const saved = await getEntry(stored.id)
+      expect(Date.parse(saved?.end ?? '')).toBe(START.getTime() + 30 * 60_000)
+    })
+  })
+
+  it('stops the entry when an end time is stated instead', async () => {
+    const stored = await running()
+
+    render(<EntryForm now={LATER} entry={stored} />)
+    await user.click(await screen.findByRole('radio', { name: 'Enter an end time' }))
+    // `user.type` is unreliable on a datetime-local input — it types characters rather
+    // than filling segments — so the value is set the way a browser would.
+    //
+    // Local time, not the UTC the fixture is written in: 09:00Z is 10:00 in Europe/London
+    // on this date, and an end equal to the start is rejected by 0004 V1 rather than
+    // saved as a zero-length entry.
+    fireEvent.change(await screen.findByLabelText('End'), {
+      target: { value: '2026-10-13T11:00' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(async () => {
+      const saved = await getEntry(stored.id)
+      expect(saved?.end).not.toBeNull()
+    })
+  })
+
+  it('does not let a new manual entry be left open-ended', async () => {
+    // 0003 E4 allows exactly one open-ended row, and 0004 M4 reserves it for the timer.
+    // The "leave it running" path must therefore be unreachable from the new-entry form.
+    render(<EntryForm now={LATER} />)
+    await user.click(await screen.findByRole('button', { name: 'Add entry' }))
+
+    expect(await screen.findByText('Enter how long this took.')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The billing preview, and the resolution chain behind it (0003 currency resolution).
+ *
+ * The hint used to resolve currency inline and ended at a hardcoded `USD`, ignoring the
+ * app-wide default the user had chosen in Settings one screen away — so a rate stored in
+ * yen was previewed in dollars, and in another form in pounds. The chain is now
+ * `resolveCurrency`, and these pin the three links that were once independent copies.
+ */
+describe('the billing preview resolves currency through the whole chain', () => {
+  /** Render the form, pick the project named `name`, and return the billing hint. */
+  async function previewFor(name: string): Promise<HTMLElement> {
+    render(<EntryForm now={T0} />)
+    const picker = await screen.findByLabelText('Project')
+    const option = await screen.findByRole('option', { name })
+    await user.selectOptions(picker, option)
+    return await screen.findByTestId('billing-hint')
+  }
+
+  it("uses the project's own currency", async () => {
+    const client = await createClient({ name: 'Acme', currency: 'GBP', now: T0 })
+    await createProject({
+      name: 'Website',
+      clientId: client.id,
+      currency: 'JPY',
+      defaultRateMinor: 10_000,
+      now: T0,
+    })
+
+    // Yen, not the client's pounds: 0005 P6 — a project overriding its client is the
+    // case that is invisible without being tested.
+    expect(await previewFor('Website')).toHaveTextContent(/10,000/)
+  })
+
+  it("falls back to the client's currency when the project has none", async () => {
+    await writeDefaultCurrency('JPY')
+    const client = await createClient({ name: 'Acme', currency: 'GBP', now: T0 })
+    await createProject({
+      name: 'Website',
+      clientId: client.id,
+      defaultRateMinor: 10_000,
+      now: T0,
+    })
+
+    expect(await previewFor('Website')).toHaveTextContent(/£/)
+  })
+
+  it('falls back to the app-wide default when neither project nor client says', async () => {
+    // The link that was missing entirely: the setting exists, is configurable, and was
+    // ignored by the entry form and by the project form. A client-less project is the
+    // only way to reach it — a client always carries a currency of its own.
+    await writeDefaultCurrency('JPY')
+    await createProject({ name: 'Website', clientId: null, defaultRateMinor: 5_000, now: T0 })
+
+    // 5,000 minor units of yen is ¥5,000; in dollars it would read $50.00, which is what
+    // the hardcoded fallback produced for a user who had chosen yen.
+    expect(await previewFor('Website')).toHaveTextContent(/5,000/)
+  })
+
+  it('uses the documented last resort when nothing is configured anywhere', async () => {
+    // No app default, no client, no project currency: `resolveCurrency` must still
+    // produce a currency rather than leaving the preview with none to format with.
+    await createProject({ name: 'Website', clientId: null, defaultRateMinor: 12_500, now: T0 })
+
+    expect(await previewFor('Website')).toHaveTextContent(/\$125\.00/)
   })
 })

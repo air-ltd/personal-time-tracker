@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DropboxProvider, type DropboxTokens, type DropboxTokenStore } from './DropboxProvider'
+import { DropboxProvider, type DropboxTokens } from './DropboxProvider'
+import type { TokenStore } from '../../storage/secretsRepo'
 import { DROPBOX, SCOPES } from './config'
 import { SyncError } from '../provider'
 
 const CLIENT_ID = 'app-key-123'
 const REDIRECT = 'https://air-ltd.github.io/personal-time-tracker/'
 
-class MemoryTokenStore implements DropboxTokenStore {
-  tokens: DropboxTokens | null = null
-  read(): Promise<DropboxTokens | null> {
+/**
+ * Holds `unknown`, as the real store does.
+ *
+ * Typed loosely on purpose: the provider is what has to cope with a value it did not
+ * write, so a double here that always returned `DropboxTokens` would make the defensive
+ * parsing untestable — every value would already be the right shape.
+ */
+class MemoryTokenStore implements TokenStore {
+  tokens: unknown = null
+  read(): Promise<unknown> {
     return Promise.resolve(this.tokens)
   }
-  write(tokens: DropboxTokens): Promise<void> {
+  write(tokens: unknown): Promise<void> {
     this.tokens = tokens
     return Promise.resolve()
   }
@@ -19,6 +27,11 @@ class MemoryTokenStore implements DropboxTokenStore {
     this.tokens = null
     return Promise.resolve()
   }
+}
+
+/** What the provider would make of whatever the store returned. */
+function readTokens(store: MemoryTokenStore): DropboxTokens | null {
+  return store.tokens as DropboxTokens | null
 }
 
 /** Minimal Response stand-in, so no fetch polyfill is needed. */
@@ -64,6 +77,74 @@ let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   store = new MemoryTokenStore()
   fetchMock = vi.fn()
+})
+
+/**
+ * Reading a credential the provider did not necessarily write (0012 AU5).
+ *
+ * The stored value is untrusted input in practice: it survives schema migrations, may
+ * have been written by an older build, and — now that `TokenStore` is provider-agnostic
+ * — may have been written by a provider this build does not contain. It is parsed here
+ * rather than in `secretsRepo` because only the provider knows the shape; a malformed
+ * record reads as "not connected" so the user is offered a reconnect, rather than the app
+ * throwing on a shape mismatch or using a field that merely happens to be a string.
+ */
+describe('a stored credential it cannot trust', () => {
+  it.each([
+    ['not an object', 'a string'],
+    ['null', null],
+    ['undefined', undefined],
+    ['missing accessToken', { refreshToken: 'only' }],
+    ['an empty accessToken', { accessToken: '' }],
+    ['a non-string accessToken', { accessToken: 42 }],
+    ['an array', [{ accessToken: 'sl-token' }]],
+  ])('%s reports not connected', async (_label, value) => {
+    store.tokens = value
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    expect((await provider.status()).authenticated).toBe(false)
+  })
+
+  it('ignores fields it does not recognise rather than rejecting the record', async () => {
+    store.tokens = {
+      accessToken: 'sl-token',
+      expiresAt: 1_800_000_000_000,
+      accountId: 'dbid:abc',
+      scopes: ['files.content.read'],
+      // A refresh token and a display name from a build that stored them. Both were
+      // removed from the type — there is no refresh flow, and reading an account name
+      // needs a third scope nobody should be asked to approve — but a record written by
+      // that build is still a record this one can use.
+      refreshToken: 'legacy-refresh-token',
+      displayName: 'Someone',
+    }
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    // Rejecting the whole record would strand the user: reauthorising would produce the
+    // same shape, so there would be nothing to do about it.
+    expect(await provider.status()).toMatchObject({ authenticated: true })
+  })
+
+  it('does not rewrite the stored record just by reading it', async () => {
+    // The parse is in memory. Writing back a stripped copy on every read would
+    // permanently discard fields a later build might reintroduce — the record would have
+    // been destroyed by a version that simply did not know about them yet.
+    store.tokens = { accessToken: 'sl-token', displayName: 'Someone' }
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await provider.status()
+
+    expect(readTokens(store)).toEqual({ accessToken: 'sl-token', displayName: 'Someone' })
+  })
+
+  it('treats absent optional fields as absent rather than as undefined values', async () => {
+    store.tokens = { accessToken: 'sl-token', expiresAt: undefined, accountId: undefined }
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    // Carrying the key with an `undefined` value would mean every consumer has to
+    // distinguish "absent" from "present and undefined", and one of them will not.
+    expect(await provider.status()).toMatchObject({ authenticated: true })
+  })
 })
 
 describe('PKCE authorisation (0012 AU1–AU2)', () => {
@@ -158,8 +239,8 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
     expect(body.get('code')).toBe('code-123')
     expect(body.get('code_verifier')).toBeTruthy()
     expect(body.get('redirect_uri')).toBe(REDIRECT)
-    expect(store.tokens?.accessToken).toBe('tok-1')
-    expect(store.tokens?.accountId).toBe('dbid:1')
+    expect(readTokens(store)?.accessToken).toBe('tok-1')
+    expect(readTokens(store)?.accountId).toBe('dbid:1')
   })
 
   // Per Dropbox's own guidance, a pure client-side app uses short-lived tokens and
@@ -223,7 +304,7 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
     const afterReload = makeProvider(store, fetchMock as unknown as typeof fetch)
     await afterReload.completeAuth('code-from-redirect', state ?? '')
 
-    expect(store.tokens?.accessToken).toBe('tok-after-reload')
+    expect(readTokens(store)?.accessToken).toBe('tok-after-reload')
     const body = new URLSearchParams(
       typeof (fetchMock.mock.calls[0]?.[1] as RequestInit).body === 'string'
         ? ((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string)

@@ -1,7 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { listEntries } from '../../storage/entriesRepo'
-import { getRevision, subscribe } from '../../storage/events'
 import type { TimeEntry } from '../../domain/entries/types'
+import { useRevision } from '../../storage/useRevision'
 
 interface EntriesState {
   entries: TimeEntry[]
@@ -26,7 +26,7 @@ interface EntriesState {
  * entries until the new ones arrive.
  */
 export function useEntries(): EntriesState {
-  const revision = useSyncExternalStore(subscribe, getRevision, getRevision)
+  const revision = useRevision()
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [loadedOnce, setLoadedOnce] = useState(false)
 

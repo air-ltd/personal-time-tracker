@@ -125,7 +125,7 @@ export function EntriesView({ now, selectedClientId }: EntriesViewProps) {
         {/*
           Nothing recorded at all is stated once, whatever the period: an empty summary reads
           as "nothing in this period", which is a different and more alarming claim than "no
-          work recorded yet" (0007 FB3).
+          work recorded yet" (0007 FB-3).
         */}
         {entries.length === 0 && !loading ? (
           <p className="hint" data-testid="empty-state">

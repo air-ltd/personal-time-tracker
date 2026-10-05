@@ -83,22 +83,28 @@ export function SyncIndicatorView({
   // Connected. An error here is the one worth colouring: the user would otherwise assume
   // the other device is current, which is the failure silent sync causes (0012 AU8).
   const failed = status?.state === 'error'
+  // Pending is a third state rather than a variant of "Synced": a green "Synced" next to
+  // a minute-old timestamp reads as "everything you just recorded is on the other
+  // device", which is the claim this label used to make and could not support.
+  const pending = !failed && status?.pending === true
 
   return (
     <a
-      className={`button sync-indicator sync-indicator-${failed ? 'error' : 'ok'}`}
+      className={`button sync-indicator sync-indicator-${failed ? 'error' : pending ? 'warn' : 'ok'}`}
       href="#/settings"
       data-testid="sync-indicator"
       title={
         failed
           ? (status?.message ?? 'The last sync failed. Open settings for the detail.')
-          : status?.lastSyncAt
-            ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}.`
-            : 'Connected. Waiting for the first sync.'
+          : pending
+            ? 'Changes are waiting to sync.'
+            : status?.lastSyncAt
+              ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}.`
+              : 'Connected. Waiting for the first sync.'
       }
     >
       <span className="sync-indicator-dot" aria-hidden="true" />
-      {failed ? 'Sync failed' : 'Synced'}
+      {failed ? 'Sync failed' : pending ? 'Not synced yet' : 'Synced'}
     </a>
   )
 }

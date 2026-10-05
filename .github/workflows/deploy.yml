@@ -48,6 +48,17 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Both are cheap, deterministic, and catch a class of defect no test asserts:
+      # a secret that would ship in the bundle, and a requirement citation that has
+      # stopped resolving. `check:silent` is deliberately absent — it re-introduces
+      # bugs on purpose and re-runs the suite once per mutation, so it belongs on a
+      # schedule rather than on every push.
+      - name: Check for bundled secrets
+        run: npm run check:secrets
+
+      - name: Check requirement citations
+        run: npm run check:citations
+
       - name: Test
         run: npm run test
 

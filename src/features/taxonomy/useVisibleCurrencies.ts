@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { readVisibleCurrencies, writeVisibleCurrencies } from '../../storage/settingsRepo'
-import { getRevision, subscribe } from '../../storage/events'
+import { useRevision } from '../../storage/useRevision'
 
 /**
  * The currencies offered in pickers (item 13 of `SPECS/todo.md`).
@@ -20,7 +20,7 @@ export interface VisibleCurrencies {
 }
 
 export function useVisibleCurrencies(): VisibleCurrencies {
-  const revision = useSyncExternalStore(subscribe, getRevision, getRevision)
+  const revision = useRevision()
   const [codes, setCodes] = useState<string[] | null>(null)
   const [loaded, setLoaded] = useState(false)
 

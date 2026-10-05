@@ -91,15 +91,23 @@ Nothing has been released yet. This is the first release candidate.
   indicator is the button that connects.
 - A header menu of three named actions, and a favicon beside the title linking home.
 
-### Changed
+### Added — security and release gates
 
-- Project names are unique **within a client** rather than across all projects. Every client
-  can now have a project called `General`, which is what a per-client project list needs to
-  read consistently. `SPECS/0005` P2 is revised with the reasoning.
-- A new client's currency starts at the app default instead of a hardcoded GBP.
-- An entry's duration carries seconds when it has any. A 25-second entry used to show as
-  `00:00` on the edit page, and saving that wrote an entry of no length at all.
-- Entry rows are compressed, with the pencil on the row's first line at the left-hand end.
+- A Content Security Policy, delivered as a `<meta http-equiv>` because GitHub Pages cannot
+  set response headers. `connect-src` is limited to the provider's two API origins, which is
+  the defence that matters most here: the database is the whole asset, and with no policy an
+  injected string had a working channel to send it off-site. `script-src` is not relaxed —
+  the one inline script, the theme bootstrap, is allow-listed by a hash computed from the
+  built HTML at build time, so the two cannot drift apart.
+- Two repository gates that fail `verify` and CI. One rejects any `VITE_*` variable whose
+  name implies a secret, in source and in gitignored `.env` files alike; the other resolves
+  every requirement citation in the source against the ids `SPECS/` actually defines. Ten
+  citations had stopped resolving, and one pointed at a requirement in the wrong spec.
+- The mutation gate now requires a _failed test_ rather than a non-zero exit. It had been
+  counting a syntax error as coverage: one of its eleven mutations was not valid TypeScript,
+  so `11/11` was eleven behaviours out of twelve. Four more mutations were added — local-write
+  sync, the currency resolution chain, the empty currency selection and the running-entry
+  edit — making it 18/18.
 
 ### Fixed
 
@@ -114,6 +122,79 @@ Nothing has been released yet. This is the first release candidate.
 - Clicking Save immediately after typing a rate did nothing: the feedback line appeared on
   blur and moved the button out from under the pointer.
 
+Fixes from the whole-repository review, which found four user-visible defects and
+several silent ones:
+
+- **Sync never ran after a local write.** The scheduler was started, debounced and tested, and
+  nothing called it: "app open", "tab focus", "`pagehide`" and "Sync now" all worked, and
+  recording an entry did not. Two devices open side by side stayed out of step for the whole
+  session, and a closed laptop could sit on unsynced work for hours. The scheduler now
+  subscribes to the storage layer's own change signal, so the trigger cannot be forgotten by a
+  write path that does not know sync exists.
+- **Unsynced work was invisible.** The sync indicator could not say "there is something
+  waiting to go out". It now has a third state between "synced" and "failed".
+- **Clearing the currency list emptied every picker in the app.** The panel says twice that
+  clearing it returns the full ISO 4217 list; saving stored an empty list instead, which left
+  each currency picker offering only the one currency that record already had.
+- **A running entry could not be edited without stopping it.** Opening the pencil on a running
+  entry and correcting a typo produced "Enter how long this took", because both the duration
+  and the end field started empty. Saving without stating an end now leaves the timer running,
+  and the form says that is what will happen.
+- **A manual entry could be added while a timer was running**, which 0004 M4 forbids: the day
+  total then counted the overlap twice. The new-entry screen now says a timer is running and
+  offers to stop it, and never stops it on the user's behalf.
+- **"Sync now" could report success while omitting the entry just added.** If another device
+  wrote between our pull and our push, the retry merged the snapshot the cycle started with
+  rather than the current data, so anything saved in between was not published. Nothing was
+  lost — the next cycle picked it up — but the success message was not true of what you had
+  just done.
+- **The app-wide default currency was ignored in three places.** Each form resolved currency
+  itself, ending at a hardcoded USD or GBP, so a rate stored in yen could be previewed in
+  pounds. All three now use the one resolution chain, including the link to the default.
+- **A backup truncated in transit imported as though it were complete.** The record counts
+  were validated but never compared with what actually arrived, so a file cut short by a
+  half-finished upload was accepted and silently dropped the rest.
+- **Opening the edit form could overwrite a newer version of the same entry** — one changed by
+  a sync merge or an undo in another tab — because the form keyed on the entry id alone.
+- The token store no longer depends on Dropbox. It is a generic credential store, and the
+  provider decides what its own tokens look like, so a second provider no longer means editing
+  the storage layer.
+- A storage read was started during render in the settings panel, and the same default-currency
+  read had been copied into three components — where they had drifted into three different
+  answers.
+- The entry list read the whole database a second time on every write even when its caller had
+  already loaded and filtered the list.
+- The sync status dot for "waiting to sync" was below the 3:1 contrast that every other colour
+  in the app is held to, and was not a token at all. All three status colours are now tokens,
+  measured against both backgrounds and against the surface the dot sits on, by a test.
+- Two design tokens were used in five places and defined nowhere, so every use silently fell
+  back to a literal; a third was defined only for the dark theme. All are declared, and a test
+  fails if a token is used without being declared.
+- The per-entry edit button's styles were declared four times in thirteen lines, so the narrow
+  layout could drift from the wide one without anything failing.
+- A comment in the name-comparison code said the opposite of what the code did, on the
+  question of Unicode normalisation — the kind of comment that makes a future reader "fix"
+  correct code.
+
+### Changed
+
+- Project names are unique **within a client** rather than across all projects. Every client
+  can now have a project called `General`, which is what a per-client project list needs to
+  read consistently. `SPECS/0005` P2 is revised with the reasoning.
+- A new client's currency starts at the app default instead of a hardcoded GBP.
+- An entry's duration carries seconds when it has any. A 25-second entry used to show as
+  `00:00` on the edit page, and saving that wrote an entry of no length at all.
+- Entry rows are compressed, with the pencil on the row's first line at the left-hand end.
+- Import is merge-only. The spec required a "replace everything" mode; it is not implemented
+  and is not planned, because it is the more dangerous of the two and the only mode whose cost
+  is irreversible. `SPECS/0007` now records the reasoning. Anyone who wants it can export,
+  clear site data and import — a path that requires naming the consequence.
+- 0004 W2 no longer asks the browser's unload dialog to state the timer and its elapsed time,
+  which no page can do; the requirement moved to the app's own UI, where it is met. The residual
+  limitation is recorded rather than glossed.
+- `SPECS/0002`'s directory tree and `0012`'s provider interface now match the code, with the
+  reasoning for each divergence recorded in the spec.
+
 ### Known limitations
 
 Recorded in full in [`SPECS/todo.md`](SPECS/todo.md).
@@ -125,3 +206,18 @@ Recorded in full in [`SPECS/todo.md`](SPECS/todo.md).
   state.
 - The production Dropbox app has never been used, because its permissions have not been
   granted.
+- `npm run dev` is not covered by the Content Security Policy. The policy is injected by the
+  build, because the dev server rewrites `index.html` and injects its own inline preamble; a
+  policy loose enough for the dev server would be no policy at all. The built site is what it
+  protects.
+- The policy cannot prevent clickjacking. `frame-ancestors` is ignored when a policy arrives
+  via `<meta>`, and GitHub Pages cannot set response headers, so no framing defence is claimed.
+- The browser's unload dialog has no text, because `beforeunload` cannot carry custom copy. The
+  running timer and its elapsed time are shown in the page instead.
+- The whole changelog is bundled into the JavaScript, which is 7 KB today and grows with
+  every release. Kept deliberately: one source of truth, no `public/` copy to drift, and it
+  works on a fork and offline. If it ever becomes measurable, the fix is to cap what is inlined
+  rather than to add a second file.
+- No coverage threshold and no pre-commit hook. CI runs `format:check`, `lint`, `test` and the
+  two repository gates; the mutation gate is run deliberately on demand because it re-introduces
+  bugs and re-runs the suite once per mutation.

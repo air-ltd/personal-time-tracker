@@ -17,6 +17,8 @@ import { createManualEntry, updateEntry } from '../../storage/entriesRepo'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
 import { TagInput } from '../taxonomy/TagInput'
 import { formatMinor } from '../../domain/taxonomy/currencies'
+import { resolveCurrency, resolveRateMinor } from '../../domain/taxonomy/money'
+import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 
 /**
  * Create or edit a completed entry.
@@ -58,8 +60,22 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
   const [note, setNote] = useState(entry?.note ?? '')
   const [issues, setIssues] = useState<ValidationIssue[]>([])
   const [submitting, setSubmitting] = useState(false)
+  // Whether the user has stated an end at all.
+  //
+  // 0004 ED1 requires every entry to be editable, "including a running one", and ED2
+  // says editing `end` stops it. Those are only both true if saving *without* stating an
+  // end leaves it running — otherwise the only way to fix a typo on a running entry is to
+  // also state a duration, which stops it as a side effect, and a user who opened the
+  // pencil to correct a note got "Enter how long this took" instead of their note saved.
+  //
+  // Derived rather than stored: for a completed entry the duration is prefilled, so the
+  // distinction only exists while the record is open-ended. Set when a field that can
+  // express an end is edited, and never cleared, because going back to blank is not a
+  // statement that it is still running.
+  const [endStated, setEndStated] = useState(() => entry !== undefined && entry.end !== null)
 
   const { projects, clients, tags, loading: taxonomyLoading } = useTaxonomy()
+  const appDefaultCurrency = useAppDefaultCurrency()
   const [projectId, setProjectId] = useState<string | null>(entry?.projectId ?? null)
   const [tagIds, setTagIds] = useState<string[]>(entry?.tagIds ?? [])
   // P5: a project with a default rate implies billable work, so the checkbox starts
@@ -97,12 +113,32 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
     return parsed.getTime() <= start.getTime() ? null : parsed
   }, [start, mode, durationValue, endValue])
 
+  /**
+   * What this save will actually write.
+   *
+   * `null` here is not the same as the `null` that means "this form is incomplete": it
+   * means the entry is being saved while still running, which only an existing
+   * open-ended entry is allowed to do.
+   */
+  const savingAsRunning =
+    end === null && endStated === false && entry !== undefined && entry.end === null
+
   const durationPreview =
     start && end && end.getTime() > start.getTime() ? end.getTime() - start.getTime() : null
 
+  /**
+   * What the running entry has been going for, shown so the blank duration is not a
+   * mystery while it is being edited. Only for an open-ended entry: for a completed one
+   * the field is prefilled and this would duplicate it.
+   */
+  const runningFor =
+    entry !== undefined && entry.end === null && start
+      ? formatDuration(now.getTime() - start.getTime())
+      : null
+
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!start || !end) {
+    if (!start || (end === null && !savingAsRunning)) {
       setIssues([
         ...(start
           ? []
@@ -114,23 +150,23 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
                 severity: 'error' as const,
               },
             ]),
-        ...(end
-          ? []
-          : [
+        ...(end === null && !savingAsRunning
+          ? [
               {
                 field: 'end' as const,
                 code: 'end_required',
                 message: 'Enter how long this took.',
                 severity: 'error' as const,
               },
-            ]),
+            ]
+          : []),
       ])
       return
     }
 
     // `now` rather than a fresh clock read: this is the instant the entry is judged
     // against and stamped with, and the form already receives it.
-    const result = validateEntry({ start, end, note }, now)
+    const result = validateEntry({ start, end, note }, now, { running: savingAsRunning })
     setIssues(result.issues)
     if (!result.ok) return
 
@@ -141,7 +177,9 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
           entry.id,
           {
             start: start.toISOString(),
-            end: end.toISOString(),
+            // Null rather than the current instant: stating an end is what stops a
+            // running entry (0004 ED2), and this save did not state one.
+            end: end === null ? null : end.toISOString(),
             note,
             projectId,
             tagIds,
@@ -150,6 +188,14 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
           now,
         )
       } else {
+        // Unreachable, and deliberately not a cast. `savingAsRunning` requires
+        // `entry !== undefined`, so a new entry reaching here always has an end — and
+        // TypeScript cannot see that through the boolean. Asserting it means that if the
+        // invariant is ever broken, this fails loudly instead of writing `end: null` into
+        // a manual entry and creating a second open-ended row, which 0003 E4 forbids.
+        if (end === null) {
+          throw new Error('a new manual entry must have an end')
+        }
         await createManualEntry({ start, end, note, now, projectId, tagIds, billable })
       }
       navigate('/')
@@ -164,14 +210,25 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
     (row) => row.clientId === null || clients.every((row2) => row2.id !== row.clientId),
   )
 
-  const effectiveRate = project?.defaultRateMinor ?? client?.defaultRateMinor ?? null
-  const effectiveCurrency = project?.currency ?? client?.currency ?? null
+  // Both chains come from the domain, in the order the spec writes them down. This hint
+  // used to resolve them inline with a hardcoded `USD` as the last resort, which meant
+  // it ignored the app-wide default currency — the setting the user chose one screen
+  // away in Settings — and could quote `£` about a rate that would be billed in `JPY`.
+  // A rate and a currency resolved separately is how that happens, so `resolveRateMinor`
+  // is called with no entry override: this is a new entry, and there is nothing to
+  // override yet.
+  const effectiveRate = resolveRateMinor({
+    rateOverrideMinor: null,
+    project,
+    client,
+  })
+  const effectiveCurrency = resolveCurrency(project, client, appDefaultCurrency).code
   const billingHint =
     project === null
       ? null
       : effectiveRate === null
         ? `No rate set${client ? ` on ${client.name}` : ''}, so this is not billed unless you add a rate.`
-        : `Billed at ${formatMinor(effectiveRate, effectiveCurrency ?? 'USD')} per hour${
+        : `Billed at ${formatMinor(effectiveRate, effectiveCurrency)} per hour${
             client ? ` (${client.name}’s rate)` : ''
           }.`
 
@@ -232,7 +289,14 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
             inputMode="numeric"
             placeholder="1:30 or 90"
             value={durationValue}
-            onChange={(e) => setDurationValue(e.target.value)}
+            onChange={(e) => {
+              setDurationValue(e.target.value)
+              // Naming a duration is stating an end, which is what stops a running entry
+              // (0004 ED2). Setting it even for an invalid value is deliberate: the form
+              // then reports what is wrong with the duration rather than silently
+              // ignoring what was typed.
+              setEndStated(true)
+            }}
             aria-describedby="duration-hint"
           />
           <p id="duration-hint" className="hint">
@@ -246,7 +310,10 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
             id="entry-end"
             type="datetime-local"
             value={endValue}
-            onChange={(e) => setEndValue(e.target.value)}
+            onChange={(e) => {
+              setEndValue(e.target.value)
+              setEndStated(true)
+            }}
           />
         </div>
       )}
@@ -255,6 +322,15 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
         <p className="hint" data-testid="duration-preview">
           That is {formatDuration(durationPreview, { seconds: true })}
           {durationPreview < 3_600_000 && ` (${Math.round(durationPreview / 60000)} minutes)`}
+        </p>
+      )}
+
+      {/* A blank duration on a running entry looks like a bug rather than a decision, so
+          say what will happen. Without this the honest path — fix the note, leave it
+          running — is indistinguishable from having forgotten to fill the field in. */}
+      {savingAsRunning && runningFor !== null && (
+        <p className="hint" data-testid="running-preview">
+          Still running — {runningFor} so far. Enter a duration to stop it.
         </p>
       )}
 

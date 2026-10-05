@@ -82,8 +82,11 @@ const MUTATIONS = [
     failure: 'OAuth token ends up in an export (0012 AU6)',
     file: 'src/export/envelope.ts',
     find: 'data: z.object(entityTables),',
+    // Well-formed on purpose. An earlier version of this replacement was missing a
+    // brace, which failed the file to parse; the gate counted the non-zero exit as a
+    // catch and reported 11/11 for eleven mutations, one of which proved nothing.
     replace:
-      'data: z.object({ ...entityTables, secrets: z.array(z.looseObject({}).default([]) }),',
+      'data: z.object({ ...entityTables, secrets: z.array(z.looseObject({})).default([]) }),',
     test: 'src/export/envelope.test.ts',
   },
   {
@@ -128,6 +131,65 @@ const MUTATIONS = [
     replace: 'if (true) {',
     test: 'src/sync/engine.test.ts',
   },
+  {
+    id: 'write-does-not-sync',
+    failure: 'A local write never triggers a sync (0012 C1, C2)',
+    file: 'src/sync/scheduler.ts',
+    find: 'this.detachRevision = subscribe(this.onRevision)',
+    replace: 'void this.onRevision',
+    test: 'src/sync/scheduler.test.ts',
+  },
+  {
+    id: 'currency-default-ignored',
+    failure:
+      'The app-wide default currency is ignored, so rates preview in the wrong currency (0003 currency resolution)',
+    file: 'src/features/entries/EntryForm.tsx',
+    find: 'resolveCurrency(project, client, appDefaultCurrency).code',
+    replace: 'resolveCurrency(project, client, null).code',
+    test: 'src/features/entries/EntryForm.test.tsx',
+  },
+  {
+    id: 'empty-currency-selection',
+    failure: 'Clearing the currency list empties every picker instead of widening it (item 13)',
+    file: 'src/features/taxonomy/CurrencyPreferences.tsx',
+    find: 'chosen.size === 0 || chosen.size === all.length ? null : [...chosen]',
+    replace: 'chosen.size === all.length ? null : [...chosen]',
+    test: 'src/features/taxonomy/CurrencyPreferences.test.tsx',
+  },
+  {
+    id: 'truncated-backup-imported',
+    failure: 'A backup that lost records in transit imports as if complete (0008 J5)',
+    file: 'src/export/envelope.ts',
+    find: 'if (mismatched.length > 0) {',
+    replace: 'if (false) {',
+    test: 'src/export/envelope.test.ts',
+  },
+  {
+    id: 'running-entry-uneditable',
+    failure:
+      'Editing a running entry forces a duration, so the note cannot be fixed without stopping the timer (0004 ED1)',
+    file: 'src/features/entries/EntryForm.tsx',
+    find: '  const savingAsRunning =\n',
+    replace: '  const savingAsRunning = false\n',
+    test: 'src/features/entries/EntryForm.test.tsx',
+  },
+  {
+    id: 'manual-entry-while-running',
+    failure:
+      'A manual entry can be created while a timer runs, so the day double-counts it (0004 M4)',
+    file: 'src/app/App.tsx',
+    find: '  const timerRunning = timer.running !== null',
+    replace: '  const timerRunning = false',
+    test: 'src/app/App.test.tsx',
+  },
+  {
+    id: 'sync-warn-contrast',
+    failure: 'A sync status colour falls below 3:1, so a status indicator fails SC 1.4.11',
+    file: 'src/styles.css',
+    find: '--sync-warn: #a86a00;',
+    replace: '--sync-warn: #c98a12;',
+    test: 'src/domain/taxonomy/colour.styles.test.ts',
+  },
 ]
 
 /** Failures whose code does not exist yet, so they cannot be checked. */
@@ -152,8 +214,9 @@ const PENDING = [
   { id: 'csv-quoting', failure: 'CSV quoting missed (0008 C2)', phase: '6' },
   {
     id: 'base-path',
-    failure: 'Base path wrong (0002 B2)',
-    phase: 'covered by e2e/smoke.mjs, which loads the built site at /personal-time-tracker/',
+    failure: 'Base path wrong (0002 R1)',
+    phase:
+      'covered by e2e/smoke.mjs, which reads the base out of dist/index.html rather than repeating it',
   },
 ]
 
@@ -162,8 +225,15 @@ function runVitest(file) {
     execFileSync('npx', ['vitest', 'run', file], { cwd: ROOT, stdio: 'pipe' })
     return { passed: true }
   } catch (error) {
-    // A non-zero exit is the expected outcome: the mutation must be caught.
-    return { passed: false, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }
+    // A non-zero exit is necessary but not sufficient, and the difference matters: a
+    // syntax error or a `describe` block that throws at collection also exits
+    // non-zero. Counting that as "caught" would let the gate claim coverage it does
+    // not have — the mutation broke the file, not the behaviour. So require a failed
+    // *test* as well, which is the claim being made.
+    const output = `${error.stdout ?? ''}${error.stderr ?? ''}`
+    const failedTests = /Tests\s+(?:(\d+) failed)?/.exec(output)
+    const reported = failedTests?.[1] === undefined ? 0 : Number(failedTests[1])
+    return { passed: false, testFailed: reported > 0, output }
   }
 }
 
@@ -197,6 +267,15 @@ function checkOne(mutation) {
       ...mutation,
       result: 'gap',
       note: `the suite still passed with this bug introduced — ${mutation.test} does not cover it`,
+    }
+  }
+  if (!outcome.testFailed) {
+    return {
+      ...mutation,
+      result: 'error',
+      note:
+        `${mutation.test} exited non-zero without reporting a failed test — the mutation ` +
+        'broke the file rather than the behaviour, so this proves nothing',
     }
   }
   return { ...mutation, result: 'caught' }

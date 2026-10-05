@@ -44,10 +44,6 @@ export function usePath(): string {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-export function matchRoute(path: string, routes: readonly Route[]): Route | undefined {
-  return routes.find((route) => route.path === path)
-}
-
 export interface RouteMatch {
   route: Route
   params: Readonly<Record<string, string>>

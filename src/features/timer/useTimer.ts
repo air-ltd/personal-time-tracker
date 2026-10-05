@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   discardTimer,
   findRunningEntry,
   startTimer,
   stopTimer,
 } from '../../storage/entriesRepo'
-import { getRevision, subscribe } from '../../storage/events'
 import { entryDurationMs } from '../../domain/time/duration'
 import type { TimeEntry } from '../../domain/entries/types'
+import { useRevision } from '../../storage/useRevision'
 
 export interface TimerState {
   running: TimeEntry | null
@@ -43,7 +43,7 @@ const TICK_MS = 1000
  * entry is read back from storage and its duration recomputed from `now`.
  */
 export function useTimer(): TimerState {
-  const revision = useSyncExternalStore(subscribe, getRevision, getRevision)
+  const revision = useRevision()
   const [running, setRunning] = useState<TimeEntry | null>(null)
   const [now, setNow] = useState(() => new Date())
 

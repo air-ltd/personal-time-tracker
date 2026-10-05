@@ -1,7 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useState } from 'react'
 import { listClients, listProjects, listTags } from '../../storage/taxonomyRepo'
-import { getRevision, subscribe } from '../../storage/events'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
+import { useRevision } from '../../storage/useRevision'
 
 /**
  * Reactive read of the taxonomy.
@@ -35,7 +35,7 @@ export interface Taxonomy {
  * would make the same data available under two code paths.
  */
 export function useTaxonomy(): Taxonomy {
-  const revision = useSyncExternalStore(subscribe, getRevision, getRevision)
+  const revision = useRevision()
   const [projects, setProjects] = useState<Project[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [tags, setTags] = useState<Tag[]>([])

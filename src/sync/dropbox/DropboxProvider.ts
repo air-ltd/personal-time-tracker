@@ -6,6 +6,7 @@ import {
   type SyncProvider,
 } from '../provider'
 import { DROPBOX, STRICT_CONFLICT } from './config'
+import type { TokenStore } from '../../storage/secretsRepo'
 
 /**
  * Dropbox provider (0012 SY9).
@@ -39,16 +40,34 @@ export interface DropboxProviderOptions {
   clientId: string
   /** Must exactly match a registered redirect URI. */
   redirectUri: string
-  storage: DropboxTokenStore
+  storage: TokenStore
   fetchImpl?: typeof fetch
   randomBytes?: (length: number) => Uint8Array
   now?: () => number
 }
 
-export interface DropboxTokenStore {
-  read(): Promise<DropboxTokens | null>
-  write(tokens: DropboxTokens): Promise<void>
-  clear(): Promise<void>
+/**
+ * Defensive parse of a stored credential.
+ *
+ * The value is untrusted input in practice: it survives schema migrations and may have
+ * been written by a different build or a different provider. A malformed record reads as
+ * "not connected" so the user is prompted to reconnect, rather than the app failing on a
+ * shape mismatch or — worse — using a field that happens to be a string.
+ *
+ * Lives here rather than in `secretsRepo` because only the provider knows what a token
+ * for it looks like. The store hands back `unknown`; this is where that becomes either a
+ * `DropboxTokens` or nothing.
+ */
+function toTokens(value: unknown): DropboxTokens | null {
+  if (typeof value !== 'object' || value === null) return null
+  const candidate = value as Partial<DropboxTokens>
+  if (typeof candidate.accessToken !== 'string' || candidate.accessToken === '') return null
+
+  return {
+    accessToken: candidate.accessToken,
+    ...(typeof candidate.expiresAt === 'number' ? { expiresAt: candidate.expiresAt } : {}),
+    ...(typeof candidate.accountId === 'string' ? { accountId: candidate.accountId } : {}),
+  }
 }
 
 const TOKEN_TTL_FALLBACK_MS = 4 * 60 * 60 * 1000
@@ -80,7 +99,7 @@ export class DropboxProvider implements SyncProvider {
   readonly id = 'dropbox'
   private readonly clientId: string
   private readonly redirectUri: string
-  private readonly storage: DropboxTokenStore
+  private readonly storage: TokenStore
   private readonly fetchImpl: typeof fetch
   private readonly randomBytes: (length: number) => Uint8Array
   private readonly now: () => number
@@ -111,7 +130,7 @@ export class DropboxProvider implements SyncProvider {
    * strict here would prompt unnecessarily.
    */
   async hasUsableToken(): Promise<boolean> {
-    const tokens = await this.storage.read()
+    const tokens = toTokens(await this.storage.read())
     if (!tokens?.accessToken) return false
     if (tokens.expiresAt !== undefined && tokens.expiresAt <= this.now()) return false
     return true
@@ -348,7 +367,7 @@ export class DropboxProvider implements SyncProvider {
   }
 
   private async requireToken(): Promise<DropboxTokens> {
-    const tokens = await this.storage.read()
+    const tokens = toTokens(await this.storage.read())
     if (!tokens?.accessToken) throw new SyncError('auth', 'Not connected to Dropbox.')
     return tokens
   }

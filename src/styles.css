@@ -20,6 +20,14 @@
   --accent: #1f5fbf;
   --accent-fg: #ffffff;
   --focus-ring: #1f5fbf;
+  /* A translucent neutral wash for hover and selected rows. Dark on a light background,
+     which is why the dark theme has to define its own: the same alpha of a dark colour
+     over near-black would be invisible. Previously these were inline fallbacks of three
+     near-identical greys at three alphas, which meant the palette was defined outside
+     the block whose job is defining the palette. */
+  --surface-2: rgb(23 23 26 / 6%);
+  --surface-2-strong: rgb(23 23 26 / 11%);
+  --danger: #b3261e;
 }
 
 :root[data-theme='dark'] {
@@ -31,6 +39,30 @@
   --accent: #8ab4f8;
   --accent-fg: #10131a;
   --focus-ring: #8ab4f8;
+  --surface-2: rgb(255 255 255 / 7%);
+  --surface-2-strong: rgb(255 255 255 / 13%);
+  --danger: #f2b8b5;
+}
+
+/*
+ * Sync status colours (0002 TH3).
+ *
+ * Defined once rather than per theme, because each of the three clears 3:1 against
+ * *both* backgrounds and against the raised surface the button sits on — so one value is
+ * correct everywhere, and a theme-specific override would only create a second thing to
+ * keep right. The amber is darker than it was: `#c98a12` measured 2.85:1 on the light
+ * background, under the 3:1 that WCAG 2.2 SC 1.4.11 requires of meaningful non-text
+ * content and under the bar this project holds its project palette to
+ * (`MIN_CHART_CONTRAST`). Dark enough for the light theme costs nothing on the dark one,
+ * because #a86a00 still measures 4.14:1 against #141417.
+ *
+ * `colour.test.ts` asserts these three ratios, so a future edit that breaks one fails
+ * rather than passing until someone squints at it.
+ */
+:root {
+  --sync-ok: #2e8b57;
+  --sync-warn: #a86a00;
+  --sync-error: #c0392b;
 }
 
 * {
@@ -218,6 +250,20 @@ code {
   border-color: var(--accent);
 }
 
+/*
+ * A button with a leading icon (item 17).
+ *
+ * `inline-flex` with a gap rather than leaving the button `inline-block`, because an
+ * inline SVG next to text in an inline-block box sits on the text baseline and the
+ * descenders of a following character collide with it. The icons are already centred on
+ * their own 24-unit grid, so no adjustment is needed here.
+ */
+.button-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .button-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -225,12 +271,8 @@ code {
 }
 
 .button-danger {
-  color: var(--danger, #b3261e);
-  border-color: var(--danger, #b3261e);
-}
-
-:root[data-theme='dark'] {
-  --danger: #f2b8b5;
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .link-button {
@@ -612,7 +654,7 @@ code {
 }
 
 .header-menu-item:hover:not(:disabled) {
-  background: var(--surface-2, rgb(127 127 127 / 14%));
+  background: var(--surface-2);
 }
 
 .header-menu-item:disabled {
@@ -711,11 +753,11 @@ code {
 }
 
 .timer-client-name:hover {
-  background: var(--surface-2, rgb(127 127 127 / 12%));
+  background: var(--surface-2);
 }
 
 .timer-client-name[aria-pressed='true'] {
-  background: var(--surface-2, rgb(127 127 127 / 20%));
+  background: var(--surface-2-strong);
   font-weight: 600;
 }
 
@@ -803,15 +845,15 @@ code {
 }
 
 .sync-indicator-ok .sync-indicator-dot {
-  background: #2e8b57;
+  background: var(--sync-ok);
 }
 
 .sync-indicator-warn .sync-indicator-dot {
-  background: #c98a12;
+  background: var(--sync-warn);
 }
 
 .sync-indicator-error .sync-indicator-dot {
-  background: #c0392b;
+  background: var(--sync-error);
 }
 
 .sync-indicator-idle .sync-indicator-dot {
@@ -890,19 +932,12 @@ code {
   justify-content: center;
   padding: 0.1rem 0.25rem;
   border-radius: 0.25rem;
-  color: var(--fg-muted);
+  color: var(--accent);
 }
 
 .entry-edit:hover {
   color: var(--fg);
-}
-
-.entry-edit:hover {
-  background: var(--surface-2, rgb(127 127 127 / 12%));
-}
-
-.entry-edit {
-  color: var(--accent);
+  background: var(--surface-2);
 }
 
 .badge-running {
@@ -962,8 +997,8 @@ code {
 }
 
 .alert-error {
-  border: 1px solid var(--danger, #b3261e);
-  color: var(--danger, #b3261e);
+  border: 1px solid var(--danger);
+  color: var(--danger);
 }
 
 .alert-warning {
@@ -1367,20 +1402,12 @@ code {
     grid-column: 1 / -1;
   }
 
-  /* Item 20: an icon rather than the word, so the row needs no width for it. */
+  /* Item 20: an icon rather than the word, so the row needs no width for it. Only what
+     actually differs at this width. The box properties and the hover wash are inherited
+     from the base rule; repeating them here meant the narrow layout could silently drift
+     away from the wide one, since a duplicate is not obviously a duplicate. */
   .entry-edit {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
     padding: 0.2rem 0.35rem;
-    border-radius: 0.25rem;
-  }
-
-  .entry-edit:hover {
-    background: var(--surface-2, rgb(127 127 127 / 12%));
-  }
-
-  .entry-edit {
     grid-column: 2;
     grid-row: 2;
     justify-self: end;

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { readEntryPeriod, writeEntryPeriod } from '../../storage/settingsRepo'
-import { getRevision, subscribe } from '../../storage/events'
 import type { Period } from '../../domain/entries/summary'
+import { useRevision } from '../../storage/useRevision'
 
 /**
  * The entries period, remembered (item 28).
@@ -15,7 +15,7 @@ import type { Period } from '../../domain/entries/summary'
  * or fails — the worst case is one frame of the wrong period.
  */
 export function useEntryPeriod(): [Period, (next: Period) => void] {
-  const revision = useSyncExternalStore(subscribe, getRevision, getRevision)
+  const revision = useRevision()
   const [period, setPeriod] = useState<Period>('all')
 
   useEffect(() => {

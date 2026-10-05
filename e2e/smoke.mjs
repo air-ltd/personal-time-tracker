@@ -13,6 +13,8 @@
  * heavier check. Run it with `npm run test:e2e`.
  */
 import { spawn, spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import process from 'node:process'
 import { chromium } from 'playwright'
@@ -33,13 +35,30 @@ function elapsedSeconds(text) {
   return Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)
 }
 
-const BASE = `/personal-time-tracker/`
+/**
+ * Base path the built site is actually served from.
+ *
+ * Read out of `dist/index.html` rather than repeated here. 0002 R1 exists so the
+ * base comes from configuration and never from a literal in source, and a
+ * hard-coded `/personal-time-tracker/` in the one file whose job is to prove the
+ * base path works would fail confusingly the day the repository is renamed — and
+ * would pass while proving nothing about a `VITE_BASE_PATH` override. Vite
+ * rewrites the module script href to the full base-prefixed URL, so the first
+ * asset path is the base.
+ */
+function deriveBasePath() {
+  const html = readFileSync(resolve('dist/index.html'), 'utf8')
+  const script = /<script[^>]+src="([^"]+)"/.exec(html)
+  if (!script) throw new Error('no module script found in dist/index.html')
+  return new URL(script[1], 'http://placeholder').pathname.replace(/assets\/.*$/, '')
+}
+
 // Bound and dialled over IPv4 explicitly. Vite's preview server defaults to
 // binding `localhost`, which on this image resolves to `[::1]` only, so a fetch to
 // `localhost` or `127.0.0.1` gets ECONNREFUSED. Pinning the host on both sides
 // removes the ambiguity instead of depending on resolver order.
 const HOST = '127.0.0.1'
-const URL = `http://${HOST}:${PORT}${BASE}`
+const URL_BASE = `http://${HOST}:${PORT}`
 
 let failures = 0
 let checks = 0
@@ -86,6 +105,9 @@ async function main() {
     console.error('build failed; not starting the preview server')
     process.exit(build.status ?? 1)
   }
+
+  // After the build, because it is the build that decides the base.
+  const URL = `${URL_BASE}${deriveBasePath()}`
 
   const server = spawn(
     process.execPath,
@@ -137,6 +159,54 @@ async function main() {
     check('empty state shown', (await page.getByTestId('empty-state').count()) === 1)
     check('no console errors on load', consoleErrors.length === 0, consoleErrors.join(' | '))
     check('no failed requests on load', failedRequests.length === 0, failedRequests.join(' | '))
+
+    // 1a. 0011 N5: the Content Security Policy is actually served.
+    //
+    // The build injects it, so nothing in `src/` would notice its removal and the
+    // unit suite cannot see it at all. Asserted here against the served document
+    // because a `<meta>` policy that is present but wrong — a `connect-src` that
+    // admits the whole internet, say — is the failure N5 exists to prevent, and it
+    // is invisible until something reads the header.
+    const policy = /<meta http-equiv="Content-Security-Policy" content="([^"]+)"/.exec(
+      await (await fetch(URL)).text(),
+    )?.[1]
+    check('a Content Security Policy is served', policy !== undefined)
+    const directives = new Map(
+      (policy ?? '').split(';').map((part) => {
+        const tokens = part.trim().split(/\s+/)
+        return [tokens[0], tokens.slice(1)]
+      }),
+    )
+    check(
+      'connect-src allows only the provider API (0011 N5)',
+      (directives.get('connect-src') ?? []).join(' ') ===
+        "'self' https://api.dropboxapi.com https://content.dropboxapi.com",
+      (directives.get('connect-src') ?? []).join(' '),
+    )
+    check(
+      "script-src has no 'unsafe-inline' (only 'self' and a hash)",
+      !(directives.get('script-src') ?? []).includes("'unsafe-inline'"),
+      (directives.get('script-src') ?? []).join(' '),
+    )
+    check('object-src is none', (directives.get('object-src') ?? []).join(' ') === "'none'")
+    check('base-uri is none', (directives.get('base-uri') ?? []).join(' ') === "'none'")
+    // The hash is computed from the emitted inline theme bootstrap at build time.
+    // If it did not match, the browser blocks that script and the theme silently
+    // falls back to light — so assert the dark preference survived the policy.
+    await page.evaluate(() => window.localStorage.setItem('tt:theme', 'dark'))
+    await page.reload({ waitUntil: 'networkidle' })
+    check(
+      'the inline theme bootstrap runs under the policy',
+      (await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark',
+      await page.evaluate(() => String(document.documentElement.dataset.theme)),
+    )
+    check(
+      'the policy blocks nothing the app needs',
+      !consoleErrors.some((text) => text.includes('Content Security Policy')),
+      consoleErrors.filter((text) => text.includes('Content Security Policy')).join(' | '),
+    )
+    await page.evaluate(() => window.localStorage.removeItem('tt:theme'))
+    await page.reload({ waitUntil: 'networkidle' })
 
     // 2. Hash routing (0002 R1, R3).
     await page.goto(`${URL}#/nope`, { waitUntil: 'load' })
@@ -338,7 +408,7 @@ async function main() {
     // Back to the entries for the checks that follow.
     await page.goto(URL, { waitUntil: 'networkidle' })
 
-    // 10. A narrow viewport must not clip an entry (0002 B7).
+    // 10. A narrow viewport must not clip an entry (0002 R1).
     // Checked in a real browser because the failure is a layout overflow, which jsdom
     // cannot compute: it has no layout engine, so every such assertion would pass there.
     await page.setViewportSize({ width: 320, height: 640 })

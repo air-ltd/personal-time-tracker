@@ -59,7 +59,7 @@ async function assertNameFree(
    * Tombstones are excluded, which they were not. `toArray()` returns them, and a
    * tombstone is not a record the user can see or select — it is the merge marker for a
    * deletion that already happened. Counting one made a deleted project's name
-   * permanently unusable: 0005 F4 says deleting is for projects created by mistake, and
+   * permanently unusable: 0003 F4 says deleting is for projects created by mistake, and
    * the mistake that most needs fixing is precisely the one where you cannot create the
    * project you meant straight afterwards. Every table keeps the same filter so the three
    * agree about what exists.
@@ -287,13 +287,6 @@ export interface CreateTagInput {
 }
 
 /**
- * Create a tag, or return the existing one with the same name.
- *
- * Returning the existing tag is the point of 0005 T2: tags are typed inline while
- * recording, so `Research` and `research` must converge on one tag rather than silently
- * creating a near-duplicate the user then has to merge.
- */
-/**
  * The name given to the project created alongside every client (item 12 of
  * `SPECS/todo.md`).
  *
@@ -357,6 +350,13 @@ export async function defaultProjectForClient(clientId: string): Promise<Project
   return owned[0] ?? null
 }
 
+/**
+ * Create a tag, or return the existing one with the same name.
+ *
+ * Returning the existing tag is the point of 0005 T2: tags are typed inline while
+ * recording, so `Research` and `research` must converge on one tag rather than silently
+ * creating a near-duplicate the user then has to merge.
+ */
 export async function createOrFindTag(
   input: CreateTagInput,
 ): Promise<{ tag: Tag; created: boolean }> {
