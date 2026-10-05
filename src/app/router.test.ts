@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchPath, matchRoute, readPath } from './router'
+import { matchPath, readPath } from './router'
 
 describe('readPath', () => {
   // 0009 P3: a bare site root must resolve, and a deep hash with a query must
@@ -14,19 +14,6 @@ describe('readPath', () => {
     ['#/?range=week', '/'],
   ])('normalises %o to %o', (hash, expected) => {
     expect(readPath(hash)).toBe(expected)
-  })
-})
-
-describe('matchRoute', () => {
-  const routes = [{ path: '/' }, { path: '/reports' }] as const
-
-  it('finds an exact match', () => {
-    expect(matchRoute('/reports', routes)?.path).toBe('/reports')
-  })
-
-  // 0002 R3: an unknown hash renders a not-found view, not an exception.
-  it('returns undefined for an unrouted path', () => {
-    expect(matchRoute('/nope', routes)).toBeUndefined()
   })
 })
 
@@ -64,5 +51,33 @@ describe('matchPath with parameters', () => {
 
   it('prefers a static route over a parameter route', () => {
     expect(matchPath('/entries/new', routes)?.route.path).toBe('/entries/new')
+  })
+})
+
+/**
+ * A malformed escape in the hash (0002 R1).
+ *
+ * The hash is user-editable, so a bare `%` reaches the router. `decodeURIComponent`
+ * throws on that, and an uncaught throw during navigation takes down the whole app — so
+ * the not-found view is the right outcome, not a crash.
+ */
+const ROUTES = [{ path: '/' }, { path: '/entries/:id' }]
+
+describe('malformed percent-escapes', () => {
+  it.each(['%', '%zz', 'abc%', '%E0%A4%A'])('does not throw on %j', (segment) => {
+    expect(() => matchPath(`/entries/${segment}`, ROUTES)).not.toThrow()
+  })
+
+  it('matches with the raw segment, so the form reports not found', () => {
+    // Keeping the raw segment means the route still matches and the edit form resolves
+    // the id, finds nothing, and renders its "Entry not found" view with a way back.
+    // Dropping the route entirely would also be defensible; what matters is that neither
+    // path throws.
+    expect(matchPath('/entries/%zz', ROUTES)?.params['id']).toBe('%zz')
+  })
+
+  it('still decodes a valid escape', () => {
+    const match = matchPath('/entries/a%20b', ROUTES)
+    expect(match?.params['id']).toBe('a b')
   })
 })

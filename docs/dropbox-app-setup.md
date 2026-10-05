@@ -10,6 +10,11 @@ dependency left to wait on. It is the longest-lead item in the plan.
 Spec references: [0012 §Authentication](../SPECS/0012-sync.md), and AU3 on the
 embedded client id being public.
 
+> **You may not need this file at all.** The app collects the key in its own Sync
+> panel and shows the same steps inline, so the quickest route is to paste your App
+> key into the app once. This file is the longer version, and is still the place to
+> check a redirect URI that the app reports as mismatched.
+
 ---
 
 ## About these instructions
@@ -48,12 +53,12 @@ Then:
 | --- | --- | --- |
 | **Access type** | **Scoped access** | Full Dropbox access is for legacy apps. Scoped access is what you want — the app only ever touches one file. |
 | **App name** | `personal-time-tracker` | Shown to you in the consent screen. Anything recognisable. |
-| **Access** | **My Dropbox** (or *Full Dropbox*, depending on console version) | Not an App Folder. App Folder access pins the app inside `/Apps/<name>`, which is also fine — see §7. |
+| **Access** | **App Folder** | This app writes exactly one file, and Dropbox's own guidance is to ask for the least access required. App Folder confines the app to `/apps/<app name>/`. "Full Dropbox" grants reach over the whole account and is not needed. |
 
-**[verify]** The access-type wording differs between console versions. Scoped
-access with "My Dropbox" is what the spec assumes, where paths are relative to
-your Dropbox root. If you pick App Folder instead, note the path change — the
-remote path constant in the implementation will need it.
+The console offers two content-access options: **App Folder** and **Full
+Dropbox**. Choose **App Folder**. Because of it, the remote path is relative to the
+app folder, so the sync file lives at `/apps/<app name>/data.json` and the
+implementation's path constant is just `data.json`.
 
 ---
 
@@ -64,28 +69,81 @@ actually calls.
 
 The spec's provider interface needs:
 
-| Capability | Expected scope | Used for |
+### Do this for the testing app too
+
+The non-production Dropbox app is a separate app with its own configuration. It
+needs the **same two redirect URIs** registered (step 4), or local authorisation
+will fail with a URI mismatch.
+
+### What each registered app currently has
+
+Verified by calling the live Dropbox authorize endpoint, which returns a specific
+error code without needing a login. Recorded because the console gives no feedback
+of this kind and every symptom looks the same from inside the app.
+
+| | `gh3s5cqaz4n30ah` (production) | `5k94zo8ymchm1ge` (testing) |
 | --- | --- | --- |
-| Read file content | `files.content.read` | `pull()` in the provider |
-| Write file content | `files.content.write` | `push()` in the provider |
-| File metadata | `files.metadata.read` | Reading the revision identifier |
-| Account info | `account_info.read` | Showing which account is connected (`status()`) |
+| Redirect URI `https://air-ltd.github.io/personal-time-tracker/` | registered | **not registered** |
+| Redirect URI `http://localhost:5173/personal-time-tracker/` | **not registered** | registered |
+| `files.content.read` / `files.content.write` ticked | **no** | **no** |
+| Authorisation with no `scope` parameter | reaches consent | reaches consent |
+| Authorisation requesting content scopes | `scope_not_granted` | `scope_not_granted` |
 
-**[verify]** These scope names are the long-standing Dropbox names and are
-expected to be correct, but check them against the console's own list, which is
-the authority. If a scope is offered under a different name, use the console's
-name.
+So both apps need:
 
-**Two things worth knowing:**
+1. Both content scopes ticked on the **Permissions** tab.
+2. **Both** redirect URIs registered, if you want to be able to authorise either
+   app from either place. Each currently has only the one that suits its purpose,
+   which is a sensible default but means a local test against the production app
+   will fail with `invalid_redirect_uri`, and vice versa.
 
-- **`files.metadata.write` may also be needed.** The sync engine detects concurrent
-  modification using a revision value and passes it as an expected revision when
-  writing (0012 C5). Dropbox implements this as a conditional update, and it is
-  worth checking in the console whether that requires a metadata *write* scope
-  rather than only a read. If so, add it. Without it, concurrent edits from two
-  devices would clobber each other instead of conflicting cleanly.
-- **Scope changes take effect on re-authorisation.** If you add or remove a scope
-  later, you must disconnect and reconnect the app, or the change will not apply.
+### Why the app does not send a `scope` parameter
+
+Dropbox documents that omitting `scope` requests exactly the scopes selected on the
+Permissions tab. That makes the console the single source of truth.
+
+Requesting an explicit subset is the fragile choice: if the console and the code
+disagree by even one scope, Dropbox rejects the whole authorisation with
+`scope_not_granted` and the app cannot start at all. That is exactly what happened
+here — both apps had no content scopes ticked, so an explicit request made the app
+unusable while omitting it worked immediately.
+
+Least privilege is still achieved, by ticking only the two scopes the app uses.
+
+**Only two scopes are needed, and both must be ticked.** With no `scope` parameter
+sent, an app with no scopes ticked will reach the consent screen with nothing to
+grant and then fail at the first API call, so this step is not optional either way.
+
+Verified against Dropbox's machine-readable API spec (`dropbox/dropbox-api-spec`,
+`files.stone`), which declares a required scope per route:
+
+| Scope | Required by | Why |
+| --- | --- | --- |
+| `files.content.read` | `download` | Fetching the sync file |
+| `files.content.write` | `upload` | Writing it |
+
+That is the whole list. Earlier drafts of this file suggested
+`files.metadata.read`, `files.metadata.write` and `account_info.read` as well; they
+are **not** needed:
+
+- The file's revision comes back in the response header of `download`, which already
+  requires only `files.content.read`.
+- The conditional write (`mode: {"update": "<rev>"}`) is part of the upload argument,
+  so it is covered by `files.content.write` — no metadata write scope involved.
+- The connected account is read from the stored token, not from the API, so
+  `account_info.read` is unused.
+
+Enabling only what is used is Dropbox's own advice, and it keeps the consent screen
+short. If you have already enabled extra scopes that is harmless — the app requests
+only these two.
+
+**Scope changes only take effect on re-authorisation.** If you change the scopes in
+the console, disconnect and reconnect the app in the Sync panel, or the change will
+not take effect.
+
+The app sends both scopes as a single space-separated `scope` parameter, which is
+what Dropbox expects. Note that the Permissions tab starts with nothing ticked for a
+new app, so this step cannot be skipped.
 
 ---
 
@@ -100,7 +158,7 @@ Register both of these:
 ```
 https://air-ltd.github.io/personal-time-tracker/
 
-http://localhost:5173/
+http://localhost:5173/personal-time-tracker/
 ```
 
 The first is derived from this repository's git remote
@@ -109,8 +167,13 @@ from once Phase 1 deploys. It does not work yet — nothing is deployed — but
 registering it now means the OAuth config is correct from the first deployment and
 does not need revisiting.
 
-The second is for local development, where the URL is `http`, not `https`, and
-includes a port. All three differences matter.
+The second is for local development, where the scheme is `http` and there is a
+port. Note the **path**: the app is served under `/personal-time-tracker/` locally
+too, because the build's base path applies in development as well as in production.
+The redirect URI the app actually sends is
+`${window.location.origin}${import.meta.env.BASE_URL}`, so registering
+`http://localhost:5173/` without the path will fail authorisation with no useful
+error.
 
 If the console normalises or strips your trailing slash, note what it actually
 stored and use that exact form. **[verify]**
@@ -130,41 +193,55 @@ Record the **App key**. You need it.
 The **App secret is not needed** and must not be used. The app is a public client
 using PKCE (0012 AU2), so there is no secret to keep — and there is nowhere safe to
 put one anyway, since the app is a static site with every byte shipped to the
-browser (0012 AR6). If you find yourself wanting to use the secret, that is the
-signal something has gone wrong with the flow choice.
+browser (0011 AR6).
+
+Dropbox's OAuth guide states this case explicitly: a client-side web application in
+pure JavaScript should use the code flow with short-lived tokens and PKCE, **and no
+refresh token**. On expiry the app re-authorises, which is normally silent, because
+your approval persists until you revoke it. So there is no refresh token to store and
+no long-lived credential to leak — a smaller thing to get wrong.
 
 The App key is **not** sensitive. It ships in the JavaScript bundle and that is by
 design. This is also why it is fine to commit to the repository.
 
 ---
 
-## 6. Wire it into the project
+## 6. Which key the app uses
 
-The key belongs in a Vite environment variable. `.env` files that Vite loads are
-bundled into the client, which is correct and intended for this value.
+**You do not need to configure anything.** Two Dropbox apps are registered and their
+keys are built in, selected by where the app is served:
 
-Create `.env.example` and commit it:
+| Served from | Uses | Dropbox app |
+| --- | --- | --- |
+| `air-ltd.github.io` | production key | the production app |
+| anywhere else | non-production key | the testing app |
 
-```
-# Dropbox OAuth client id. Public by design under PKCE — not a secret.
-# No Dropbox app secret belongs in any VITE_ variable.
-VITE_DROPBOX_APP_KEY=
-```
+Because they are two separate Dropbox apps, they have **separate app folders** and
+therefore separate `data.json` files. Local testing cannot overwrite production
+data — which is the main reason for splitting them.
 
-Then create a local `.env` (git-ignored) with your App key, and add `.env*` to
-`.gitignore` while keeping `.env.example` tracked.
+The Sync panel shows which environment is active, so there is never any doubt
+about which one you are pointed at.
 
-```bash
-cp .env.example .env
-# edit .env and paste the App key
-```
+### A key saved in an older build
+
+Earlier versions let you paste a key into the Sync panel, and it took precedence over
+the built-in selection. **It no longer does.** Both Dropbox apps are built in, so the
+stored key had no purpose except to avoid a rebuild — and keeping it let a stale value
+pair with whichever redirect URI a *different* Dropbox app had registered, which is what
+caused `invalid_redirect_uri`.
+
+A key left over from an earlier version is ignored and reported as ignored in the Sync
+panel, which also offers to remove it. Nothing reads it.
+
+### Optional override
+
+`VITE_DROPBOX_APP_KEY` in a `.env` file takes precedence over the built-in key for a
+particular build. Rarely needed; useful when testing a third app. See
+`.env.example`.
 
 **Never put the app secret in any `VITE_` variable.** Anything prefixed `VITE_`
 is embedded in the shipped JavaScript and is readable by anyone loading the page.
-
-**[verify]** Confirm the intended variable name matches what you implement. This
-document's `VITE_DROPBOX_APP_KEY` is a suggestion, not something the specs
-mandate.
 
 ---
 
@@ -173,22 +250,19 @@ mandate.
 Decide and record the path of the sync file inside Dropbox, and keep it constant
 (0012 FL1 — one user, one file).
 
-The default the implementation should use, assuming "My Dropbox" access from step 2:
+With **App Folder** access from step 2, the path is relative to the app folder, so
+the implementation's constant is just:
 
 ```
-/personal-time-tracker/data.json
+data.json
 ```
 
-If you chose App Folder access instead, it becomes relative to `/Apps/<app-name>/`,
-so:
+which resolves to `/apps/<app-name>/data.json`. The code already uses this
+(`src/sync/dropbox/config.ts`). If you chose Full Dropbox instead it becomes
+`/personal-time-tracker/data.json`, and that constant needs changing.
 
-```
-/data.json
-```
-
-Write down which one you chose and which path you are going with. The
-implementation needs a single constant, and getting this wrong shows up as a
-sync that silently succeeds while writing somewhere unexpected.
+Getting this wrong shows up as a sync that silently succeeds while writing
+somewhere unexpected, so it is worth being sure which access type you picked.
 
 ---
 
@@ -197,7 +271,7 @@ sync that silently succeeds while writing somewhere unexpected.
 - [ ] App exists, access type is **Scoped access**
 - [ ] Scopes: content read, content write, metadata read, account info — plus
       metadata **write** if step 3 indicates it is needed for conditional updates
-- [ ] Redirect URIs registered: deployed Pages URL, and `http://localhost:5173/`
+- [ ] Redirect URIs registered: deployed Pages URL, and `http://localhost:5173/personal-time-tracker/`
 - [ ] App key recorded into `.env`
 - [ ] App secret **not** recorded anywhere, not used
 - [ ] Remote path decided and written down
@@ -215,16 +289,40 @@ the implementation must follow is in [0012 AU1–AU8](../SPECS/0012-sync.md):
 - Tokens go in IndexedDB, never `localStorage`, and never into an export file.
 - Declining or abandoning authorisation leaves a fully working local-only app.
 
-### Verify against Dropbox's documentation during implementation
+### Verification status
 
-[0012 SY10](../SPECS/0012-sync.md) already requires this. Confirm specifically:
+**Confirmed** against Dropbox's OAuth guide:
 
-- PKCE is supported for the authorization code flow, and whether a refresh token
-  is issued for a public client
-- The exact conditional-update mechanism for detecting concurrent writes, and
-  which scope it needs
-- Whether revisions come from a metadata read or the write response
-- Rate limit behaviour, to size the retry and backoff in 0012 C5
+- PKCE is supported and explicitly recommended for single-page applications in pure
+  JavaScript
+- The authorization code flow is the recommended flow
+- The redirect URI must match a registered value exactly
+- Content access is a choice between App Folder and Full Dropbox
+- A pure client-side app should use short-lived tokens with **no** refresh token,
+  re-authorising on expiry
 
-None of these should be taken from this file or from the specs. They are
-provider-specific and change without notice.
+**Confirmed** against `dropbox/dropbox-api-spec` (`files.stone`, the authoritative
+machine-readable spec):
+
+- `upload` and `download` are both `host = "content"`, i.e.
+  `content.dropboxapi.com`
+- Both set `allow_app_folder_app = true`, so App Folder access is valid
+- `download` requires `files.content.read`; `upload` requires `files.content.write`
+- `download` is `style = "download"` with a `DownloadArg` struct, so it is a **POST**
+  with the path in the `Dropbox-API-Arg` header — not a GET with the path in the URL
+- `WriteMode` is a `union_closed`, so its void variants serialise as bare strings:
+  `"overwrite"`, and `{"update": "<rev>"}` for the conditional write. There is no
+  `.tag` discriminator — that form belongs to open unions.
+- `ReadPath` and `WritePath` are declared as strings matching
+  `(/(.|\r\n)*)|(ns:...)`. **The leading slash is part of the pattern**, so the
+  remote path is `/data.json`. With App Folder access that is relative to the app
+  folder, resolving to `/apps/<app name>/data.json` — it does not address the
+  account root. Omitting the slash produces Dropbox's catch-all `other/` error.
+
+**Not verified, and not currently relied upon:** rate limit thresholds. The retry
+and backoff in 0012 C5 is bounded and generous rather than tuned to a documented
+limit, which is the safe direction.
+
+The endpoint paths, scopes and argument shapes are collected in
+`src/sync/dropbox/config.ts` with the verification noted, so there is one place to
+look. The tests assert the exact request shapes, so a regression would be caught.

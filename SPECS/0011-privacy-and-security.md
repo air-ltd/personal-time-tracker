@@ -59,6 +59,25 @@ origin and nothing else, so an accidental dependency or injected script cannot
 exfiltrate the whole database to a third party. This is the single most valuable
 defence in this app, because the database is the whole asset.
 
+> **Delivered as `<meta http-equiv>`, not a response header.** GitHub Pages serves
+> static files and cannot set headers, and the site is a project page under
+> `https://<user>.github.io/<repo>/`, so `'self'` covers the hashed chunks it
+> loads. Two consequences are accepted rather than worked around:
+>
+> - `frame-ancestors`, `report-uri` and `sandbox` are **ignored** by browsers when
+>   a policy arrives via `<meta>`. No clickjacking defence is claimed. A stricter
+>   deployment would set the header at a host that can.
+> - The policy is injected by the build rather than committed to `index.html`,
+>   because the dev server rewrites `index.html` and injects its own inline
+>   preamble. A policy loose enough for `npm run dev` would be no policy at all.
+>   `npm run dev` is therefore **not** covered by N5; the built site is.
+>
+> `style-src 'unsafe-inline'` is required by the inline `style` attributes React
+> sets for colour dots, and grants no access to data. `script-src` is **not**
+> relaxed: the one inline script (the theme bootstrap, 0002 TH4) is allow-listed
+> by a SHA-256 hash computed from the emitted HTML at build time, so the hash
+> cannot drift from the script it describes.
+
 **N6** — Any future feature that fetches *public* data the user requests — the
 official holiday import deferred in 0013, for instance — MUST add that specific
 origin to `connect-src` explicitly. It MUST NOT relax the policy, and MUST NOT send
@@ -81,11 +100,31 @@ in a cookie readable by script beyond what is needed, and never in the export
 the Clipboard without an explicit user action. No "copy my timesheet to clipboard
 on every save" behaviour.
 
-**R5** — One narrow exception is permitted for **non-sensitive UI preferences**:
-the theme key in `localStorage`, used solely so the theme can be applied before
-first paint (0002 TH4). It contains no personal data, is not authoritative, and
-is reconstructible if lost. The set of allowed localStorage keys MUST be an
-explicit allowlist, so this cannot quietly become a back door around R4.
+**R5** — `localStorage` is limited to an explicit allowlist of **non-sensitive
+values**, so this cannot quietly become a back door around R4. Two keys are
+permitted:
+
+| Key | Why it is allowed |
+| --- | --- |
+| `tt:theme` | A UI preference, needed before first paint because IndexedDB cannot be read synchronously (0002 TH4). No personal data; reconstructible if lost. |
+| `tt:dropbox-app-key` | An OAuth **client id**, which is public and is shipped in the JavaScript bundle regardless (0012 AU3, AR6). Needed so it can be read synchronously by the OAuth redirect handler, and so it can be entered in the browser rather than baked into a build (`SPECS/todo.md` item 6). |
+
+Neither key is a credential. OAuth **tokens** are credentials and live in the
+IndexedDB `secrets` table, which the snapshot reader excludes structurally rather
+than by remembering to filter (0012 AU5, 0008 S2). That separation is the point:
+keeping the public id and the secret in different stores is what makes the export
+exclusion reliable.
+
+**R7** — `sessionStorage` is limited to the OAuth round trip's pending state: the
+PKCE verifier, its `state`, and any authorisation error message. The verifier is a
+short-lived secret — it is what proves the token request belongs to the
+authorisation request — so it is kept out of `localStorage`, expires within minutes,
+and is cleared on use (0012 AU4.2, AU4.3).
+
+**R6** — Because the app key is public, this spec does not require a warning about
+its storage. A warning implying the key is sensitive would be misleading and would
+teach the user to distrust something that is not a secret (0011 LV-PRIVACY-3 is the
+same principle applied to free-text labels).
 
 ## Non-working day labels
 
@@ -120,7 +159,7 @@ What this app is actually exposed to:
 | Shared or borrowed device | Yes | Entries are readable by anyone with browser access. No app-level protection; this is the platform's model. |
 | Compromised provider account | Yes | Accepted risk, see below |
 | Malicious dependency | Low | Small, pinned, audited dependency set (0005 P3 equivalent) |
-| XSS reading the database | Low but high impact | React escapes by default; CSP `connect-src` blocks exfiltration; no `dangerouslySetInnerHTML` |
+| XSS reading the database | Low but high impact | React escapes by default; a Content Security Policy restricts `connect-src` to the provider API (N5) and `script-src` to `'self'` plus one hashed inline script, so injected markup has nowhere to send data; no `dangerouslySetInnerHTML` |
 | CSRF against the provider | Low | Provider OAuth with PKCE; no cookie session to ride |
 | Lost device | Yes | Encrypted by the OS if the device is; provider account revocable |
 | Server-side breach | Not applicable | There is no server |

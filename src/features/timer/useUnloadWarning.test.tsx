@@ -11,22 +11,26 @@ describe('useUnloadWarning (0004 W1–W7)', () => {
     add.mockRestore()
   })
 
-  it('registers beforeunload and pagehide while running', () => {
+  // W7's `pagehide` is deliberately not asserted here. It belongs to the sync scheduler,
+  // which is where a pending cycle is flushed; this hook used to register a second
+  // `pagehide` listener that forwarded to a callback nobody passed, and the two together
+  // made it look like the flush was covered twice when it was covered once. The scheduler
+  // test is where that requirement is pinned.
+  it('registers beforeunload while running', () => {
     const add = vi.spyOn(window, 'addEventListener')
     renderHook(() => useUnloadWarning({ active: true }))
     const types = add.mock.calls.map(([type]) => type)
     expect(types).toContain('beforeunload')
-    expect(types).toContain('pagehide')
+    expect(types).not.toContain('pagehide')
     add.mockRestore()
   })
 
-  it('removes both listeners on unmount', () => {
+  it('removes its listener on unmount', () => {
     const remove = vi.spyOn(window, 'removeEventListener')
     const { unmount } = renderHook(() => useUnloadWarning({ active: true }))
     unmount()
     const types = remove.mock.calls.map(([type]) => type)
     expect(types).toContain('beforeunload')
-    expect(types).toContain('pagehide')
     remove.mockRestore()
   })
 
@@ -73,15 +77,6 @@ describe('useUnloadWarning (0004 W1–W7)', () => {
 
     rerender({ key: 'entry-b' })
     expect(result.current.dismissed).toBe(false)
-  })
-
-  it('calls onUnload from pagehide', () => {
-    const onUnload = vi.fn()
-    renderHook(() => useUnloadWarning({ active: true, onUnload }))
-    act(() => {
-      window.dispatchEvent(new Event('pagehide'))
-    })
-    expect(onUnload).toHaveBeenCalledTimes(1)
   })
 
   it('does not stack listeners when the session changes', () => {

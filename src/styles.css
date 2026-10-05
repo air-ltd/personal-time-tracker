@@ -20,6 +20,14 @@
   --accent: #1f5fbf;
   --accent-fg: #ffffff;
   --focus-ring: #1f5fbf;
+  /* A translucent neutral wash for hover and selected rows. Dark on a light background,
+     which is why the dark theme has to define its own: the same alpha of a dark colour
+     over near-black would be invisible. Previously these were inline fallbacks of three
+     near-identical greys at three alphas, which meant the palette was defined outside
+     the block whose job is defining the palette. */
+  --surface-2: rgb(23 23 26 / 6%);
+  --surface-2-strong: rgb(23 23 26 / 11%);
+  --danger: #b3261e;
 }
 
 :root[data-theme='dark'] {
@@ -31,6 +39,30 @@
   --accent: #8ab4f8;
   --accent-fg: #10131a;
   --focus-ring: #8ab4f8;
+  --surface-2: rgb(255 255 255 / 7%);
+  --surface-2-strong: rgb(255 255 255 / 13%);
+  --danger: #f2b8b5;
+}
+
+/*
+ * Sync status colours (0002 TH3).
+ *
+ * Defined once rather than per theme, because each of the three clears 3:1 against
+ * *both* backgrounds and against the raised surface the button sits on — so one value is
+ * correct everywhere, and a theme-specific override would only create a second thing to
+ * keep right. The amber is darker than it was: `#c98a12` measured 2.85:1 on the light
+ * background, under the 3:1 that WCAG 2.2 SC 1.4.11 requires of meaningful non-text
+ * content and under the bar this project holds its project palette to
+ * (`MIN_CHART_CONTRAST`). Dark enough for the light theme costs nothing on the dark one,
+ * because #a86a00 still measures 4.14:1 against #141417.
+ *
+ * `colour.test.ts` asserts these three ratios, so a future edit that breaks one fails
+ * rather than passing until someone squints at it.
+ */
+:root {
+  --sync-ok: #2e8b57;
+  --sync-warn: #a86a00;
+  --sync-error: #c0392b;
 }
 
 * {
@@ -55,8 +87,8 @@ body {
     Arial,
     sans-serif;
   line-height: 1.5;
-  /* Avoid a flash of the wrong background if the theme attribute is late. */
-  background-color: var(--bg);
+  /* No second `background-color`: the `background` shorthand above already sets it, and a
+     declaration repeated inside the same rule is a no-op whatever it claims to prevent. */
 }
 
 .app {
@@ -218,6 +250,20 @@ code {
   border-color: var(--accent);
 }
 
+/*
+ * A button with a leading icon (item 17).
+ *
+ * `inline-flex` with a gap rather than leaving the button `inline-block`, because an
+ * inline SVG next to text in an inline-block box sits on the text baseline and the
+ * descenders of a following character collide with it. The icons are already centred on
+ * their own 24-unit grid, so no adjustment is needed here.
+ */
+.button-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .button-primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -225,12 +271,8 @@ code {
 }
 
 .button-danger {
-  color: var(--danger, #b3261e);
-  border-color: var(--danger, #b3261e);
-}
-
-:root[data-theme='dark'] {
-  --danger: #f2b8b5;
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .link-button {
@@ -284,13 +326,28 @@ code {
   padding: 0;
 }
 
+/* Item 24/27: three columns. The body flows, and the pencil sits inside it on the text's
+   own line rather than in a fourth column of its own. */
 .entry-row {
   display: grid;
-  grid-template-columns: 9rem 5rem 1fr auto;
-  gap: 0.75rem;
+  grid-template-columns: 7.5rem 4.5rem 1fr;
+  gap: 0.6rem;
   align-items: baseline;
-  padding: 0.4rem 0;
+  /*
+   * Room for the pencil, which is taken out of flow below and sits at the left-hand end
+   * of the row (item 27).
+   */
+  padding: 0.25rem 0 0.25rem 1.9rem;
   border-top: 1px dotted var(--border);
+  position: relative;
+}
+
+/* Times, duration, then one column holding everything textual. */
+.entry-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
 }
 
 .entry-times {
@@ -305,13 +362,578 @@ code {
 
 .entry-note {
   margin: 0;
-  grid-column: 3 / 5;
   color: var(--fg);
   overflow-wrap: anywhere;
 }
 
+/*
+ * Taxonomy on an entry row. It occupies the same column as the note and sits above it,
+ * because which project and tags an entry carries is what someone scanning a day is
+ * looking for, and the free-text note is the fallback.
+ */
+.entry-taxonomy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.entry-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.entry-client {
+  color: var(--fg-muted);
+}
+
+.entry-uncategorised {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.entry-tags,
+.tag-chips {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+}
+
+/* `.entry-tags` and `.tag-chips` share the rule above, including the wrap. It used to
+   declare `flex-wrap: wrap` again in a rule of its own, which read as a second decision
+   rather than the same one. */
+
+/*
+ * Reserved feedback line under a rate field.
+ *
+ * Deliberately not `display: none` when empty: the point is that the field's height does
+ * not change, because a button that moves under the pointer as it is being pressed does
+ * not get pressed.
+ */
+.rate-feedback {
+  min-height: 1.4rem;
+}
+
+/* Entries controls: the client filter and the period (items 21, 22). */
+/* Item 25: the period control moved into the entries header, next to what it changes. */
+/* Three columns, so the controls cannot be pushed sideways by the note (item 34). */
+.entries-header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.entries-header h2 {
+  margin-right: 0;
+  /* Explicit, not auto-placed: with only two children the controls landed in column 2 and
+     jumped to column 3 the moment the note appeared, which moved the period selector by
+     about 10px. Naming each column makes its position depend only on the window. */
+  grid-column: 1;
+}
+
+/*
+ * The filter note sits between the heading and the controls, so "Showing Health NZ" reads
+ * as part of the card's header rather than as a stray note above the list. Baseline-aligned
+ * so it lines up with the heading and the period radios rather than floating between them.
+ */
+.entries-filter-note {
+  grid-column: 2;
+  margin: 0;
+  align-self: baseline;
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  /* Clipped rather than wrapped, so a long client name cannot push the columns about. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.entries-header-controls {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-self: end;
+}
+
+.entries-collapse {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.35rem;
+}
+
+/* Rotated when collapsed, so the control looks the same and only its direction changes. */
+.entries-collapse[aria-expanded='false'] .icon {
+  transform: rotate(-90deg);
+}
+
+.period-control {
+  display: flex;
+  gap: 0.6rem;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.period-control-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The client filter is forced by a running timer, and says so. */
+.entries-filter select:disabled {
+  opacity: 0.7;
+}
+
+/* Summary (item 22). */
+.entry-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.summary-bucket {
+  border-top: 1px dotted var(--border);
+  padding-top: 0.4rem;
+}
+
+.summary-bucket-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.summary-bucket-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.summary-bucket-total,
+.summary-row-total {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+.summary-rows {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.summary-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+  padding: 0.2rem 0;
+  align-items: baseline;
+}
+
+.summary-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.summary-row-projects {
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* About page, and the changelog rendered into it. */
+.settings-footer {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+}
+
+.about-changelog h3 {
+  margin: 1rem 0 0.3rem;
+  font-size: 1rem;
+}
+
+.about-changelog h4 {
+  margin: 0.8rem 0 0.2rem;
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+}
+
+.changelog ul {
+  margin: 0.2rem 0 0.6rem;
+  padding-left: 1.2rem;
+}
+
+.changelog p {
+  margin: 0.3rem 0;
+}
+
+/* Header home link and favicon (item 23). */
+.app-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.app-home:hover .app-home-icon {
+  transform: scale(1.06);
+}
+
+.app-home-icon {
+  display: block;
+  /* Scaled up from the favicon's own 32-unit grid, so the corner radius is scaled with
+     it: a fixed rem radius on a 36px mark reads as visibly tighter corners than the
+     16px one the browser draws in the tab. */
+  border-radius: 0.47rem;
+  transition: transform 120ms ease-out;
+}
+
+/* Header menu (item 18). */
+.header-menu {
+  position: relative;
+}
+
+.header-menu-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.5rem;
+}
+
+/* Item 26: three buttons, stacked, no surrounding text. Narrow, because a menu holding
+   three icons does not need the width of a panel. */
+.header-menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 20;
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.15rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+/* Item 29: the words came back beside the icons, so the buttons are a left-aligned label
+   row rather than a column of squares. */
+.header-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: flex-start;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.85rem;
+  border-radius: 0.25rem;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  /* Comfortably past the 24px minimum target, and square, so the three read as a column of
+     equal buttons rather than as a ragged list. */
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+}
+
+.header-menu-item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.header-menu-item:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The result of a backup or restore, which is the one thing the menu still says. */
+.header-menu-panel .alert {
+  margin: 0.2rem 0.2rem 0.1rem;
+  font-size: 0.8rem;
+  max-width: 16rem;
+}
+
+/* An icon beside a label, sized to the text rather than to its own viewBox. */
+.button .icon {
+  flex: none;
+  vertical-align: -0.15em;
+  margin-right: 0.35rem;
+}
+
+.button .icon:only-child {
+  margin-right: 0;
+}
+
+/* A settings section heading with its add button on the same line (items 32, 33). */
+.taxonomy-section-heading {
+  /* Composed onto `.panel-header`, which now carries the layout: heading left, add button
+     right. Only what genuinely differs — a tighter gap, because the taxonomy sections sit
+     closer together, and a little space before the list. It used to restate all four flex
+     declarations, which reads as a second decision rather than a variant. */
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+
+.taxonomy-section-heading h3 {
+  margin: 0;
+}
+
+/* Timer: one line per client (item 16 of SPECS/todo.md). */
+/* Item 32: the add button shares the "Timer" heading's line, right-aligned. The separate
+   header row it lived in is gone — it cost a whole row of height on the card the user
+   looks at most often. */
+/* A plus rather than a word: the rows beneath are all add-actions already. Sized for a
+   fingertip rather than matched to the small text buttons beside it. */
+/* The add button that sits on a section heading's line. Named for its role rather than for
+   the timer card, which used to be the only one with a name — so the taxonomy sections'
+   buttons were styled by a class that said "timer". */
+.heading-add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem 0.6rem;
+  min-width: 2.4rem;
+}
+
+.timer-client-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px dotted var(--border);
+}
+
+/* Item 24: tighter rows. */
+.timer-client-row {
+  display: grid;
+  /* name, total, actions, optional badge */
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+/* Item 25: the name is the selection, so it is a button that looks like text until it is
+   hovered or pressed. */
+.timer-client-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0.1rem 0.2rem;
+  margin: -0.1rem -0.2rem;
+  border: 0;
+  border-radius: 0.2rem;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timer-client-name:hover {
+  background: var(--surface-2);
+}
+
+.timer-client-name[aria-pressed='true'] {
+  background: var(--surface-2-strong);
+  font-weight: 600;
+}
+
+/* The count-up while running, and the lifetime total while not (items 16, 19). */
+.timer-client-live {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.timer-client-row-active .timer-client-live {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.badge-active {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg);
+  border: 1px solid currentColor;
+  border-radius: 0.2rem;
+  padding: 0 0.25rem;
+  margin-left: 0.35rem;
+}
+
+.timer-orphan {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.4rem;
+}
+
+.timer-client-actions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+/* Currency preferences (items 13–14): chosen first, then the rest. */
+.currency-picker-list {
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.currency-group h4 {
+  margin: 0.6rem 0 0.2rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.currency-picker-options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+  columns: 2;
+  column-gap: 1rem;
+}
+
+.currency-picker-options li {
+  break-inside: avoid;
+  padding: 0.1rem 0;
+}
+
+/* The header sync indicator (item 10). */
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sync-indicator-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.sync-indicator-ok .sync-indicator-dot {
+  background: var(--sync-ok);
+}
+
+.sync-indicator-warn .sync-indicator-dot {
+  background: var(--sync-warn);
+}
+
+.sync-indicator-error .sync-indicator-dot {
+  background: var(--sync-error);
+}
+
+.sync-indicator-idle .sync-indicator-dot {
+  background: var(--fg-muted);
+}
+
+/*
+ * A tag chip. The name is the content; the swatch repeats it, so colour is never the only
+ * carrier of meaning (0005 N2), and removing one is a labelled button rather than an "×"
+ * nobody can reach with a screen reader.
+ */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8rem;
+}
+
+.tag-swatch {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 0.2rem;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.chip-remove {
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0 0 0.15rem;
+}
+
+.chip-remove:hover {
+  color: var(--fg);
+}
+
+.badge-billable {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 0.2rem;
+  padding: 0 0.25rem;
+}
+
+/*
+ * Item 27: the pencil on the same line as the entry's text, at the row's left-hand end.
+ *
+ * Taken out of flow and pinned to the left edge of the row's first line. In the flow it
+ * could only ever be the last item of a flex column, which put it on a row of its own —
+ * measured in a browser at 23px below the text it was meant to share a line with — and
+ * pinning it to the right put it at the far end of the row instead of beside the text.
+ *
+ * Left rather than right so it leads the eye into the entry and sits at a consistent place
+ * in the tab order relative to the rest of the list.
+ *
+ * Out of flow but not out of the document, so it keeps its place in the tab order. `top`
+ * matches the row's first text line rather than centring, so it lines up whether or not
+ * there are tags or a note beneath it.
+ */
 .entry-edit {
+  position: absolute;
+  left: 0.15rem;
+  top: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
   color: var(--accent);
+}
+
+.entry-edit:hover {
+  color: var(--fg);
+  background: var(--surface-2);
 }
 
 .badge-running {
@@ -371,13 +993,25 @@ code {
 }
 
 .alert-error {
-  border: 1px solid var(--danger, #b3261e);
-  color: var(--danger, #b3261e);
+  border: 1px solid var(--danger);
+  color: var(--danger);
 }
 
 .alert-warning {
   border: 1px solid var(--border);
   color: var(--fg-muted);
+}
+
+/* Confirmation that an action finished. Uses the muted palette rather than the
+   accent, so a success reads as settled rather than as another call to action. */
+.alert-success {
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.backup-issues {
+  margin: 0.4rem 0 0;
+  padding-left: 1.1rem;
 }
 
 .undo-bar {
@@ -393,4 +1027,444 @@ code {
   border-radius: 8px;
   padding: 0.6rem 1rem;
   box-shadow: 0 6px 20px rgb(0 0 0 / 0.18);
+}
+
+/* ------------------------------------------------- Sync setup (todo.md item 6) */
+
+.sync-setup .field {
+  margin-bottom: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sync-setup input[type='text'] {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  max-width: 22rem;
+}
+
+.sync-setup .button-row {
+  margin-bottom: 0.75rem;
+}
+
+.sync-setup-instructions {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.sync-setup-instructions summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.setup-steps {
+  font-size: 0.9rem;
+  padding-left: 1.2rem;
+  line-height: 1.6;
+}
+
+.setup-steps code {
+  font-size: 0.85em;
+}
+
+.setup-steps h3,
+.sync-setup-instructions h3 {
+  font-size: 0.85rem;
+  margin: 1rem 0 0.4rem;
+  color: var(--fg-muted);
+}
+
+.setup-uris {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.setup-uris li {
+  padding: 0.25rem 0;
+  overflow-wrap: anywhere;
+}
+
+.badge-production {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.badge-development {
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
+.setup-scopes {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+
+.setup-scopes li {
+  padding: 0.2rem 0;
+}
+
+/*
+ * Narrow screens.
+ *
+ * The row is a four-column grid sized in fixed units, which overflows a phone: 9rem plus
+ * 5rem plus the edit link is already most of a 320px viewport before the note has any
+ * room. Below this width the row becomes two lines — times and duration on one, note and
+ * edit on the next — which keeps every value visible rather than clipping the note, since
+ * a clipped note is the one thing a user cannot tell is truncated.
+ *
+ * Fixed column widths are kept rather than percentages so the times and durations stay
+ * aligned down the list, which is what makes a column of durations scannable.
+ */
+
+/* Header controls: settings link beside the theme toggle. */
+.app-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Settings */
+.settings-block {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-block h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.taxonomy-form {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+
+.taxonomy-form.inline-form {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+
+.taxonomy-form .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.taxonomy-form label,
+.taxonomy-edit label {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.taxonomy-form input[type='text'],
+.taxonomy-form select,
+.taxonomy-edit input[type='text'],
+.taxonomy-edit select {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  max-width: 28rem;
+}
+
+.taxonomy-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.taxonomy-row {
+  display: grid;
+  /* Name, description, actions. Fixed action width keeps the delete buttons from
+     jumping as a row gains or loses an action. */
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-top: 1px dotted var(--border);
+}
+
+/* An archived row stays readable rather than greyed into illegibility. */
+.taxonomy-row.archived .taxonomy-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.taxonomy-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+  min-width: 0;
+}
+
+.taxonomy-meta {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.taxonomy-actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/*
+ * The swatch is decorative. Every place it appears is also labelled with the name it
+ * belongs to, so 0005 N2 holds: nothing is distinguished by colour alone.
+ */
+.taxonomy-swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.2rem;
+  flex: none;
+  /* A ring in the current foreground, so a swatch is visible against both themes even
+     if the palette entry is close to the background. */
+  box-shadow: 0 0 0 1px var(--fg);
+}
+
+.badge-archived {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.taxonomy-edit {
+  display: grid;
+  gap: 0.75rem;
+  grid-column: 1 / -1;
+  padding: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+}
+
+.taxonomy-edit .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* Colour picker */
+.colour-picker {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.75rem;
+  margin: 0;
+}
+
+.colour-picker legend {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+  padding: 0 0.25rem;
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+/*
+ * Each swatch is a label wrapping a radio, so the whole group is one tab stop and the
+ * arrow keys move between colours. The input is visually replaced rather than hidden
+ * with `display: none`, which would remove it from the tab order entirely.
+ */
+.swatch {
+  position: relative;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 0.3rem;
+  background: var(--swatch, var(--surface));
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.swatch input[type='radio'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+/* Selection is a double ring rather than a fill change, so it survives a colour that is
+   similar to its neighbours. */
+.swatch-selected {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--fg);
+}
+
+/* A colour already used elsewhere is dimmed, not removed: two projects may legitimately
+   share one, and hiding the swatch would make the choice impossible to reproduce. */
+.swatch-taken {
+  opacity: 0.55;
+}
+
+.swatch-custom {
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-weight: 600;
+}
+
+.colour-custom {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.75rem;
+}
+
+.colour-custom input {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  max-width: 14rem;
+}
+
+.colour-custom .alert,
+.colour-custom .hint {
+  margin: 0;
+}
+
+/* Destructive confirmation */
+.delete-confirm {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  border: 2px solid var(--accent);
+  border-radius: 0.4rem;
+  background: var(--bg);
+}
+
+.delete-confirm:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.delete-confirm h4 {
+  margin: 0 0 0.5rem;
+}
+
+.delete-confirm ul {
+  margin: 0 0 0.5rem 1.1rem;
+  padding: 0;
+}
+
+@media (max-width: 34rem) {
+  /* Times and duration share the first line, everything textual takes the rest. */
+  .entry-row {
+    grid-template-columns: auto 1fr;
+    row-gap: 0.15rem;
+  }
+
+  .entry-content {
+    grid-column: 1 / -1;
+  }
+
+  /* Item 20: an icon rather than the word, so the row needs no width for it.
+
+     Only what genuinely differs at this width. `display`, `align-items`,
+     `justify-content`, `border-radius` and the hover wash are gone: they repeated the base
+     rule verbatim, and a duplicate is not obviously a duplicate, so the narrow layout
+     could drift from the wide one unnoticed.
+
+     `padding` stays because it does differ — a slightly larger target at a width where a
+     mis-tap is likelier. */
+  .entry-edit {
+    padding: 0.2rem 0.35rem;
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+
+  /* Two columns of currencies become one, and the client row drops its total onto the
+     name's line rather than squeezing five columns into 320px. */
+  .currency-picker-options {
+    columns: 1;
+  }
+
+  /* On a phone the three columns do not fit, so the controls drop to their own row —
+     still below the note rather than beside it, so the position stays predictable. */
+  .entries-header {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.4rem;
+  }
+
+  .entries-filter-note {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .timer-client-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 0.2rem;
+  }
+
+  .timer-client-live {
+    grid-column: 1;
+  }
+
+  .timer-client-actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  /* The form is already a single column, so it only needs roomer tap targets. */
+  .app {
+    padding: 1rem 0.75rem;
+  }
+
+  /* `.button-row` already wraps at every width, so there is nothing narrow-specific to say
+     here. The override repeated the base rule, which reads as a second decision. */
+
+  /* Taxonomy rows stack rather than compete for three columns on a phone. */
+  .taxonomy-row {
+    grid-template-columns: 1fr;
+    row-gap: 0.3rem;
+  }
+
+  .taxonomy-actions {
+    justify-content: flex-start;
+  }
+
+  .taxonomy-form.inline-form {
+    grid-template-columns: 1fr;
+  }
 }

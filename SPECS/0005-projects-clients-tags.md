@@ -26,8 +26,21 @@ that may no longer be accurate, whereas tagging entries lets one project be
 in at most two interactions from anywhere in the app, because a missing project
 blocks entry capture and the user should not abandon the timer to fix it.
 
-**P2** — Name MUST be unique among non-archived projects, compared
-case-insensitively after trimming.
+**P2** — Name MUST be unique among the non-archived projects **of the same
+client**, compared case-insensitively after trimming. Projects with no client
+form a single scope of their own, so two internal projects still cannot share
+a name.
+
+*Revised.* This was originally "unique among non-archived projects", globally.
+Two consequences made that wrong rather than merely strict. Every client
+could not then have a project called "General", which is the obvious name for
+a client's catch-all and the one a per-client timer list most needs to show
+consistently. And a global rule made the constraint invisible in the UI: the
+two projects are never shown together, because they sit under different client
+headings, so the collision it prevented was one the user could not encounter.
+
+Client and tag names remain globally unique — neither has a client to be
+scoped to.
 
 **P3** — Colour MUST be chosen from a fixed accessible palette rather than a free
 colour picker, so charts stay readable and colour-blind-safe by construction.

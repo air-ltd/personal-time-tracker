@@ -1,8 +1,12 @@
 import { groupEntriesByDay } from '../../domain/entries/group'
 import { formatClock, formatDuration, entryDurationMs } from '../../domain/time/duration'
-import { localDayBounds } from '../../domain/time/days'
+import { dayHeading } from '../../domain/entries/dayHeading'
+import { EmptyState } from './emptyState'
 import type { TimeEntry } from '../../domain/entries/types'
 import { useEntries } from './useEntries'
+import { useTaxonomy } from '../taxonomy/useTaxonomy'
+import { EditIcon } from '../../app/Icons'
+import type { Client, Project, Tag } from '../../domain/taxonomy/types'
 
 /**
  * Entry list, grouped by local day with per-day subtotals (0004 L1–L2).
@@ -11,33 +15,103 @@ import { useEntries } from './useEntries'
  * (0006 RP2). Overlapping entries are both counted (0004 O2): a day reading more
  * than 24 hours is a data problem the user should see.
  */
-export function EntryList({ now }: { now: Date }) {
+export function EntryList({
+  now,
+  /**
+   * Pre-filtered entries, when a caller has already decided which ones to show.
+   *
+   * Optional so the plain case stays a one-prop component. Item 21 filters by client, and
+   * filtering here as well would mean two places choosing what is shown — which is how a
+   * list and the summary above it come to disagree.
+   */
+  entries: provided,
+}: {
+  now: Date
+  entries?: readonly TimeEntry[] | undefined
+}) {
+  /*
+   * Subscribed even when the caller passed `entries` in.
+   *
+   * Every write therefore ran two full `listEntries()` + filter + sort cycles on the home
+   * screen: once here and once in `EntriesView`, which does the filtering. The second is
+   * pure waste at any volume and grows with every write.
+   *
+   * `useEntries` cannot be called conditionally, so the split is into two components and
+   * the hook lives only in the one that can need it. Rendering `<StoredEntryList>` is
+   * equivalent to the old conditional, and keeps the rule of hooks intact — which a
+   * `if (provided === undefined) useEntries()` would violate.
+   */
+  if (provided !== undefined) return <FilteredEntryList now={now} entries={provided} />
+  return <StoredEntryList now={now} />
+}
+
+/** Subscribes to the store, for callers that have not already loaded the entries. */
+function StoredEntryList({ now }: { now: Date }) {
   const { entries, loading } = useEntries()
+  return <FilteredEntryList now={now} entries={entries} loading={loading} />
+}
+
+/**
+ * The list itself.
+ *
+ * Split out so the taxonomy subscription is shared by both paths rather than duplicated,
+ * and so a row's lookup maps are built once per list rather than once per subscriber.
+ */
+function FilteredEntryList({
+  now,
+  entries,
+  loading = false,
+}: {
+  now: Date
+  entries: readonly TimeEntry[]
+  loading?: boolean | undefined
+}) {
+  const { projects, clients, tags } = useTaxonomy()
   const groups = groupEntriesByDay(entries, now)
+
+  // Resolved once here rather than in each row: a row that called `useTaxonomy` would
+  // subscribe to the same store N times, and `useSyncExternalStore` re-reads on every
+  // notification — so a long day would re-read the whole taxonomy per row.
+  const projectById = new Map(projects.map((row) => [row.id, row]))
+  const clientById = new Map(clients.map((row) => [row.id, row]))
+  const tagById = new Map(tags.map((row) => [row.id, row]))
 
   if (loading) return <p className="hint">Loading…</p>
 
   if (groups.length === 0) {
-    return (
-      <p className="hint" data-testid="empty-state">
-        No entries yet. Start the timer above, or add one by hand.
-      </p>
-    )
+    return <EmptyState />
   }
 
   return (
     <div className="day-groups">
       {groups.map((group) => (
-        <section key={group.key} className="day-group" aria-label={heading(group.key)}>
+        <section key={group.key} className="day-group" aria-label={dayHeading(group.key)}>
           <header className="day-header">
-            <h3>{heading(group.key)}</h3>
+            <h3>{dayHeading(group.key)}</h3>
             <span className="day-total" data-testid={`day-total-${group.key}`}>
               {formatDuration(group.totalMs)}
             </span>
           </header>
-          <ul className="entry-rows">
+          {/* Named so it is distinguishable from any other list on the page, both
+              for assistive tech and for tests that count rows. */}
+          <ul className="entry-rows" aria-label={`Entries for ${dayHeading(group.key)}`}>
             {group.entries.map((entry) => (
-              <EntryRow key={entry.id} entry={entry} now={now} />
+              <EntryRow
+                key={entry.id}
+                entry={entry}
+                now={now}
+                project={
+                  entry.projectId === null ? null : (projectById.get(entry.projectId) ?? null)
+                }
+                client={
+                  entry.projectId === null
+                    ? null
+                    : (clientById.get(projectById.get(entry.projectId)?.clientId ?? '') ?? null)
+                }
+                tags={entry.tagIds
+                  .map((id) => tagById.get(id))
+                  .filter((tag): tag is Tag => tag !== undefined)}
+              />
             ))}
           </ul>
         </section>
@@ -46,7 +120,19 @@ export function EntryList({ now }: { now: Date }) {
   )
 }
 
-function EntryRow({ entry, now }: { entry: TimeEntry; now: Date }) {
+function EntryRow({
+  entry,
+  now,
+  project,
+  client,
+  tags,
+}: {
+  entry: TimeEntry
+  now: Date
+  project: Project | null
+  client: Client | null
+  tags: Tag[]
+}) {
   const start = new Date(entry.start)
   const end = entry.end === null ? null : new Date(entry.end)
   const duration = entryDurationMs(entry, now)
@@ -65,20 +151,88 @@ function EntryRow({ entry, now }: { entry: TimeEntry; now: Date }) {
       <div className="entry-duration" data-testid={`duration-${entry.id}`}>
         {formatDuration(duration)}
       </div>
-      {entry.note && <p className="entry-note">{entry.note}</p>}
-      <a className="entry-edit" href={`#/entries/${entry.id}`}>
-        Edit<span className="visually-hidden"> entry starting {formatClock(start)}</span>
+      {/*
+        One wrapper for everything textual (item 27).
+
+        These were separate children of the grid, so with the pencil pulled into a column
+        of its own they landed in columns 1 and 2 of a second row — the tags and the note
+        appearing to the left of the project they belong to. A grid wants a fixed number of
+        columns; the flexible part belongs inside one of them.
+      */}
+      <div className="entry-content">
+        <div className="entry-taxonomy">
+          {project === null ? (
+            // U1/U2: uncategorised is named rather than shown as a blank, so an entry that
+            // lost its project — or never had one — reads as a state rather than as missing
+            // information.
+            <span className="entry-project entry-uncategorised">Uncategorised</span>
+          ) : (
+            <>
+              {/* N2: the project name is always text, and the client is named beside it.
+                  The swatch repeats information already in words, so colour is never the
+                  only carrier of meaning. */}
+              <span className="entry-project">
+                <span
+                  className="tag-swatch"
+                  style={{ background: project.colour }}
+                  aria-hidden="true"
+                />
+                {project.name}
+                {project.archived && <span className="badge badge-archived">archived</span>}
+                {client !== null && <span className="entry-client"> · {client.name}</span>}
+              </span>
+            </>
+          )}
+          {entry.billable && (
+            <span className="badge badge-billable" data-testid={`billable-${entry.id}`}>
+              Billable
+            </span>
+          )}
+        </div>
+
+        {tags.length > 0 && (
+          <ul className="entry-tags" data-testid={`tags-${entry.id}`}>
+            {tags.map((tag) => (
+              <li key={tag.id} className="chip">
+                <span
+                  className="tag-swatch"
+                  style={{ background: tag.colour }}
+                  aria-hidden="true"
+                />
+                {tag.name}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/*
+        On one line with the times and duration (item 20): a row per entry with its edit
+        control on a line of its own made a day of modest work taller than the screen. The
+        note still gets its own line when there is one, because a long note squeezed into
+        a single row is unreadable — it is the length, not the fact of a note, that earns
+        the space.
+      */}
+        {entry.note && <p className="entry-note">{entry.note}</p>}
+      </div>
+
+      {/* Item 27: the pencil shares the entry's first line, at its left-hand end. */}
+      <a
+        className="entry-edit"
+        href={`#/entries/${entry.id}`}
+        aria-label={`Edit entry starting ${formatClock(start)}`}
+        title="Edit"
+      >
+        <EditIcon />
       </a>
     </li>
   )
 }
 
-function heading(key: string): string {
-  const { start } = localDayBounds(key)
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(start)
-}
+/**
+ * Day heading, or the raw key when it cannot be parsed.
+ *
+ * `localDayBounds` throws on a malformed key, and a key comes from a stored timestamp —
+ * so one corrupt `start` would throw during render and take down the whole list, hiding
+ * every other entry with it. Showing the key is unhelpful but honest, and keeps the rest
+ * of the day readable.
+ */

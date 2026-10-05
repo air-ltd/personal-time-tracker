@@ -28,9 +28,3 @@ export interface TimeEntry {
   /** Soft delete. Rows are retained so a delete is undoable (0003 D1). */
   deletedAt: string | null
 }
-
-export interface EntryDraft {
-  start: Date
-  end: Date
-  note: string
-}

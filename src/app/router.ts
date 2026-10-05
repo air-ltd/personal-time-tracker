@@ -44,13 +44,24 @@ export function usePath(): string {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-export function matchRoute(path: string, routes: readonly Route[]): Route | undefined {
-  return routes.find((route) => route.path === path)
-}
-
 export interface RouteMatch {
   route: Route
   params: Readonly<Record<string, string>>
+}
+
+/**
+ * Percent-decode one path segment, tolerating a malformed escape.
+ *
+ * A hand-edited or truncated hash can carry `%` with nothing usable after it, and
+ * `decodeURIComponent` throws on that. Returning the raw segment is better than failing to
+ * match: the route then renders its own not-found view instead of the whole app breaking.
+ */
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
 }
 
 /**
@@ -76,7 +87,12 @@ export function matchPath(path: string, routes: readonly Route[]): RouteMatch | 
           matched = false
           break
         }
-        params[part.slice(1)] = decodeURIComponent(actual)
+        // `decodeURIComponent` throws on a malformed escape such as a bare `%` or
+        // `%zz`. A hash is user-editable, so this is reachable input rather than a
+        // theoretical one, and an uncaught throw here would take down the whole app on
+        // navigation. The raw segment is a better outcome than a crash: the route simply
+        // will not match an entry, and the not-found view says so.
+        params[part.slice(1)] = decodeSegment(actual)
       } else if (part !== actual) {
         matched = false
         break

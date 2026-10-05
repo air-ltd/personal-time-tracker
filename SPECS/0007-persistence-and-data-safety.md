@@ -73,6 +73,25 @@ validation MUST NOT partially apply.
   implementation in `domain/merge.ts`. 0007 F-EXPORT-6 and 0012 M1–M11 govern its
   behaviour.
 
+> **Amended — Merge only.** Replace mode is not implemented and is not planned. The
+> reasoning, recorded here rather than only in `0014`, is that Replace is the more
+> dangerous of the two and the one whose cost is irreversible: it discards local history
+> to install a file that may be months old, and the user who reaches for it is usually
+> already in trouble. Merge is also the only mode that can be safe by default, because it
+> cannot lose a record the local database has and the file does not. Since a backup file
+> is produced by the app that wrote it, the realistic restore is always "bring back what
+> I deleted", which is precisely a union.
+>
+> Anyone who wants Replace can get it without trusting the app: export, then clear site
+> data, then import. That path is deliberate rather than an oversight — it requires the
+> user to name the consequence.
+>
+> Consequence for **F-EXPORT-6** and **F-EXPORT-7**: with one mode, "replaced" is
+> subsumed into "merged" and the pre-import preview reports the union's size rather than
+> a per-mode delta. The count of records that will be *added* is still stated before the
+> import and the reasons for anything skipped are still reported after it, which is what
+> those two requirements exist to prevent.
+
 **F-EXPORT-6** — The UI MUST state before import how many records will be added,
 replaced or skipped. Blind imports destroy history.
 

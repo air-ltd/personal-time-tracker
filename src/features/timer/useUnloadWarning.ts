@@ -7,6 +7,12 @@ import { useCallback, useEffect, useState } from 'react'
  * noticed, not to stop time being tracked: dismissing it and confirming the leave
  * both leave the timer running (W3). Leaving must never silently discard elapsed
  * time, which is also why the timer is a wall-clock span rather than a counter.
+ *
+ * Scope note: this hook owns `beforeunload` only. W7's `pagehide` handling is the
+ * sync scheduler's, not this hook's — it is the point at which a pending cycle is
+ * flushed, so it belongs with the scheduler that owns the cycle. This hook used to
+ * take an `onUnload` callback and re-register `pagehide` to call it, which gave two
+ * `pagehide` listeners and nothing to flush.
  */
 
 export interface UnloadWarningOptions {
@@ -17,8 +23,6 @@ export interface UnloadWarningOptions {
    * previous suppression (0004 W6).
    */
   sessionKey?: string | null
-  /** Last reliable hook before a tab is discarded; Phase 2B flushes sync here. */
-  onUnload?: () => void
 }
 
 export interface UnloadWarning {
@@ -31,11 +35,7 @@ interface Dismissal {
   dismissed: boolean
 }
 
-export function useUnloadWarning({
-  active,
-  sessionKey,
-  onUnload,
-}: UnloadWarningOptions): UnloadWarning {
+export function useUnloadWarning({ active, sessionKey }: UnloadWarningOptions): UnloadWarning {
   const key = sessionKey ?? null
   const [state, setState] = useState<Dismissal>({ sessionKey: key, dismissed: false })
 
@@ -58,18 +58,10 @@ export function useUnloadWarning({
     }
     window.addEventListener('beforeunload', onBeforeUnload)
 
-    // W7: pagehide is the more reliable of the two on mobile browsers, and is the
-    // last moment a pending sync can be flushed.
-    const onPageHide = () => {
-      onUnload?.()
-    }
-    window.addEventListener('pagehide', onPageHide)
-
     return () => {
       window.removeEventListener('beforeunload', onBeforeUnload)
-      window.removeEventListener('pagehide', onPageHide)
     }
-  }, [active, dismissed, onUnload])
+  }, [active, dismissed])
 
   const dismiss = useCallback(() => setState({ sessionKey: key, dismissed: true }), [key])
 

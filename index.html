@@ -17,8 +17,13 @@
       IndexedDB cannot be read synchronously, so awaiting it would mean painting
       with the wrong theme and flashing. This reads a deliberately narrow
       localStorage mirror instead: a theme preference is not personal data, is
-      trivially reconstructible, and loses nothing if dropped. IndexedDB holds
-      the durable copy once the storage layer lands in Phase 2A.
+      trivially reconstructible, and loses nothing if dropped.
+
+      It remains the *only* copy. The storage layer has landed (Phase 2A), so the
+      alternative this comment used to promise is now available and has not been taken:
+      IndexedDB cannot be read synchronously, and writing the preference twice would mean
+      two sources that can disagree. Noted here because the durable copy is the natural
+      next step and the reason for stopping has not changed.
 
       Kept in sync with src/app/theme.ts — if the key or logic changes there,
       change it here too.

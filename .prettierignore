@@ -10,3 +10,9 @@ SPECS
 docs
 .devcontainer
 README.md
+
+# Reviews and review responses are prose of the same kind, and they are written by
+# more than one agent. Formatting them would turn a disagreement about wording into
+# a thousand-line diff nobody can read, and a file being edited elsewhere is not
+# this project's to reformat.
+review
