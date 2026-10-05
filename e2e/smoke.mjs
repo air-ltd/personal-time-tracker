@@ -177,7 +177,13 @@ async function main() {
 
     // 1. The app mounts at all.
     await page.goto(URL, { waitUntil: 'networkidle' })
-    check('app mounts', (await page.locator('h1').innerText()) === 'Time Tracker')
+    // Trimmed: the heading carries a dev badge on a non-production origin (item 40), and
+    // innerText includes it. Asserted on the name alone so the mount check stays about
+    // mounting — the badge has its own check further down.
+    check(
+      'app mounts',
+      (await page.locator('h1').innerText()).trim().startsWith('Time Tracker'),
+    )
     check(
       'timer panel present',
       (await page.getByRole('heading', { name: 'Timer' }).count()) === 1,
@@ -1192,6 +1198,14 @@ async function main() {
     check(
       'the changelog headings dropped Keep a Changelog’s brackets',
       (await page.getByRole('heading', { name: 'Unreleased', exact: true }).count()) === 1,
+    )
+
+    // Item 40: the suite runs against a local preview, which is a non-production origin, so
+    // the badge must be present. Asserted on the class rather than the text so it cannot
+    // pass on some other "dev" string happening to be on the page.
+    check(
+      'a non-production origin is marked dev in the title (item 40)',
+      (await page.locator('.app-header .env-badge').count()) === 1,
     )
 
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))

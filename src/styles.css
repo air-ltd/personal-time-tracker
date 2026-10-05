@@ -1488,3 +1488,24 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/*
+ * The "dev" marker in the title (SPECS/todo.md item 40).
+ *
+ * Uppercase and small, so it reads as a status stamp rather than part of the product name
+ * — a title saying "Time Tracker DEV" looks like a fork, where a quiet badge says the
+ * build is the same app on another origin.
+ */
+.env-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.25rem;
+  color: var(--danger);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}

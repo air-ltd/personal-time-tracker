@@ -133,6 +133,12 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
 - Tags keep **Delete**, because deleting a tag moves entries (they lose the tag) rather than
   hiding one, so the affected count and the undo are still warranted.
 
+### Changed
+
+- The title carries a **dev** badge on any non-production origin, so a local build is not
+  mistaken for the deployed one. It reflects the same check that decides which Dropbox app
+  the origin talks to, so the badge and the sync target cannot disagree.
+
 ### Fixed
 
 - **A tag typed and then saved was silently lost.** Pressing Save moved focus off the tag

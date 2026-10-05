@@ -198,11 +198,12 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    reappears in the orphan row claiming it has no client. Both halves have tests.
 38. [ ] add info on creating github issues for feedback to the about page.
 39. [ ] add a privacy policy to the about page. (we have no interest in your data).
-40. [ ] I'd like the title "Time Tracker" in non-prod version to indicate it's a dev environment rather than prod.
-   `environmentForHost` in `src/sync/appKey.ts` already answers "production or not"
-   (`PRODUCTION_HOSTS = ['air-ltd.github.io']`). Reuse that rather than inventing a second
-   build-flag notion, which is how two answers end up disagreeing. Worth doing before
-   Phase 5, which adds a reports view you will want to screenshot without mistaking for prod.
+40. [x] the title says "dev" on a non-production origin — **done.** Marked as a small badge
+   beside the name rather than as part of it: "Time Tracker DEV" reads like a fork, where a
+   quiet stamp says the same app on another origin. It reads `environmentForHost`, the same
+   function that picks the Dropbox app, so the badge and the sync target cannot disagree —
+   the failure that matters, since a dev build writing to production Dropbox is the dangerous
+   one and a badge claiming otherwise is worse than no badge.
 41. [x] **Clients and projects are not deletable; archiving replaces it.** **Done.** Spec
    (0005 X1–X7), storage, settings, timer card, entry form and tests. This supersedes item
    36 and was a product change rather than a bug fix.
@@ -244,6 +245,12 @@ Numbered, not bulleted. Ordered roughly by when they came up.
      attributes by name. The consequence is that archiving is a one-way door for a *client's
      name* even though the record itself is restorable. Asserted side by side so the
      asymmetry is deliberate rather than accidental.
+42. [ ] remove the "running" tag from client with running timer - just keep the timers ticking.
+43. [ ] About page needs work.
+44. [ ] settings page needs work.
+45. [ ] what shows by default needs some work.
+46. [ ] all settings should remain across the page in dropbox storage.
+47. [ ] when should dropbox connect auto-run?
 
 # Where the branches are
 

@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { SyncProvider } from '../features/sync/SyncProvider'
+import { environmentForHost } from '../sync/appKey'
 import { SyncIndicator, SyncIndicatorView } from '../features/sync/SyncIndicator'
 import { installTestDb } from '../test/harness'
 
@@ -38,6 +39,35 @@ function indicatorWith(state: Partial<Parameters<typeof SyncIndicatorView>[0]>) 
     </ul>
   )
 }
+
+/**
+ * The dev badge (SPECS/todo.md item 40).
+ *
+ * Worth a test of its own because the marker and the sync target read the same function:
+ * if either ever grew its own notion of "production", the dangerous case is a build that
+ * says dev while writing to production Dropbox, and a wrong badge is worse than none.
+ */
+describe('the dev badge (item 40)', () => {
+  it('marks a non-production origin', () => {
+    // jsdom serves on localhost, which `environmentForHost` treats as development.
+    render(<App />)
+    expect(screen.getByText('dev')).toBeInTheDocument()
+  })
+
+  it('reads the same answer as the Dropbox app selection', () => {
+    render(<App />)
+    const expected = environmentForHost(window.location.hostname) === 'development'
+    // One assertion about the relationship, rather than a second copy of the rule.
+    expect(screen.queryByText('dev') !== null).toBe(expected)
+  })
+
+  it('does not change the accessible name of the home link', () => {
+    // The badge sits inside the heading, so if it leaked into the name the existing
+    // "Time Tracker, home" queries would stop matching — which is the point of asserting.
+    render(<App />)
+    expect(screen.getByRole('link', { name: 'Time Tracker, home' })).toBeInTheDocument()
+  })
+})
 
 describe('the title link (items 11 and 15)', () => {
   it('points at the app’s own home, not the deployed host', () => {

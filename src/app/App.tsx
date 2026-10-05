@@ -20,6 +20,7 @@ import { HeaderMenu } from '../features/settings/HeaderMenu'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
 import { appHomeUrl } from '../sync/redirect'
+import { environmentForHost } from '../sync/appKey'
 import type { TimeEntry } from '../domain/entries/types'
 
 /**
@@ -75,6 +76,16 @@ export function App() {
   // about whether a timer is running at all, not about which entry: M4 has nothing to say
   // about a manual entry that duplicates the running one, only about there being one.
   const timerRunning = timer.running !== null
+
+  /*
+   * Whether this is the deployed app, for the title's dev badge (item 40).
+   *
+   * Read once from the same `environmentForHost` that picks the Dropbox app, so the badge
+   * and the sync target cannot disagree about which environment this is — the failure that
+   * matters, since a dev build pointed at production Dropbox would be the dangerous one and
+   * a badge that says otherwise would be worse than none.
+   */
+  const isProduction = environmentForHost(window.location.hostname) === 'production'
 
   // 0001 US2: stopping routes to the entry form, so classification happens while
   // the work is still fresh.
@@ -153,7 +164,22 @@ export function App() {
                 width="36"
                 height="36"
               />
-              <span>Time Tracker</span>
+              <span>
+                Time Tracker
+                {/*
+                  Non-production says so, in the title, where it cannot be missed
+                  (SPECS/todo.md item 40). It is a separate build flag in no place: the
+                  answer comes from `environmentForHost`, the same function that chooses
+                  which Dropbox app this origin talks to. Two answers to "is this production"
+                  is how one of them goes stale.
+                */}
+                {isProduction ? null : (
+                  <>
+                    {' '}
+                    <span className="env-badge">dev</span>
+                  </>
+                )}
+              </span>
             </a>
           </h1>
           <div className="app-header-controls">
