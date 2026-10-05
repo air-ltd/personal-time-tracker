@@ -1,7 +1,6 @@
 import { getDb } from './db'
 import { bumpRevision } from './events'
 import { newId } from '../domain/time/ids'
-import { MINUTE } from '../domain/time/duration'
 import { PALETTE, normaliseColour, suggestColour } from '../domain/taxonomy/colour'
 import {
   findByName,
@@ -12,16 +11,18 @@ import {
 import type { Client, Project, Tag } from '../domain/taxonomy/types'
 
 /**
- * Taxonomy storage (0005 P1–P2, A1–A5, T2–T4, X1–X6).
+ * Taxonomy storage (0005 P1–P2, A1–A5, T2–T4, X1–X7).
  *
- * Deletion never removes entries. A deleted project's entries are orphaned rather than
- * removed, and a deleted client's projects survive with `clientId` cleared, so the only
- * thing destroyed is the taxonomy label (0005 X1, X4).
+ * Projects and clients are not deletable at all (0005 X1): archiving sets a flag, and
+ * `deletedAt` stays on both types for schema stability with no code path writing it. The
+ * only tombstone this module writes is for a tag, and that tombstone is a row removal
+ * avoidance for two reasons — the entries that carried the tag must still resolve, and the
+ * deletion has to propagate to other devices, since a hard delete cannot be merged and the
+ * tag would reappear on the next pull (0012 M6).
  *
- * Deletion is a tombstone rather than a row removal, for two reasons: the entry data
- * that referenced it must be able to resolve, and the deletion has to propagate to other
- * devices — a hard delete cannot be merged, so a project would reappear on the next pull
- * (0012 M6).
+ * Consequence worth knowing before adding a repository function: with no tombstones for
+ * these two types, merge-by-id has nothing to honour for them, so archiving rides the
+ * ordinary last-write-wins path on `updatedAt`.
  */
 
 function db() {
@@ -470,147 +471,7 @@ export async function setArchived(
   bumpRevision()
 }
 
-/** What deleting a project would affect, for the confirmation (0005 X1, X3). */
-export interface DeleteImpact {
-  entryCount: number
-  billableEntryCount: number
-  billableMinutes: number
-}
-
-export async function projectDeleteImpact(projectId: string): Promise<DeleteImpact> {
-  const entries = await db()
-    .entries.filter((row) => row.projectId === projectId)
-    .toArray()
-  let billableEntryCount = 0
-  let billableMs = 0
-  for (const row of entries) {
-    if (row.deletedAt !== null) continue
-    if (!row.billable) continue
-    const start = Date.parse(row.start)
-    const end = row.end === null ? Date.now() : Date.parse(row.end)
-    if (Number.isNaN(start) || Number.isNaN(end)) continue
-    billableMs += end - start
-    billableEntryCount += 1
-  }
-  return {
-    entryCount: entries.filter((row) => row.deletedAt === null).length,
-    billableEntryCount,
-    billableMinutes: Math.round(billableMs / MINUTE),
-  }
-}
-
-/**
- * Delete a project: tombstone it and orphan its entries.
- *
- * Entries keep existing and lose only their `projectId`, which moves them into the
- * uncategorised bucket (0005 X1, 0003 F1). The project is tombstoned rather than
- * removed so the deletion syncs; a hard delete cannot be merged and the project would
- * return on the next pull.
- */
-export async function deleteProject(
-  id: string,
-  now: Date,
-): Promise<DeleteProjectReceipt | null> {
-  const receipt = await db().transaction('rw', db().entries, db().projects, async () => {
-    const project = await db().projects.get(id)
-    if (!project || project.deletedAt !== null) return null
-
-    const entries = await db()
-      .entries.filter((row) => row.projectId === id)
-      .toArray()
-    const orphanedEntryIds: string[] = []
-    for (const row of entries) {
-      // Already-deleted entries are left exactly as they are. Bumping `updatedAt` on a
-      // tombstone makes it look newer than it is, so it would win a merge tie against a
-      // device that had genuinely restored the entry — and a deleted entry's projectId
-      // is irrelevant either way, since it appears in no report.
-      if (row.deletedAt !== null) continue
-      // `updatedAt` moves so the orphaning wins the merge against a device that still
-      // has this entry pointing at the project.
-      await db().entries.put({ ...row, projectId: null, updatedAt: iso(now) })
-      orphanedEntryIds.push(row.id)
-    }
-    await db().projects.put({ ...project, deletedAt: iso(now), updatedAt: iso(now) })
-    return { project, orphanedEntryIds }
-  })
-  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
-  // that reads while the write transaction is still open would see pre-delete data.
-  bumpRevision()
-  return receipt
-}
-
-/** What undoing a project deletion needs (0005 X5). */
-export interface DeleteProjectReceipt {
-  project: Project
-  /**
-   * Entries whose `projectId` was cleared.
-   *
-   * Kept because the deletion is destructive to the *link* even though it is not
-   * destructive to the entry: once `projectId` is null there is nothing left in storage
-   * that says which entries used to belong to this project. Undo therefore has to be
-   * handed the list, which makes the undo window a real limit — an entry created after
-   * the deletion is never adopted, and one since given another project is left alone.
-   */
-  orphanedEntryIds: string[]
-}
-
 export type UndoOutcome = { ok: true } | { ok: false; reason: string }
-
-/**
- * Undo a project deletion (0005 X5).
- *
- * Reports failure rather than throwing, because the user gets an undo bar with a
- * countdown: a thrown error would be invisible. The one case that can legitimately fail
- * is a name collision — if the user deleted "Acme" and then created a new "Acme", the
- * restore would put two identical projects on screen. The entries stay orphaned in that
- * case, which is the lesser harm and is what the message says.
- */
-export async function undoDeleteProject(
-  receipt: DeleteProjectReceipt,
-  now: Date,
-): Promise<UndoOutcome> {
-  const { project, orphanedEntryIds } = receipt
-  const outcome: UndoOutcome = await db().transaction(
-    'rw',
-    db().entries,
-    db().projects,
-    async () => {
-      const live = await db().projects.get(project.id)
-      if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
-
-      const conflict = await nameConflictExcluding(
-        'project',
-        project.name,
-        project.id,
-        true,
-        project.clientId,
-      )
-      if (conflict) {
-        return {
-          ok: false,
-          reason: `Cannot restore "${project.name}": a project with that name already exists. The entries are still intact and uncategorised.`,
-        }
-      }
-
-      await db().projects.put({ ...live, deletedAt: null, updatedAt: iso(now) })
-      for (const entryId of orphanedEntryIds) {
-        const row = await db().entries.get(entryId)
-        // Skip anything deleted or already pointed elsewhere: within the undo window a
-        // device may have assigned it deliberately, and overwriting that would lose the
-        // newer choice.
-        if (!row || row.deletedAt !== null || row.projectId !== null) continue
-        await db().entries.put({ ...row, projectId: project.id, updatedAt: iso(now) })
-      }
-      return { ok: true }
-    },
-  )
-
-  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
-  // reading while the write is still open would read pre-undo data. Only on success —
-  // a refused restore wrote nothing, so there is nothing to re-read.
-  if (outcome.ok) bumpRevision()
-  return outcome
-}
 
 /**
  * Whether a live record other than `exceptId` already holds this name.
@@ -631,102 +492,6 @@ async function nameConflictExcluding(
   } catch {
     return true
   }
-}
-
-/**
- * Delete a client: tombstone it and clear `clientId` on its projects.
- *
- * Its projects and their entries are untouched; the entries simply move to the
- * client-less bucket, which is what makes the report totals reconcile (0005 X4, R3).
- */
-export async function deleteClient(id: string, now: Date): Promise<DeleteClientReceipt | null> {
-  const receipt = await db().transaction('rw', db().clients, db().projects, async () => {
-    const client = await db().clients.get(id)
-    if (!client || client.deletedAt !== null) return null
-
-    const projects = await db()
-      .projects.filter((row) => row.clientId === id)
-      .toArray()
-    for (const project of projects) {
-      await db().projects.put({ ...project, clientId: null, updatedAt: iso(now) })
-    }
-    await db().clients.put({ ...client, deletedAt: iso(now), updatedAt: iso(now) })
-    return { client, unlinkedProjectIds: projects.map((project) => project.id) }
-  })
-  bumpRevision()
-  return receipt
-}
-
-/**
- * What undoing a client deletion needs (0005 X5, X4).
- *
- * Ids alone. The obvious extra — the project's name, to check it has not been renamed
- * since — buys nothing: undo only ever writes `clientId`, so relinking cannot revert a
- * rename, and refusing to relink a project because it was renamed would leave the user
- * with a restored client whose one project had silently not rejoined.
- */
-export interface DeleteClientReceipt {
-  client: Client
-  unlinkedProjectIds: string[]
-}
-
-export async function undoDeleteClient(
-  receipt: DeleteClientReceipt,
-  now: Date,
-): Promise<UndoOutcome> {
-  const { client, unlinkedProjectIds } = receipt
-  const outcome: UndoOutcome = await db().transaction(
-    'rw',
-    db().clients,
-    db().projects,
-    async () => {
-      const live = await db().clients.get(client.id)
-      if (!live || live.deletedAt === null) return { ok: false, reason: 'Already restored.' }
-
-      const conflict = await nameConflictExcluding('client', client.name, client.id, false)
-      if (conflict) {
-        return {
-          ok: false,
-          reason: `Cannot restore "${client.name}": a client with that name already exists. Its projects are intact and no longer belong to a client.`,
-        }
-      }
-
-      await db().clients.put({ ...live, deletedAt: null, updatedAt: iso(now) })
-      for (const id of unlinkedProjectIds) {
-        const project = await db().projects.get(id)
-        // Only adopt projects that are still live and still client-less, for the same
-        // reason entries are not overwritten above. A rename in between is untouched:
-        // only `clientId` is written, so the newer name survives the restore.
-        if (!project || project.deletedAt !== null || project.clientId !== null) continue
-        await db().projects.put({ ...project, clientId: client.id, updatedAt: iso(now) })
-      }
-      return { ok: true }
-    },
-  )
-
-  // After the transaction, not inside it: the bump notifies subscribers, and a subscriber
-  // reading while the write is still open would read pre-undo data. Only on success —
-  // a refused restore wrote nothing, so there is nothing to re-read.
-  if (outcome.ok) bumpRevision()
-  return outcome
-}
-
-/**
- * What deleting a client would affect (0005 X4).
- *
- * Counts projects rather than entries, because that is what the deletion changes: the
- * entries survive and simply move to the client-less bucket, which is what keeps report
- * totals reconciling.
- */
-export interface ClientDeleteImpact {
-  projectCount: number
-}
-
-export async function clientDeleteImpact(clientId: string): Promise<ClientDeleteImpact> {
-  const projects = await db()
-    .projects.filter((row) => row.clientId === clientId)
-    .toArray()
-  return { projectCount: projects.filter((row) => row.deletedAt === null).length }
 }
 
 /**
@@ -791,7 +556,7 @@ export async function deleteTag(id: string, now: Date): Promise<DeleteTagReceipt
   return receipt
 }
 
-/** What undoing a tag deletion needs (0005 X5). */
+/** What undoing a tag deletion needs (0005 X7 — entries and tag deletion only). */
 export interface DeleteTagReceipt {
   tag: Tag
   untaggedEntryIds: string[]

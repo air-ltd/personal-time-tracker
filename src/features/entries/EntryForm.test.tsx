@@ -8,8 +8,8 @@ import {
   createClient,
   createOrFindTag,
   createProject,
-  deleteClient,
   listTags,
+  setArchived,
 } from '../../storage/taxonomyRepo'
 import { getEntry, listEntries, putEntry } from '../../storage/entriesRepo'
 import type { TimeEntry } from '../../domain/entries/types'
@@ -85,19 +85,21 @@ describe('project picker', () => {
     })
   })
 
-  it('still offers a project whose client has been deleted (0005 X4)', async () => {
-    // X4 keeps the projects and drops the client, so an entry filed under one of them has
-    // to stay editable afterwards.
+  it('still offers a project whose client has been archived (0005 X5)', async () => {
+    // A client cannot be deleted (0005 X1), but archiving it must not make an entry
+    // impossible to re-save: the project is still the entry's own value, and dropping it
+    // from the picker would leave the `<select>` holding a value with no option.
     const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
     const project = await createProject({ name: 'Website', clientId: client.id, now: T0 })
-    await deleteClient(client.id, T0)
+    await setArchived('client', client.id, true, T0)
 
     const stored = await putEntry(entry({ projectId: project.id, end: new Date(END) }))
     render(<EntryForm now={new Date(END)} entry={stored} />)
 
-    // The orphaned project is selectable rather than silently dropped from the picker,
-    // which would make the entry impossible to re-save.
     expect(await screen.findByRole('option', { name: 'Website' })).toBeInTheDocument()
+    // And the client is named as its group, so the entry is not mislabelled as having no
+    // client — which would misreport where the time went.
+    expect(screen.getByRole('group', { name: 'Acme Ltd' })).toBeInTheDocument()
   })
 })
 

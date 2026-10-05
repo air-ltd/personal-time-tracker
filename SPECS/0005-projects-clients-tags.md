@@ -85,12 +85,10 @@ those entries to the archived client.
 
 ## Deleting projects and clients
 
-> **Accepted change, NOT YET IMPLEMENTED.** Projects and clients are to stop being
-> deletable; archiving replaces it. The rules below are the agreed replacement and the code
-> does not yet follow them — `deleteProject` and `deleteClient` are still reachable from
-> settings. Tracked as `SPECS/todo.md` item 41, which carries the implementation plan.
-> Until that is done, treat A1–A5 as the archiving rules that *are* built and X1–X7 below as
-> the intent.
+**Implemented.** Projects and clients are not deletable; archiving replaces it, and X1–X7 are
+the rules the code now follows. `deleteProject`, `deleteClient` and their undo counterparts
+are gone from storage, not merely unreferenced from the UI — a rule stated this way is only
+worth having if the operation is genuinely absent.
 
 **X1** — Projects and clients MUST NOT be deletable. There MUST be no delete action, no
 repository operation that tombstones one, and no route to reach either.

@@ -632,70 +632,79 @@ async function main() {
     )
     check('a billable entry is marked', (await page.getByTestId(/^billable-/).count()) === 1)
 
-    // X1/X3: deleting a project states the impact and demands more where money is
-    // involved. Billable was ticked, so this is the two-step path.
+    // 0005 X1: there is no delete to confirm. Asserted as an absence in a real browser
+    // because the failure this replaces was silent — a Delete button wired to something
+    // that did nothing would have satisfied every other check here.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
     const projectRow = page.locator('.taxonomy-row', { hasText: 'Website' }).first()
-    await projectRow.getByRole('button', { name: 'Delete' }).click()
-    await page.getByTestId('delete-impact').waitFor()
-    const impact = await page.getByTestId('delete-impact').innerText()
     check(
-      'delete states the entry count before confirming',
-      /1 entry uses/.test(impact),
-      impact,
+      'a project row offers Archive and no Delete (0005 X1)',
+      (await projectRow.getByRole('button', { name: 'Delete' }).count()) === 0 &&
+        (await projectRow.getByRole('button', { name: 'Archive' }).count()) === 1,
     )
-    check('delete warns about billable time', /is billable/.test(impact), impact)
     check(
-      'the first confirmation does not delete anything',
-      (await page.locator('.taxonomy-row', { hasText: 'Website' }).count()) === 1,
-    )
-
-    // Cancelled, so the delete below starts from a clean slate; the committed path is
-    // driven once, further down, where the undo bar matters.
-    await page
-      .getByTestId('delete-confirm-project')
-      .getByRole('button', { name: 'Cancel' })
-      .click()
-    check(
-      'cancelling leaves the project alone',
-      (await page.locator('.taxonomy-row', { hasText: 'Website' }).count()) === 1,
+      'a client row offers Archive and no Delete (0005 X1)',
+      (await page
+        .locator('.taxonomy-row', { hasText: 'Acme Ltd' })
+        .first()
+        .getByRole('button', { name: 'Delete' })
+        .count()) === 0,
     )
 
-    // X5: undo puts the project and its references back.
-    // Undone here without navigating first, because the undo window belongs to the
-    // settings view — leaving the page closes it. See SPECS/todo.md.
-    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    const deleteProject = async () => {
-      const row = page.locator('.taxonomy-row', { hasText: 'Website' }).first()
-      await row.getByRole('button', { name: 'Delete' }).click()
-      await page.getByTestId('delete-impact').waitFor()
-      await page.getByTestId('delete-confirm-accept').click()
-      await page.getByTestId('delete-confirm-strong').click()
-    }
-
-    await deleteProject()
-    await page.getByTestId('undo-bar').waitFor()
-    await page.getByTestId('undo-bar').getByRole('button', { name: 'Undo' }).click()
-    await page.locator('.taxonomy-row', { hasText: 'Website' }).first().waitFor()
-    check('undo restores the deleted project', true)
-
-    // And again, this time left deleted, to check the orphaned entries (X1/X2).
-    await deleteProject()
-    await page.getByTestId('undo-bar').waitFor()
+    // X3: archiving asks for nothing, because it moves no entry.
+    await projectRow.getByRole('button', { name: 'Archive' }).click()
     await page.locator('.taxonomy-row', { hasText: 'Website' }).first().waitFor({
       state: 'detached',
     })
-
-    await page.goto(URL, { waitUntil: 'networkidle' })
-    await page.getByText('Uncategorised').first().waitFor()
     check(
-      'deleting a project keeps its entries',
+      'archiving a project confirms nothing',
+      (await page.getByTestId('delete-confirm-project').count()) === 0,
+    )
+    check(
+      'the archived project is hidden from the list',
+      (await page.locator('.taxonomy-row', { hasText: 'Website' }).count()) === 0,
+    )
+
+    // X5: the entry filed under it survives and still names the project.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.getByText('Website').first().waitFor()
+    check(
+      'archiving a project keeps its entries (0005 X5)',
       (await page.getByTestId('empty-state').count()) === 0,
     )
     check(
-      'the orphaned entry lost only its project, not its tags',
-      (await page.getByTestId(/^tags-/).count()) >= 1,
+      'the entry still names the archived project, marked as archived (0005 X5)',
+      (await page.locator('.badge-archived').count()) >= 1,
     )
+
+    // X4: archived records are not offered as choices anywhere.
+    check(
+      'the archived project is not offered on the timer card',
+      (await page.getByRole('button', { name: /Start a timer for/ }).count()) === 0 ||
+        (await page.getByRole('button', { name: 'Start a timer for Acme Ltd' }).count()) === 1,
+    )
+    await page.goto(`${URL}#/entries/new`, { waitUntil: 'networkidle' })
+    const projectOptions = await page.getByLabel('Project').locator('option').allInnerTexts()
+    check(
+      'the archived project is not offered in the entry form (0005 X4)',
+      !projectOptions.some((text) => text.startsWith('Website')),
+      projectOptions.join(' | '),
+    )
+
+    // X2/A5: restore brings it back, and only from the archived view.
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    await page.getByLabel('Show archived projects').check()
+    // Left checked below only for the duration of this block — the archive round trip later
+    // on archives a project and expects it to leave the list, which it will not do while
+    // archived records are being shown.
+    const archivedRow = page.locator('.taxonomy-row', { hasText: 'Website' }).first()
+    await archivedRow.waitFor()
+    await archivedRow.getByRole('button', { name: 'Restore' }).click()
+    check(
+      'restoring returns the project to the list',
+      (await page.locator('.taxonomy-row', { hasText: 'Website' }).count()) === 1,
+    )
+    await page.getByLabel('Show archived projects').uncheck()
 
     // A2: archived records stay reachable, which is only observable in a browser because
     // it is a checkbox controlling a filtered list.
@@ -736,10 +745,11 @@ async function main() {
     )
 
     // A settings page must fit a phone too, and the delete confirmation is the widest
-    // thing on it.
+    // thing on it. Opened from a *tag* row: projects and clients have no Delete any more
+    // (0005 X1), and tags keep theirs, so this is the only confirmation left to measure.
     await page.setViewportSize({ width: 320, height: 640 })
     await page
-      .locator('.taxonomy-row', { hasText: 'Admin' })
+      .locator('.taxonomy-row', { hasText: 'research' })
       .first()
       .getByRole('button', { name: 'Delete' })
       .click()
@@ -768,6 +778,10 @@ async function main() {
 
     await page.goto(URL, { waitUntil: 'networkidle' })
     const rows = page.locator('.timer-client-row')
+    // Waited on, not counted straight away. The count used to run as soon as "Other Ltd"
+    // appeared in settings, which says nothing about the home page having finished loading
+    // both clients — so it could read 1 on a slow load and pass on a fast one.
+    await rows.nth(1).waitFor()
     check(
       'clients are listed one per line',
       (await rows.count()) >= 2,

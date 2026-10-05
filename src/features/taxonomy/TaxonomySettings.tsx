@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import { useTaxonomy } from './useTaxonomy'
-import { useTaxonomyDeletes } from './useTaxonomyDeletes'
+import { useTagDeletes } from './useTagDeletes'
 import { CurrencySelect } from './CurrencySelect'
 import { ClientForm } from './ClientForm'
 import { ProjectForm } from './ProjectForm'
@@ -71,11 +71,11 @@ export function TaxonomySettings({ now }: { now: Date }) {
 
   // --- delete flow -------------------------------------------------------------
   //
-  // Extracted to a hook: it was ~140 lines of state machine with no JSX in it, wedged
-  // between the component's own state and its render, and it needed state declared after
-  // the code that set it.
+  // Extracted to a hook, and now tags only. Archiving replaced deleting for projects and
+  // clients (0005 X1), and archiving needs none of this: it sets a flag, moves no entry, and
+  // reverses with the restore the row already offers.
   const clearError = useCallback(() => setError(null), [])
-  const deletes = useTaxonomyDeletes({ now, report, clearError })
+  const tagDeletes = useTagDeletes({ now, report, clearError })
 
   if (loading) return <p className="hint">Loading settings…</p>
 
@@ -125,7 +125,7 @@ export function TaxonomySettings({ now }: { now: Date }) {
         allClients={clients}
         showArchived={showArchivedClients}
         onToggleArchived={setShowArchivedClients}
-        onDelete={(client) => deletes.onDelete('client', client)}
+
         now={now}
         report={report}
       />
@@ -137,20 +137,15 @@ export function TaxonomySettings({ now }: { now: Date }) {
         defaultCurrency={defaultCurrency}
         showArchived={showArchivedProjects}
         onToggleArchived={setShowArchivedProjects}
-        onDelete={(project) => deletes.onDelete('project', project)}
+
         now={now}
         report={report}
       />
 
-      <TagSection
-        tags={tags}
-        onDelete={(tag) => deletes.onDelete('tag', tag)}
-        now={now}
-        report={report}
-      />
+      <TagSection tags={tags} onDelete={tagDeletes.onDelete} now={now} report={report} />
 
-      {deletes.confirmation}
-      {deletes.undoBar}
+      {tagDeletes.confirmation}
+      {tagDeletes.undoBar}
     </section>
   )
 }
@@ -165,7 +160,6 @@ function ClientSection({
   allClients,
   showArchived,
   onToggleArchived,
-  onDelete,
   now,
   report,
 }: SectionProps & {
@@ -173,7 +167,6 @@ function ClientSection({
   allClients: Client[]
   showArchived: boolean
   onToggleArchived: (value: boolean) => void
-  onDelete: (client: Client) => void
 }) {
   const [creating, setCreating] = useState(false)
 
@@ -206,12 +199,7 @@ function ClientSection({
             key={client.id}
             className={client.archived ? 'taxonomy-row archived' : 'taxonomy-row'}
           >
-            <ClientRow
-              client={client}
-              now={now}
-              report={report}
-              onDelete={() => onDelete(client)}
-            />
+            <ClientRow client={client} now={now} report={report} />
           </li>
         ))}
       </ul>
@@ -231,12 +219,10 @@ function ClientRow({
   client,
   now,
   report,
-  onDelete,
 }: {
   client: Client
   now: Date
   report: (problem: unknown) => void
-  onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
 
@@ -283,9 +269,6 @@ function ClientRow({
         >
           {client.archived ? 'Restore' : 'Archive'}
         </button>
-        <button type="button" className="button button-danger" onClick={onDelete}>
-          Delete
-        </button>
       </span>
     </>
   )
@@ -298,7 +281,6 @@ function ProjectSection({
   defaultCurrency,
   showArchived,
   onToggleArchived,
-  onDelete,
   now,
   report,
 }: SectionProps & {
@@ -308,7 +290,6 @@ function ProjectSection({
   defaultCurrency: string | null
   showArchived: boolean
   onToggleArchived: (value: boolean) => void
-  onDelete: (project: Project) => void
 }) {
   const [creating, setCreating] = useState(false)
   /** Colours already in use, so a new project opens on a visibly distinct one (0005 P4). */
@@ -367,7 +348,6 @@ function ProjectSection({
                   defaultCurrency={defaultCurrency}
                   now={now}
                   report={report}
-                  onDelete={() => onDelete(project)}
                 />
               </li>
             )
@@ -392,7 +372,6 @@ function ProjectRow({
   defaultCurrency,
   now,
   report,
-  onDelete,
 }: {
   project: Project
   clientName: string | null
@@ -400,7 +379,6 @@ function ProjectRow({
   defaultCurrency: string | null
   now: Date
   report: (problem: unknown) => void
-  onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
 
@@ -468,9 +446,6 @@ function ProjectRow({
           }}
         >
           {project.archived ? 'Restore' : 'Archive'}
-        </button>
-        <button type="button" className="button button-danger" onClick={onDelete}>
-          Delete
         </button>
       </span>
     </>

@@ -8,6 +8,7 @@ import {
   createClientWithDefaultProject,
   createProject,
   listProjects,
+  setArchived,
 } from '../../storage/taxonomyRepo'
 import { createManualEntry, softDeleteEntry } from '../../storage/entriesRepo'
 import type { TimerState } from './useTimer'
@@ -179,6 +180,68 @@ describe('layout (item 32)', () => {
  * The timer here is the harness, which does not actually run a cycle, so the running entry
  * is supplied directly rather than produced by pressing Start.
  */
+describe('archived clients (0005 X4, todo 37)', () => {
+  it('does not offer a timer for an archived client', async () => {
+    // `useTaxonomy` loads archived records on purpose and leaves filtering to each view, and
+    // TimerPanel was the one view that never filtered. Offering to start work against a
+    // client the user has finished with is how entries end up filed under a client they
+    // thought they had closed off.
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await createProject({ name: 'Work', clientId: client.id, now: T0 })
+    const timer = timerHarness()
+    renderPanel(timer)
+
+    await screen.findByRole('button', { name: 'Start a timer for Acme Ltd' })
+    await setArchived('client', client.id, true, T0)
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Start a timer for Acme Ltd' })).toBeNull(),
+    )
+  })
+
+  it('keeps a running client visible after it is archived', async () => {
+    // The exemption that makes the filter safe. Without it, archiving a client mid-timer
+    // made its row vanish and the timer reappear in the orphan row claiming it has no
+    // client — while it plainly did, and the user had just archived it themselves.
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    const project = await createProject({ name: 'Work', clientId: client.id, now: T0 })
+    const timer = timerHarness()
+    const onStopped = () => {}
+    const view = render(<TimerPanel timer={timer} onStopped={onStopped} now={NOW} />)
+
+    // Started by hand rather than by pressing Start, because the harness records what it
+    // was asked to start but never becomes running — and it is the running state the
+    // exemption keys on.
+    const started = new Date('2026-10-13T09:00:00.000Z')
+    timer.running = {
+      id: 'running-1',
+      projectId: project.id,
+      tagIds: [],
+      start: started.toISOString(),
+      end: null,
+      note: '',
+      billable: false,
+      rateOverrideMinor: null,
+      source: 'timer',
+      createdAt: started.toISOString(),
+      updatedAt: started.toISOString(),
+      deletedAt: null,
+    }
+    view.rerender(<TimerPanel timer={timer} onStopped={onStopped} now={NOW} />)
+
+    await screen.findByRole('button', { name: 'Stop the timer for Acme Ltd' })
+
+    await setArchived('client', client.id, true, T0)
+
+    // Still there, still showing Stop — not orphaned, and not offering a new Start.
+    expect(
+      await screen.findByRole('button', { name: 'Stop the timer for Acme Ltd' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByTestId('timer-orphan')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Start a timer for Acme Ltd' })).toBeNull()
+  })
+})
+
 describe('stopping a timer', () => {
   it('ignores a second press while the first stop is still writing', async () => {
     // A `stop` that has not resolved yet is the whole point: two clicks in one render pass

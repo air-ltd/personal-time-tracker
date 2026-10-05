@@ -286,6 +286,25 @@ function ClientList({
     return projectToClient.get(projectId) ?? null
   }, [running, projectToClient])
 
+  /*
+   * Archived clients are not offered a timer (0005 X4).
+   *
+   * `useTaxonomy` deliberately loads archived records and leaves filtering to the view, and
+   * this was the view that never filtered. Offering to start work against a client the user
+   * has finished with is how entries end up filed under a client they thought they had
+   * closed off.
+   *
+   * The running timer's own client is exempt. Without that, archiving a client while one of
+   * its timers ran made the row vanish from under the user and the timer reappear in the
+   * orphan row saying it had no client — while it plainly did, and the user had just
+   * archived it themselves. The exemption covers that one client and only while a timer runs
+   * against it, so it cannot become a way to start new timers for archived clients.
+   */
+  const visibleClients = useMemo(
+    () => clients.filter((client) => !client.archived || client.id === activeClientId),
+    [clients, activeClientId],
+  )
+
   async function handleStop(): Promise<void> {
     // Two clicks in one render pass both reach here, and two `stopTimer` calls race: the
     // second reads an entry the first has already ended. The button is also the only thing
@@ -320,7 +339,7 @@ function ClientList({
 
   return (
     <div className="timer-clients">
-      {clients.length === 0 ? (
+      {visibleClients.length === 0 ? (
         <>
           <p className="hint">
             Add a client and its button will start a timer against that client automatically.
@@ -338,7 +357,7 @@ function ClientList({
         </>
       ) : (
         <ul className="timer-client-list">
-          {clients.map((client) => {
+          {visibleClients.map((client) => {
             const projectId = defaultProjects?.get(client.id) ?? null
             const active = running !== null && client.id === activeClientId
             return (

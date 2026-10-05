@@ -119,6 +119,20 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
   sync, the currency resolution chain, the empty currency selection and the running-entry
   edit — making it 18/18.
 
+### Changed
+
+- **Clients and projects can no longer be deleted — they are archived instead.** Retiring a
+  project is usually not a rare destructive act; it is a project that has finished. Offering
+  both "archive" and "delete" meant the safe option got used less than it should have, because
+  the destructive one looked like the official answer. Archiving changes nothing else: entries
+  keep their project, projects keep their client, and nothing is removed. It asks for no
+  confirmation, because there is nothing to warn about any more.
+- An archived client or project is no longer offered as a choice — not on the timer card, not
+  in the project picker, not as a client filter. An entry already filed under one still names
+  it, marked archived, so historic work is not made to look uncategorised.
+- Tags keep **Delete**, because deleting a tag moves entries (they lose the tag) rather than
+  hiding one, so the affected count and the undo are still warranted.
+
 ### Fixed
 
 - **A tag typed and then saved was silently lost.** Pressing Save moved focus off the tag

@@ -33,7 +33,6 @@ import { FALLBACK_CURRENCY } from '../../domain/taxonomy/money'
  */
 
 const T0 = new Date('2026-10-13T09:00:00.000Z')
-const LATER = new Date('2026-10-13T18:00:00.000Z')
 
 let user: UserEvent
 
@@ -238,177 +237,87 @@ describe('creating records (0005 P1, P2, P7)', () => {
   })
 })
 
-describe('deleting a project (0005 X1–X3, 0003 F3)', () => {
-  async function projectWithEntries(count: number, billable = false) {
-    const project = await createProject({ name: 'Acme', now: T0 })
-    const ids: string[] = []
-    for (let i = 0; i < count; i += 1) {
-      const stored = await putEntry(
-        entry({
-          projectId: project.id,
-          billable,
-          start: new Date(`2026-10-13T0${i}:00:00.000Z`),
-          end: new Date(`2026-10-13T0${i}:30:00.000Z`),
-        }),
-      )
-      ids.push(stored.id)
-    }
-    return { project, ids }
-  }
-
-  it('states the affected entry count before confirming', async () => {
-    // 0005 X1: the count has to be visible before the user commits, not after.
-    await projectWithEntries(3)
+/**
+ * Clients and projects are not deletable (0005 X1, X2, X3).
+ *
+ * The whole point of the change, so it is asserted as an absence: there is no Delete button
+ * on either row, and archiving asks for no confirmation. Both halves matter — a delete
+ * hiding behind a shortcut is still a delete, and an archive that prompts teaches the user
+ * to dismiss prompts, which is what X3 forbids.
+ */
+describe('no delete, only archive (0005 X1–X3)', () => {
+  it('offers no Delete on a client row', async () => {
+    await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
     await show()
-    await user.click(rowButton('Acme', 'Delete'))
 
-    expect(await screen.findByTestId('delete-impact')).toHaveTextContent(
-      '3 entries use this project.',
-    )
+    expect(within(rowFor('Acme Ltd')).queryByRole('button', { name: 'Delete' })).toBeNull()
+    // And the way to retire one is still there.
+    expect(
+      within(rowFor('Acme Ltd')).getByRole('button', { name: 'Archive' }),
+    ).toBeInTheDocument()
   })
 
-  it('agrees in number when exactly one entry is affected', async () => {
-    // "1 entry use this project" is the kind of thing that ships and reads as broken.
-    await projectWithEntries(1)
+  it('offers no Delete on a project row', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await createProject({ name: 'Acme', clientId: client.id, now: T0 })
     await show()
-    await user.click(rowButton('Acme', 'Delete'))
 
-    expect(await screen.findByTestId('delete-impact')).toHaveTextContent(
-      '1 entry uses this project.',
-    )
+    expect(within(rowFor('Acme')).queryByRole('button', { name: 'Delete' })).toBeNull()
+    expect(within(rowFor('Acme')).getByRole('button', { name: 'Archive' })).toBeInTheDocument()
   })
 
-  it('says plainly that entries are kept and lose their project (0005 X2)', async () => {
-    await projectWithEntries(2)
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-
-    expect(await screen.findByTestId('delete-confirm-project')).toHaveTextContent(
-      /entries are kept.*lose their project/i,
-    )
-  })
-
-  it('asks for a second confirmation when billable time is involved (0005 X3)', async () => {
-    await projectWithEntries(2, true)
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-
-    expect(await screen.findByTestId('delete-impact')).toHaveTextContent(/2 are billable/)
-    // The first click must not have deleted anything yet.
-    expect(await listProjects()).toHaveLength(1)
-
-    await user.click(await screen.findByTestId('delete-confirm-accept'))
-    await screen.findByTestId('delete-confirm-strong')
-    expect(await listProjects()).toHaveLength(1)
-
-    await user.click(screen.getByTestId('delete-confirm-strong'))
-    await waitFor(async () => {
-      expect(await listProjects()).toHaveLength(0)
-    })
-  })
-
-  it('does not ask twice when nothing billable is involved', async () => {
-    await projectWithEntries(1, false)
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-
-    expect(await screen.findByTestId('delete-confirm-accept')).toBeInTheDocument()
-    expect(screen.queryByTestId('delete-confirm-strong')).toBeNull()
-
-    await user.click(screen.getByTestId('delete-confirm-accept'))
-    await waitFor(async () => {
-      expect(await listProjects()).toHaveLength(0)
-    })
-  })
-
-  it('leaves the entries intact and uncategorised', async () => {
-    // 0005 X1 / 0003 F3: the single most destructive thing the app does.
-    const { ids } = await projectWithEntries(2)
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-    await user.click(await screen.findByTestId('delete-confirm-accept'))
-
-    await waitFor(async () => {
-      expect(await listProjects()).toHaveLength(0)
-    })
-    for (const id of ids) {
-      const stored = await getEntry(id)
-      expect(stored?.projectId).toBeNull()
-      expect(stored?.deletedAt).toBeNull()
-    }
-  })
-
-  it('offers undo, which puts the project and its entries back', async () => {
-    const { project, ids } = await projectWithEntries(2)
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-    await user.click(await screen.findByTestId('delete-confirm-accept'))
-
-    expect(await screen.findByTestId('undo-bar')).toHaveTextContent(
-      /2 entries are now uncategorised/,
-    )
-
-    await user.click(
-      within(screen.getByTestId('undo-bar')).getByRole('button', { name: 'Undo' }),
-    )
-
-    await waitFor(async () => {
-      expect(await listProjects()).toMatchObject([{ name: 'Acme' }])
-    })
-    for (const id of ids) expect((await getEntry(id))?.projectId).toBe(project.id)
-    expect(screen.queryByTestId('undo-bar')).toBeNull()
-  })
-
-  it('reports an undo that cannot work instead of failing silently', async () => {
-    await projectWithEntries(0)
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-    await user.click(await screen.findByTestId('delete-confirm-accept'))
-    // Take the name in the meantime, which is the one way a restore can legitimately fail.
-    await createProject({ name: 'Acme', now: LATER })
-
-    const undoBar = await screen.findByTestId('undo-bar')
-    await user.click(within(undoBar).getByRole('button', { name: 'Undo' }))
-
-    expect(await screen.findByTestId('settings-error')).toHaveTextContent(/cannot restore/i)
-  })
-
-  it('cancels without deleting', async () => {
-    await createProject({ name: 'Acme', now: T0 })
-    await show()
-    await user.click(rowButton('Acme', 'Delete'))
-    await user.click(
-      within(await screen.findByTestId('delete-confirm-project')).getByRole('button', {
-        name: 'Cancel',
-      }),
-    )
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('delete-confirm-project')).toBeNull()
-    })
-    expect(await listProjects()).toHaveLength(1)
-  })
-})
-
-describe('deleting a client (0005 X4)', () => {
-  it('warns with the affected project count and keeps the projects', async () => {
+  it('archives a client without any confirmation, because nothing is at stake (X3)', async () => {
+    // No impact count, no second confirmation. Archiving moves no entry, so a prompt here
+    // would say nothing the user could act on.
     const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
     await createProject({ name: 'One', clientId: client.id, now: T0 })
-    await createProject({ name: 'Two', clientId: client.id, now: T0 })
     await show()
-    await user.click(rowButton('Acme Ltd', 'Delete'))
+
+    await user.click(rowButton('Acme Ltd', 'Archive'))
+
+    await waitFor(() => expect(screen.queryByText('Acme Ltd')).toBeNull())
+    expect(screen.queryByTestId('delete-confirm')).toBeNull()
+  })
+
+  it('round-trips: archive hides it, Restore brings it back (X2)', async () => {
+    await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await show()
+
+    await user.click(rowButton('Acme Ltd', 'Archive'))
+    await waitFor(() => expect(screen.queryByText('Acme Ltd')).toBeNull())
+    expect((await listClients({ includeArchived: true }))[0]?.archived).toBe(true)
+
+    // Only findable with the archived toggle, which is what makes it recoverable.
+    await user.click(screen.getByLabelText('Show archived clients'))
+    await waitFor(() => expect(screen.getByText('Acme Ltd')).toBeInTheDocument())
+
+    await user.click(rowButton('Acme Ltd', 'Restore'))
+
+    // Back to a live client: still on screen, because the toggle is still on, and now
+    // offering Archive again rather than Restore.
+    await waitFor(() =>
+      expect(
+        within(rowFor('Acme Ltd')).getByRole('button', { name: 'Archive' }),
+      ).toBeInTheDocument(),
+    )
+    expect((await listClients({ includeArchived: true }))[0]?.archived).toBe(false)
+
+    // And it survives being archived and restored without a reload in between.
+    expect(screen.getByText('Acme Ltd')).toBeInTheDocument()
+  })
+
+  it('still deletes a tag, because deleting a tag moves entries rather than hiding one', async () => {
+    // The distinction the whole change turns on. A tag has no archive state (0005 T5), and
+    // deleting it strips it from every entry carrying it, so it keeps its count and its undo.
+    const { tag } = await createOrFindTag({ name: 'research', now: T0 })
+    await putEntry(entry({ tagIds: [tag.id] }))
+    await show()
+
+    await user.click(rowButton('research', 'Delete'))
 
     expect(await screen.findByTestId('delete-impact')).toHaveTextContent(
-      '2 projects belong to this client.',
+      '1 entry carries this tag.',
     )
-    expect(screen.getByTestId('delete-confirm-client')).toHaveTextContent(/projects are kept/i)
-
-    await user.click(screen.getByTestId('delete-confirm-accept'))
-    await waitFor(async () => {
-      expect(await listClients()).toHaveLength(0)
-    })
-    // X4: projects survive with no client.
-    expect((await listProjects()).map((p) => p.clientId)).toEqual([null, null])
   })
 })
 

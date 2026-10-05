@@ -182,29 +182,55 @@ Do it again, but this time let the bar time out.
 
 ---
 
-## 11. Delete a project — and see what happens to your entries
+## 11. Archive a project - and check your entries survive
 
-Go to **Settings → Projects**, press **Edit** then **Delete** on your project. Confirm.
+Go to **Settings -> Projects** and press **Archive** on your project.
+
+Notice what did *not* happen: no confirmation, no count of affected entries, no second
+confirmation about billable time. Archiving moves nothing, so there is nothing to warn about.
 
 Now look at your entries on the home page.
 
 > **What to look for.** This is the most important check in this section. Your entries should
-> still be there, but with no project. Confirm you can still undo the delete. If your entries
-> disappeared with the project, that is a serious finding — stop and write it down.
+> still be there and should still name your project, marked as archived. If they went
+> uncategorised, or disappeared, that is a serious finding - stop and write it down.
 
-Do the same with a **client**. Note what happens to the projects that belonged to them.
+Archive the **client** too. Check that its projects were *not* archived along with it.
+
+> **What to look for.** Archiving a client must not cascade to its projects. A client can be
+> finished with while work under it continues.
 
 ---
 
-## 12. Archive, and find it again
+## 12. Check that archived things are gone from everywhere you choose
 
-Archive a project and a client from Settings. They should disappear from the list.
+With a project and a client archived, look for them in the places you would normally pick
+one:
 
-There is a **Show archived projects** and a **Show archived clients** checkbox. Tick one.
+- the **client list on the Timer card**
+- the **project dropdown on a new entry**
+- the **client filter** above the entries
+
+They should not be offered anywhere.
+
+> **What to look for.** Anything still offering an archived project or client is the whole
+> failure this change is meant to prevent - work filed under a client you thought you had
+> closed off. Check the new-entry form carefully.
+
+Then find them again: **Settings** has a **Show archived projects** and a **Show archived
+clients** checkbox. Tick one.
 
 > **What to look for.** Ticking "Show archived clients" should reveal **only** archived clients.
-> If archived projects appear too, two checkboxes are sharing one setting — write it down.
-> Can you still find and edit an archived thing? Can you un-archive it?
+> If archived projects appear too, two checkboxes are sharing one setting - write it down.
+> Can you still edit an archived thing? Is there a **Restore** that brings it back, and does
+> it?
+
+One more thing worth trying: archive a client that has a project, then edit an entry that is
+filed under that project and save it.
+
+> **What to look for.** The project must still be selected, and the client must still be named
+> as its group. If the entry came back uncategorised, the app silently re-filed work you had
+> already recorded - which is worse than showing nothing.
 
 ---
 

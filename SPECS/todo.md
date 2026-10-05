@@ -191,12 +191,11 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 36. [x] do not allow delete of only remaining project against a client — **closed by item 41.**
    Answered at the root rather than per-case: clients and projects are not deletable at all,
    so there is no path to deleting a client's last project.
-37. [ ] archived clients should not appear in the list for starting a timer
-   *Cause found, not fixed.* `useTaxonomy` deliberately loads archived records and leaves
-   filtering to each view, and `TimerPanel` was the one view that never filtered. See item
-   41, which does this and the rest of 0005 X4 together. One wrinkle worth keeping: a client
-   archived *while* one of its timers runs must stay visible, or the row vanishes and the
-   timer reappears in the orphan row claiming it has no client.
+37. [x] archived clients should not appear in the list for starting a timer — **done in item
+   41.** `useTaxonomy` deliberately loads archived records and leaves filtering to each view,
+   and `TimerPanel` was the one view that never filtered. The wrinkle held up: a client
+   archived *while* one of its timers runs stays visible, or the row vanishes and the timer
+   reappears in the orphan row claiming it has no client. Both halves have tests.
 38. [ ] add info on creating github issues for feedback to the about page.
 39. [ ] add a privacy policy to the about page. (we have no interest in your data).
 40. [ ] I'd like the title "Time Tracker" in non-prod version to indicate it's a dev environment rather than prod.
@@ -204,9 +203,9 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    (`PRODUCTION_HOSTS = ['air-ltd.github.io']`). Reuse that rather than inventing a second
    build-flag notion, which is how two answers end up disagreeing. Worth doing before
    Phase 5, which adds a reports view you will want to screenshot without mistaking for prod.
-41. [ ] **Clients and projects are not deletable; archiving replaces it.** Decided, spec
-   written (0005 X1–X7), **not implemented.** This supersedes item 36 and is a product
-   change rather than a bug fix.
+41. [x] **Clients and projects are not deletable; archiving replaces it.** **Done.** Spec
+   (0005 X1–X7), storage, settings, timer card, entry form and tests. This supersedes item
+   36 and was a product change rather than a bug fix.
 
    *Why:* retiring a project is usually not a rare destructive act — it is a project that has
    finished. Offering both "archive" and "delete" meant the safe button got used less than it
@@ -234,8 +233,17 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    of deleting, archived records absent from each picker, and the chosen-archived-record
    exemption.
 
-   *Partial work is parked, not lost:* `git stash@{0}` on `phase-5` holds the repository,
-   settings, entry-form and hook changes, minus their tests. `git stash pop` to resume.
+   *Two things worth knowing that came out of it:*
+
+   - **A tombstone can still arrive from 0.1.0**, which shipped with delete enabled. So the
+     guards against resurrecting a soft-deleted project stay, and their tests now write the
+     tombstone straight into the table — otherwise they would only exercise a state this
+     code can no longer produce, which is exactly the case needing cover.
+   - **Archiving a client does not free its name**, unlike a project. Deliberate and spec'd:
+     client names are globally unique regardless of archived state, because a report
+     attributes by name. The consequence is that archiving is a one-way door for a *client's
+     name* even though the record itself is restorable. Asserted side by side so the
+     asymmetry is deliberate rather than accidental.
 
 # Where the branches are
 
