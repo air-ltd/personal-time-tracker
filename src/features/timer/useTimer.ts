@@ -22,6 +22,8 @@ export interface TimerState {
    * decision, it is the one already made.
    */
   start: (projectId?: string | null) => void
+  /** Why the last start or discard failed, if one did. */
+  error: string | null
   /**
    * Resolves once the entry is written.
    *
@@ -45,13 +47,22 @@ const TICK_MS = 1000
 export function useTimer(): TimerState {
   const revision = useRevision()
   const [running, setRunning] = useState<TimeEntry | null>(null)
+  const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
     let cancelled = false
-    void findRunningEntry().then((entry) => {
-      if (!cancelled) setRunning(entry ?? null)
-    })
+    void findRunningEntry()
+      .then((entry) => {
+        if (!cancelled) setRunning(entry ?? null)
+      })
+      // Swallowed, and null is the right answer: with no readable database there is no
+      // running timer to show, and an unhandled rejection here fails a whole test file on
+      // an error nothing displays. `TimerPanel` renders the idle state, which is honest —
+      // the app cannot claim a timer is running when it cannot read one.
+      .catch(() => {
+        if (!cancelled) setRunning(null)
+      })
     return () => {
       cancelled = true
     }
@@ -75,7 +86,11 @@ export function useTimer(): TimerState {
   }, [runningId])
 
   const start = useCallback((projectId: string | null = null) => {
-    void startTimer(new Date(), projectId)
+    // Caught rather than left unhandled: a refused write would otherwise leave the button
+    // appearing to do nothing, and would fail a whole test file on an error nothing shows.
+    void startTimer(new Date(), projectId).catch((problem: unknown) => {
+      setError(problem instanceof Error ? problem.message : String(problem))
+    })
   }, [])
 
   const stop = useCallback(async () => {
@@ -85,12 +100,23 @@ export function useTimer(): TimerState {
 
   const discard = useCallback(() => {
     if (!running) return
-    void discardTimer(running.id, new Date())
+    void discardTimer(running.id, new Date()).catch((problem: unknown) => {
+      setError(problem instanceof Error ? problem.message : String(problem))
+    })
   }, [running])
 
   return {
     running,
     elapsedMs: running ? entryDurationMs(running, now) : null,
+    /**
+     * A start or discard that failed.
+     *
+     * Carried rather than swallowed so the panel can say so. A refused write that reports
+     * nothing leaves the button looking inert, which is the silent-failure shape this
+     * codebase keeps arguing against — the read failure above is different: there, "no
+     * timer" is the honest answer, and there is nothing the user pressed that did not work.
+     */
+    error,
     start,
     stop,
     discard,

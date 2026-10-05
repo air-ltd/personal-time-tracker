@@ -218,7 +218,7 @@ function EntryRow({
         {entry.note && <p className="entry-note">{entry.note}</p>}
       </div>
 
-      {/* Item 27: the pencil shares the entry's first line, pinned to its right edge. */}
+      {/* Item 27: the pencil shares the entry's first line, at its left-hand end. */}
       <a
         className="entry-edit"
         href={`#/entries/${entry.id}`}

@@ -50,11 +50,11 @@ export interface RouteMatch {
 }
 
 /**
- * Match a path against patterns containing `:param` segments, for example
- * `/entries/:id`.
+ * Percent-decode one path segment, tolerating a malformed escape.
  *
- * An empty match is `undefined` rather than a route with empty params, so a bare
- * `/entries/` cannot accidentally open an entry whose id is "".
+ * A hand-edited or truncated hash can carry `%` with nothing usable after it, and
+ * `decodeURIComponent` throws on that. Returning the raw segment is better than failing to
+ * match: the route then renders its own not-found view instead of the whole app breaking.
  */
 function decodeSegment(segment: string): string {
   try {
@@ -64,6 +64,13 @@ function decodeSegment(segment: string): string {
   }
 }
 
+/**
+ * Match a path against patterns containing `:param` segments, for example
+ * `/entries/:id`.
+ *
+ * An empty match is `undefined` rather than a route with empty params, so a bare
+ * `/entries/` cannot accidentally open an entry whose id is "".
+ */
 export function matchPath(path: string, routes: readonly Route[]): RouteMatch | undefined {
   const segments = path.split('/').filter(Boolean)
   for (const route of routes) {

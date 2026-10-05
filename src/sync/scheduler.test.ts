@@ -80,29 +80,69 @@ describe('a rejected token', () => {
     scheduler.stop()
   })
 
-  it('leaves the reason visible instead of silently recovering', async () => {
+  it('reports an unusable token rather than recovering silently', async () => {
     const { scheduler, statuses } = build(new SyncError('auth', 'token expired'))
 
     await scheduler.syncNow()
 
     const last = statuses.at(-1)
     expect(last?.state).toBe('error')
-    expect(last?.message).toBe('token expired')
+    expect(last?.message).toMatch(/expired|no longer valid/i)
+    expect(last?.message).toMatch(/safe in this browser/i)
     scheduler.stop()
   })
 
-  it('points a missing-scope failure at the app console, not at reauthorising', async () => {
-    // The token is discarded either way, so the Connect button reappearing is the
-    // user's only clue. A missing scope is a Dropbox *app* setting: reconnecting
-    // with the same app cannot fix it, so the message has to say where to look.
+  it('says the same thing for a missing scope, which is not fixable by reauthorising', async () => {
+    /*
+     * Previously this branched: a `scope-missing` failure got a message naming the Dropbox
+     * App Console and the redirect URI, and `auth` got the provider's own words.
+     *
+     * The branch was the problem as much as the wording. The scheduler cannot tell an
+     * expired token from a revoked one from a permissions change — all three arrive as
+     * "this token will not work" — so choosing between two confident explanations is a
+     * guess, and a guess that sends the user to the App Console when their real problem is
+     * an expired token costs them an afternoon. One honest message, and the connection
+     * state that tells them reconnecting is what to do.
+     */
     const { scheduler, statuses } = build(new SyncError('scope-missing', 'no file permissions'))
 
     await scheduler.syncNow()
 
     const last = statuses.at(-1)
     expect(last?.state).toBe('error')
-    expect(last?.message).toMatch(/App Console/)
-    expect(last?.message).toMatch(/redirect URI/)
+    expect(last?.message).toMatch(/expired|no longer valid/i)
+    scheduler.stop()
+  })
+
+  it('tells the connection owner, so the Connect button can come back', async () => {
+    /*
+     * The bug this covers: `signOut()` clears the token store and tells nobody, and
+     * `connection` is otherwise read once at mount. The scheduler could discard a token
+     * and the app would go on rendering a connected state — the Connect button that would
+     * fix it never appeared, so the user had no way back.
+     */
+    let told = 0
+    const built = build(new SyncError('auth', 'expired'))
+    const scheduler = new (built.scheduler.constructor as typeof SyncScheduler)({
+      provider: built.provider,
+      path: 'data.json',
+      now: () => new Date('2026-10-13T09:00:00.000Z'),
+      onStatus: () => undefined,
+      onAuthLost: () => {
+        told += 1
+      },
+      readLocal: () => Promise.resolve({ schemaVersion: 1, entities: { entries: [] } }),
+      writeLocal: () => Promise.resolve(),
+      readLastRev: () => Promise.resolve(null),
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+    })
+
+    await scheduler.syncNow()
+
+    expect(told).toBe(1)
+    expect(built.provider.signedOut).toBe(true)
     scheduler.stop()
   })
 
@@ -150,6 +190,75 @@ describe('serialising cycles', () => {
  *
  * Fake timers throughout, for the debounce window.
  */
+/**
+ * An expired token (0012 AU8).
+ *
+ * The chain this covers produced a green "Synced" indefinitely: the provider's
+ * `hasUsableToken()` is false for an expired token, `ensureAuth` throws, the engine's
+ * pre-flight catches it and returns `skipped` / `not-authenticated` rather than `failed`,
+ * and the scheduler mapped `skipped` to a `disabled` state that no view rendered — so the
+ * indicator's `failed` test (`state === 'error'`) was false and it showed success. The
+ * Connect button never reappeared either, because `connection` was read once at mount and
+ * `signOut()` tells nobody.
+ *
+ * Every one of those is a separate decision, so each is asserted here rather than inferred
+ * from the message.
+ */
+describe('a token that has expired', () => {
+  it('is reported as an error, not as success or as "disabled"', async () => {
+    const { scheduler, statuses, provider } = build(null)
+    // A provider that is connected but whose token will not work: the state the app is in
+    // after the stored token expires, and the only state in which the scheduler runs.
+    provider.ensureAuth = () => Promise.reject(new SyncError('auth', 'Not connected.'))
+
+    await scheduler.syncNow()
+
+    const last = statuses.at(-1)
+    expect(last?.state).toBe('error')
+    expect(last?.lastOutcome).toMatchObject({ status: 'skipped' })
+    scheduler.stop()
+  })
+
+  it('discards the token and says the connection was lost', async () => {
+    const { scheduler, provider } = build(null)
+    provider.ensureAuth = () => Promise.reject(new SyncError('auth', 'Not connected.'))
+    let authLost = 0
+    const schedulerWithHook = new (scheduler.constructor as typeof SyncScheduler)({
+      provider,
+      path: 'data.json',
+      onStatus: () => undefined,
+      onAuthLost: () => {
+        authLost += 1
+      },
+      readLocal: () => Promise.resolve({ schemaVersion: 1, entities: { entries: [] } }),
+      writeLocal: () => Promise.resolve(),
+      readLastRev: () => Promise.resolve(null),
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+    })
+
+    await schedulerWithHook.syncNow()
+
+    expect(provider.signedOut).toBe(true)
+    expect(authLost).toBe(1)
+    schedulerWithHook.stop()
+  })
+
+  it('never reports "up to date" for a cycle that did not run', async () => {
+    // The claim the green dot was making. A skipped cycle published nothing, so saying
+    // it was up to date is a statement about work the app never checked.
+    const { scheduler } = build(null)
+    const provider = scheduler['provider'] as unknown as { ensureAuth: () => Promise<void> }
+    provider.ensureAuth = () => Promise.reject(new SyncError('auth', 'Not connected.'))
+
+    const outcome = await scheduler.syncNow()
+
+    expect(outcome).toMatchObject({ status: 'skipped', reason: 'not-authenticated' })
+    scheduler.stop()
+  })
+})
+
 describe('triggers', () => {
   beforeEach(() => {
     vi.useFakeTimers()

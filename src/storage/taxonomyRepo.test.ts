@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { normaliseColour } from '../domain/taxonomy/colour'
 import { AppDb, setDbForTests } from './db'
 import { getRevision, resetRevisionForTests, subscribe } from './events'
 import {
@@ -84,9 +85,27 @@ describe('names', () => {
   })
 
   it('treats a decomposed accented name as equal to its composed form', () => {
-    // A name round-tripped through a backup can come back decomposed. Comparing raw
-    // strings would let "café" be created twice, looking identical in a report.
-    expect(nameKey('café')).toBe(nameKey('café'))
+    /*
+     * The two forms are built from code points rather than typed as literals, and that is
+     * the whole point of the test.
+     *
+     * This assertion used to read `expect(nameKey('café')).toBe(nameKey('café'))` — with
+     * both literals byte-identical (`636166c3a9`). It compared a string with itself and
+     * passed whether or not `nameKey` normalised anything, so the assertion guarding the
+     * codebase's most carefully argued Unicode decision proved nothing about it. It reads
+     * as though it tests normalisation because the letters look different on screen; they
+     * are not different in the source.
+     *
+     * A decomposed literal is also awkward to write on purpose: every editor, shell and
+     * normalisation pass will quietly recompose it, which is how the original slipped in
+     * and would slip in again. `String.fromCharCode` is unambiguous.
+     */
+    const composed = `caf${String.fromCharCode(0x00e9)}` // é as one code point
+    const decomposed = `cafe${String.fromCharCode(0x0301)}` // e + combining acute
+
+    // Guard the guard: if these ever compare equal, the assertion below is vacuous again.
+    expect(composed).not.toBe(decomposed)
+    expect(nameKey(decomposed)).toBe(nameKey(composed))
   })
 
   it('enforces the length limits from the spec', () => {
@@ -239,6 +258,59 @@ describe('creating', () => {
   })
 })
 
+/**
+ * Colour from outside (0011 T2, 0005 P3).
+ *
+ * The picker validates nothing on the way in — it reports every keystroke of its custom
+ * field — and a restored backup is untrusted input, so `colour` used to be stored exactly
+ * as given. The contract says `#rrggbb`; anything else reached four inline-style sinks and
+ * rendered as no swatch, with no error anywhere.
+ *
+ * Not an injection risk, and the tests are careful to say so: React assigns to
+ * `element.style.background`, so an invalid value is dropped by the CSSOM, and the CSP
+ * forbids inline script. It is a data-integrity gap, and the fix is degradation — a bad
+ * colour becomes a good one, never a blank.
+ */
+describe('a colour that is not a colour', () => {
+  it.each([
+    ['an empty string', ''],
+    ['half-typed hex', '#2e6'],
+    ['not hex at all', 'rebeccapurple'],
+    ['a url()', 'url(https://example.com/x.png)'],
+    ['an injection attempt', 'red; background-image: url(x)'],
+    ['whitespace', '   '],
+  ])(
+    'replaces %s with a usable palette colour rather than storing it',
+    async (_label, colour) => {
+      const project = await createProject({ name: 'Website', colour, now: T0 })
+
+      expect(project.colour).toMatch(/^#[0-9a-f]{6}$/)
+      // And it is a colour the app can actually render, not merely well-shaped.
+      expect(normaliseColour(project.colour)).toBe(project.colour)
+    },
+  )
+
+  it('keeps a valid colour exactly as asked', async () => {
+    const project = await createProject({ name: 'Website', colour: '#1F5FBF', now: T0 })
+
+    // Normalised to lower case, which is what the type documents.
+    expect(project.colour).toBe('#1f5fbf')
+  })
+
+  it('applies the same rule to clients and tags', async () => {
+    const client = await createClient({
+      name: 'Acme',
+      colour: 'nope',
+      currency: 'GBP',
+      now: T0,
+    })
+    const { tag } = await createOrFindTag({ name: 'research', colour: '#zzz', now: T0 })
+
+    expect(client.colour).toMatch(/^#[0-9a-f]{6}$/)
+    expect(tag.colour).toMatch(/^#[0-9a-f]{6}$/)
+  })
+})
+
 describe('inline tags (0005 T1, T2)', () => {
   it('creates a tag that does not exist', async () => {
     const { tag, created } = await createOrFindTag({ name: 'research', now: T0 })
@@ -258,6 +330,29 @@ describe('inline tags (0005 T1, T2)', () => {
   it('ignores surrounding space when matching', async () => {
     await createOrFindTag({ name: 'research', now: T0 })
     expect((await createOrFindTag({ name: '  research  ', now: T0 })).created).toBe(false)
+  })
+
+  it('converges on an existing tag whose name arrived decomposed', async () => {
+    /*
+     * The bug this covers was invisible to the suite and to review, because the only test
+     * of Unicode safety compared a literal with itself. `createOrFindTag` inlined
+     * `trim().toLowerCase()` and dropped the `.normalize('NFC')` that `nameKey` performs,
+     * so a decomposed "café" — which is what a name round-tripped through a backup, or
+     * typed on a platform with a different keyboard, arrives as — compared unequal to the
+     * composed tag already in the database and created a second one.
+     *
+     * Two tags that render identically and split a filter is the exact harm
+     * `names.ts` argues normalisation prevents.
+     */
+    const composed = `caf${String.fromCharCode(0x00e9)}`
+    const decomposed = `cafe${String.fromCharCode(0x0301)}`
+
+    const first = await createOrFindTag({ name: composed, now: T0 })
+    const second = await createOrFindTag({ name: decomposed, now: later })
+
+    expect(second.created).toBe(false)
+    expect(second.tag.id).toBe(first.tag.id)
+    expect(await listTags()).toHaveLength(1)
   })
 
   it('does not resurrect a deleted tag', async () => {

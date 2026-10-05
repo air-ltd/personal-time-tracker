@@ -55,17 +55,3 @@ export interface Tag {
   updatedAt: string
   deletedAt: string | null
 }
-
-/**
- * Anything the merge can carry.
- *
- * Declared rather than imported from `merge.ts` so this module stays free of
- * dependencies on sync, matching the layering the architecture requires (0002 A1).
- */
-/** Name and id fields a picker needs, without loading the whole record. */
-export interface TaxonomyOption {
-  id: string
-  name: string
-  colour: string
-  archived: boolean
-}

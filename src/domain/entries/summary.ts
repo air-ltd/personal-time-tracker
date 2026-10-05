@@ -38,7 +38,17 @@ export interface SummaryRow {
   clientName: string
   /** `#rrggbb`, or null where there is no client to take a colour from. */
   colour: string | null
-  totalMs: number
+  /**
+   * Null when any entry in this row has an unrecoverable duration.
+   *
+   * The same rule `groupEntriesByDay` applies, and it has to: this module's own rationale
+   * is that one function handles both axes so "a summary cannot disagree with the rows
+   * above it", which is 0006 RP2. Coercing an unknown duration to zero reported a confident
+   * total that silently omitted the entry while the list above showed `—` for the same
+   * day — the exact disagreement the design exists to prevent, and the one case where
+   * telling the user is right rather than merely cautious.
+   */
+  totalMs: number | null
   entryCount: number
   /** The projects involved, named so the line is meaningful without opening it. */
   projectNames: string[]
@@ -49,7 +59,8 @@ export interface SummaryBucket {
   dayKey: string | null
   label: string
   rows: SummaryRow[]
-  totalMs: number
+  /** Null when any row's total is null — see `SummaryRow.totalMs`. */
+  totalMs: number | null
 }
 
 const UNCATEGORISED = 'Uncategorised'
@@ -98,7 +109,7 @@ export function summariseEntries({
         dayKey: null,
         label: 'All entries',
         rows,
-        totalMs: rows.reduce((total, row) => total + row.totalMs, 0),
+        totalMs: totalOf(rows),
       },
     ]
   }
@@ -144,8 +155,19 @@ export function summariseEntries({
     })
 }
 
-function totalOf(rows: SummaryRow[]): number {
-  return rows.reduce((total, row) => total + row.totalMs, 0)
+/**
+ * Sum the rows, propagating an unknown rather than absorbing it.
+ *
+ * `reduce` with `+` would coerce null to 0 and hand back a plausible number for a period
+ * containing something unreadable, which is the failure being fixed.
+ */
+function totalOf(rows: SummaryRow[]): number | null {
+  let total = 0
+  for (const row of rows) {
+    if (row.totalMs === null) return null
+    total += row.totalMs
+  }
+  return total
 }
 
 function rowsFor(
@@ -157,7 +179,7 @@ function rowsFor(
 ): SummaryRow[] {
   const buckets = new Map<
     string | null,
-    { totalMs: number; count: number; projects: Set<string> }
+    { totalMs: number | null; count: number; projects: Set<string> }
   >()
 
   for (const entry of entries) {
@@ -165,7 +187,12 @@ function rowsFor(
     const bucket = buckets.get(owner) ?? { totalMs: 0, count: 0, projects: new Set<string>() }
     // `entryDurationMs` reads the entry's own end when it has one and falls back to `now`
     // when it is still running, so a live entry counts up in step with the list.
-    bucket.totalMs += entryDurationMs(entry, now) ?? 0
+    //
+    // A null duration poisons the bucket rather than counting as zero: see
+    // `SummaryRow.totalMs`. Once poisoned it stays poisoned, so the sum is not a partial
+    // figure presented as a whole.
+    const ms = entryDurationMs(entry, now)
+    bucket.totalMs = bucket.totalMs === null || ms === null ? null : bucket.totalMs + ms
     bucket.count += 1
     if (entry.projectId !== null) {
       const name = projectById.get(entry.projectId)?.name

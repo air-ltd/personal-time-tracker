@@ -36,8 +36,10 @@ export class SyncError extends Error {
     super(message)
     this.name = 'SyncError'
     this.kind = kind
-    // Auth is not retryable: retrying a rejected token just burns quota.
-    // Rate limits and transient network failures are.
+    // Retryable: rate limits, transient network failures, and push conflicts — a
+    // conflict means another device wrote first, so the answer is to re-read and merge
+    // (0012 C5), which the engine does. Everything else is not: retrying a rejected token
+    // or a refused permission just burns quota and returns the same answer.
     this.retryable = kind === 'rate-limited' || kind === 'network' || kind === 'conflict'
   }
 }

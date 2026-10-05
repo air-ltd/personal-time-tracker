@@ -27,7 +27,7 @@ export interface EntriesViewProps {
 }
 
 export function EntriesView({ now, selectedClientId }: EntriesViewProps) {
-  const { entries, loading } = useEntries()
+  const { entries, loading, error: entriesError } = useEntries()
   const { projects, clients } = useTaxonomy()
   const { running } = useTimer()
   const [period, setPeriod] = useEntryPeriod()
@@ -127,7 +127,19 @@ export function EntriesView({ now, selectedClientId }: EntriesViewProps) {
           as "nothing in this period", which is a different and more alarming claim than "no
           work recorded yet" (0007 FB-3).
         */}
-        {entries.length === 0 && !loading ? (
+        {/*
+          A read that failed is not an empty database, and saying so would be the more
+          misleading of the two: the user would start recording work they can already see is
+          not being saved. Reported instead, in the same slot, before anything claims the
+          list is empty.
+        */}
+        {entriesError !== null ? (
+          <p className="alert alert-error" role="alert" data-testid="entries-error">
+            Could not read your entries: {entriesError}. Nothing has been lost, but this browser
+            is refusing to open the database — private browsing and a full disk are the usual
+            causes.
+          </p>
+        ) : entries.length === 0 && !loading ? (
           <p className="hint" data-testid="empty-state">
             No entries yet. Start the timer above, or add one by hand.
           </p>

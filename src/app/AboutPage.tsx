@@ -79,6 +79,21 @@ export function AboutPage() {
 function Changelog({ source }: { source: string }): ReactNode {
   const blocks: ReactNode[] = []
   let list: string[] = []
+  /**
+   * Prose being accumulated, flushed when a heading, a bullet or a blank line interrupts.
+   *
+   * Null means "no paragraph in progress", which is different from an empty one — a blank
+   * line has to end the current paragraph rather than start an empty one. The text is
+   * buffered rather than accumulated into already-rendered nodes, because joining into a
+   * React element would mean reading it back out again to append to it.
+   */
+  let paragraph: string | null = null
+
+  function flushParagraph(): void {
+    if (paragraph === null) return
+    blocks.push(<p key={`p-${blocks.length}`}>{inline(paragraph)}</p>)
+    paragraph = null
+  }
 
   function flushList(): void {
     if (list.length === 0) return
@@ -97,12 +112,16 @@ function Changelog({ source }: { source: string }): ReactNode {
     const line = raw.trimEnd()
 
     if (line.trim() === '') {
+      // A blank line ends both a paragraph and a list. Forgetting the paragraph is how
+      // wrapped prose ended up as one `<p>` per source line.
+      flushParagraph()
       flushList()
       continue
     }
 
     const heading = /^(#{1,4})\s+(.*)$/.exec(line)
     if (heading) {
+      flushParagraph()
       flushList()
       const level = (heading[1] ?? '').length
       // Keep a Changelog writes versions as `[Unreleased]` / `[0.1.0]`. The brackets are
@@ -121,19 +140,32 @@ function Changelog({ source }: { source: string }): ReactNode {
 
     const bullet = /^[-*]\s+(.*)$/.exec(line)
     if (bullet) {
+      flushParagraph()
       list.push(bullet[1] ?? '')
       continue
     }
 
-    // Anything else is a paragraph. Indented continuation lines are joined onto the
-    // previous one, which is how the file wraps long bullets and prose.
-    if (list.length > 0) {
-      const last = list.length - 1
-      list[last] = `${list[last] ?? ''} ${line.trim()}`
-    } else if (blocks.length > 0 || line.startsWith(' ')) {
-      blocks.push(<p key={`p-${blocks.length}`}>{inline(line.trim())}</p>)
-    }
+    /*
+     * Anything else is prose, and both halves of the old handling of it were wrong.
+     *
+     * The file wraps at ~95 columns with no indentation, so a wrapped paragraph arrives as
+     * several lines that have to become ONE `<p>`. The old guard joined a continuation only
+     * when a bullet list was open (`list.length > 0`), so every wrapped *prose* line became
+     * its own paragraph — split mid-sentence, with margins between the halves, directly
+     * under the first heading a user sees.
+     *
+     * It also dropped every paragraph before the first heading, via `blocks.length > 0`.
+     * That clause was doing double duty: `level === 1` above already handles the file's own
+     * `# Changelog` title, so the test silently discarded the preamble while it stayed in
+     * the bundle for every visitor to download. Omitted by accident, by a guard written to
+     * solve a different problem.
+     *
+     * The text is buffered rather than accumulated into already-rendered nodes, because
+     * joining into a React element would mean reading it back out again to append to it.
+     */
+    paragraph = paragraph === null ? line.trim() : `${paragraph} ${line.trim()}`
   }
+  flushParagraph()
   flushList()
 
   return <div className="changelog">{blocks}</div>

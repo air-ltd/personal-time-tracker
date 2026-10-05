@@ -51,7 +51,6 @@ export function HeaderMenu({ settingsHref, aboutHref }: HeaderMenuProps) {
   const container = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const backup = useBackup()
-  const fileInput = useRef<HTMLInputElement>(null)
   const working = backup.state.kind === 'working'
 
   // Close on Escape and return focus to the button that opened it, so keyboard users are
@@ -147,7 +146,7 @@ export function HeaderMenu({ settingsHref, aboutHref }: HeaderMenuProps) {
             <span>About</span>
           </a>
 
-          <BackupFileInput input={fileInput} onChange={backup.onFileChange} />
+          <BackupFileInput input={backup.fileInput} onChange={backup.onFileChange} />
 
           {/*
             The one piece of text left, and only once something has happened: an action that

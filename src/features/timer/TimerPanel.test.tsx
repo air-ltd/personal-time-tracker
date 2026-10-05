@@ -36,6 +36,7 @@ function timerHarness(): TimerState & { started: (string | null | undefined)[] }
     started,
     running: null,
     elapsedMs: null,
+    error: null,
     start: (projectId?: string | null) => started.push(projectId),
     stop: async () => {},
     discard: () => {},

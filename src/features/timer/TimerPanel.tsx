@@ -142,9 +142,12 @@ export function TimerPanel({
         onSelectClient={onSelectClient ?? noop}
       />
 
-      {error !== null && (
+      {/* Both channels land in the same place: this panel's own failures (a rejected stop,
+          a client form that would not save) and the hook's (a start or discard refused).
+          The user pressed a button either way, so they get told. */}
+      {(error ?? timer.error) !== null && (
         <p className="alert alert-error" role="alert" data-testid="timer-client-error">
-          {error}
+          {error ?? timer.error}
         </p>
       )}
     </section>
@@ -241,8 +244,26 @@ function ClientList({
     if (!running) return
     // Awaited before navigating: the write is asynchronous, and navigating first races the
     // read the edit route immediately performs.
-    await stop()
-    await onStopped(running.id)
+    //
+    // Caught because both halves can reject and the consequences differ. If `stop()`
+    // fails the entry is not written, `onStopped` never runs, and the user is left on a
+    // panel showing a timer that did not stop — which reads as the app having lost their
+    // hour. This component already has `reportError` for exactly this and it was not wired
+    // to this path; an unhandled rejection also fails a whole test file on an error nothing
+    // displays.
+    try {
+      await stop()
+    } catch (problem) {
+      reportError(problem)
+      return
+    }
+    try {
+      await onStopped(running.id)
+    } catch (problem) {
+      // The entry *was* written here; only the navigation failed. Say so rather than
+      // letting the user think their stop was lost and stop it again.
+      reportError(problem)
+    }
   }
 
   return (

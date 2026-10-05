@@ -1,8 +1,13 @@
 import { getDb } from './db'
 import { bumpRevision } from './events'
 import { newId } from '../domain/time/ids'
-import { PALETTE, suggestColour } from '../domain/taxonomy/colour'
-import { findNameConflict, type ExistingName, type NameKind } from '../domain/taxonomy/names'
+import { PALETTE, normaliseColour, suggestColour } from '../domain/taxonomy/colour'
+import {
+  findByName,
+  findNameConflict,
+  type ExistingName,
+  type NameKind,
+} from '../domain/taxonomy/names'
 import type { Client, Project, Tag } from '../domain/taxonomy/types'
 
 /**
@@ -27,6 +32,26 @@ function iso(value: Date): string {
 }
 
 /** Trimmed, and never blank: a blank name would be unselectable in a picker. */
+/**
+ * Validate a colour arriving from outside.
+ *
+ * A restored backup is untrusted input, and `ColorPicker` reports every keystroke of its
+ * custom field — so `input.colour` can be half-typed, or anything a hand-edited file
+ * contains. Stored unvalidated it reaches four inline-style sinks and renders as no swatch
+ * at all, with no error anywhere. React drops an invalid `style.background` rather than
+ * executing it, so this was never an injection risk; it is a data-integrity one, and the
+ * contract already says `#rrggbb`.
+ *
+ * `null` for anything unparseable, which the callers treat exactly as "no colour given" and
+ * replace with a suggested one — so a bad value degrades to a working colour rather than to
+ * a blank. Validating here rather than at the picker is deliberate: the picker cannot
+ * protect the restore path, which is where the untrusted input actually arrives.
+ */
+function checkedColour(value: string | undefined): string | null {
+  if (value === undefined) return null
+  return normaliseColour(value)
+}
+
 function requireName(kind: NameKind, name: string): string {
   const trimmed = name.trim()
   if (trimmed === '') throw new Error(`A ${kind} needs a name.`)
@@ -238,7 +263,7 @@ export async function createProject(input: CreateProjectInput): Promise<Project>
     id: newId(),
     name,
     clientId: input.clientId ?? null,
-    colour: input.colour ?? suggestColour(await usedColours()),
+    colour: checkedColour(input.colour) ?? suggestColour(await usedColours()),
     defaultRateMinor: input.defaultRateMinor ?? null,
     currency: input.currency ?? null,
     archived: false,
@@ -267,7 +292,7 @@ export async function createClient(input: CreateClientInput): Promise<Client> {
   const client: Client = {
     id: newId(),
     name,
-    colour: input.colour ?? suggestColour(await usedColours()),
+    colour: checkedColour(input.colour) ?? suggestColour(await usedColours()),
     defaultRateMinor: input.defaultRateMinor ?? null,
     currency: input.currency,
     archived: false,
@@ -361,15 +386,24 @@ export async function createOrFindTag(
   input: CreateTagInput,
 ): Promise<{ tag: Tag; created: boolean }> {
   const name = requireName('tag', input.name)
-  const existing = (await db().tags.toArray()).find(
-    (tag) => tag.deletedAt === null && tag.name.trim().toLowerCase() === name.toLowerCase(),
-  )
+  /*
+   * Through `findByName`, which compares with `nameKey`.
+   *
+   * This used to inline `name.trim().toLowerCase() === name.toLowerCase()`, which is two
+   * thirds of `nameKey` and missed the third: the `.normalize('NFC')`. The two forms of
+   * "café" are different byte sequences, so a tag typed on a Mac and the same tag typed on
+   * Linux compared unequal and both were created — two tags that render identically and
+   * split a filter. `findByName`'s docstring has claimed this dependency since before the
+   * call existed; now it is true.
+   */
+  const live = (await db().tags.toArray()).filter((tag) => tag.deletedAt === null)
+  const existing = findByName(name, live)
   if (existing) return { tag: existing, created: false }
 
   const tag: Tag = {
     id: newId(),
     name,
-    colour: input.colour ?? suggestColour(await usedColours()),
+    colour: checkedColour(input.colour) ?? suggestColour(await usedColours()),
     createdAt: iso(input.now),
     updatedAt: iso(input.now),
     deletedAt: null,

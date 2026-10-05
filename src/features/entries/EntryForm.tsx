@@ -68,10 +68,11 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
   // also state a duration, which stops it as a side effect, and a user who opened the
   // pencil to correct a note got "Enter how long this took" instead of their note saved.
   //
-  // Derived rather than stored: for a completed entry the duration is prefilled, so the
-  // distinction only exists while the record is open-ended. Set when a field that can
-  // express an end is edited, and never cleared, because going back to blank is not a
-  // statement that it is still running.
+  // Seeded from the record — for a completed entry the duration is prefilled, so the
+  // distinction only exists while the record is open-ended — and then stored rather than
+  // derived, because it records what the user has *done* rather than what the record
+  // currently says. Set when a field that can express an end is edited, and never cleared,
+  // because going back to blank is not a statement that it is still running.
   const [endStated, setEndStated] = useState(() => entry !== undefined && entry.end !== null)
 
   const { projects, clients, tags, loading: taxonomyLoading } = useTaxonomy()

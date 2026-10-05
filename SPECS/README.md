@@ -42,7 +42,7 @@ below use it.
 | 0004 Timer and entries | `Implemented` | Phase 2A, plus M4 and ED1 closed in review. O3/L3/W2 remain (see §Known limitations). |
 | 0005 Taxonomy | `Implemented` | Phase 4. |
 | 0006 Reporting and billing | `Draft` | Phase 6. Not started. The pure aggregation half exists because `0003`/`0004` need day totals; the view half does not. |
-| 0007 Persistence and data safety | `Accepted` | Phases 2B–3. F-EXPORT-5 amended to merge-only; **E-ERASE is not built and has no phase** — see §Known limitations. |
+| 0007 Persistence and data safety | `Accepted` | Phases 2B–3. F-EXPORT-5 amended to merge-only. **E-ERASE-1–4 is a MUST, is not built, and is assigned to Phase 8** (0014) — see §Known limitations. |
 | 0008 Export formats | `Accepted` | JSON envelope shipped (Phase 2B). CSV writers are Phase 6. |
 | 0009 Deployment | `Implemented` | Phase 1. |
 | 0010 Testing and quality | `Accepted` | Cross-cutting. Q5 (coverage thresholds), Q6 and Q10 (pre-commit hook) are open — see §Known limitations. |
@@ -194,4 +194,11 @@ an oversight.
   deliberately on demand rather than on every push — it re-introduces bugs and runs the
   suite once per mutation — while `check:secrets` and `check:citations` do run in
   `verify`.
+- **"Erase all data" does not exist.** 0007 E-ERASE-1 makes it a MUST — "a tool that
+  cannot erase its own data cannot be trusted with anyone else's" — and it is not built.
+  It is assigned to Phase 8 (0014), so it is scheduled rather than forgotten, but until it
+  ships this app cannot be used to remove its own contents. The user's only remedy today
+  is the browser's own "clear site data", which is outside anything this app controls or
+  can explain. Listed here because a MUST that is merely scheduled still has no working
+  control behind it, and this document is the one place that says so.
 

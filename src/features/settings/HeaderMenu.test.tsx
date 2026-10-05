@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeaderMenu } from './HeaderMenu'
 import { installTestDb } from '../../test/harness'
 
@@ -72,6 +72,31 @@ describe('the header menu', () => {
     // reads as expanded on a screen that is not the home screen.
     expect(screen.queryByTestId('header-menu-panel')).not.toBeInTheDocument()
     expect(screen.getByTestId('header-menu-toggle')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('opens the file picker from the import button', async () => {
+    /*
+     * The second of two dead restore buttons.
+     *
+     * `useBackup` created the ref, dereferenced it in `chooseFile`, and returned neither,
+     * so this component attached its *own* ref to the input and left the hook's `null`.
+     * `chooseFile` ran `null?.click()`, which does nothing — no error, no state change.
+     * The whole import half of 0008 was unreachable from here.
+     *
+     * Asserted per surface, because both surfaces render a backup control and either one
+     * can drift back to owning its own ref. Nothing about the ref crossing a module
+     * boundary is visible to the type system here, so it needs a test rather than a type.
+     */
+    render(<HeaderMenu settingsHref="#/settings" aboutHref="#/about" />)
+    await user.click(screen.getByTestId('header-menu-toggle'))
+    const input = document.querySelector<HTMLInputElement>('[data-testid="backup-file"]')
+    if (!input) throw new Error('no file input')
+    const clicked = vi.fn()
+    input.click = clicked
+
+    await user.click(screen.getByTestId('header-menu-restore'))
+
+    expect(clicked).toHaveBeenCalledTimes(1)
   })
 
   it('closes on Escape and gives the toggle its focus back', async () => {

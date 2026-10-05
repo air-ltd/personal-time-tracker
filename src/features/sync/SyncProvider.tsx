@@ -70,6 +70,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       provider,
       path: REMOTE_PATH,
       onStatus: setStatus,
+      /*
+       * The scheduler is the only thing that discovers a token has stopped working — the
+       * provider notices, and it signs out without telling anyone. `connection` is
+       * otherwise read once at mount, so without this the app went on claiming to be
+       * connected to a provider it had just disconnected from, and the Connect button that
+       * would fix it never appeared.
+       */
+      onAuthLost: () => {
+        void provider.status().then((result) => {
+          if (!result.authenticated) setConnection('disconnected')
+        })
+      },
     })
     schedulerRef.current = scheduler
     void scheduler.start()

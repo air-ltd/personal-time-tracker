@@ -1402,10 +1402,16 @@ code {
     grid-column: 1 / -1;
   }
 
-  /* Item 20: an icon rather than the word, so the row needs no width for it. Only what
-     actually differs at this width. The box properties and the hover wash are inherited
-     from the base rule; repeating them here meant the narrow layout could silently drift
-     away from the wide one, since a duplicate is not obviously a duplicate. */
+  /* Item 20: an icon rather than the word, so the row needs no width for it.
+
+     Only what genuinely differs at this width. `display`, `align-items`,
+     `justify-content`, `border-radius` and the hover wash are gone: they repeated the base
+     rule verbatim, and a duplicate is not obviously a duplicate, so the narrow layout
+     could drift from the wide one unnoticed.
+
+     `padding` stays because it does differ — a slightly larger target at a width where a
+     mis-tap is likelier — and an earlier version of this comment claimed it had been
+     removed while leaving it in place directly underneath. */
   .entry-edit {
     padding: 0.2rem 0.35rem;
     grid-column: 2;

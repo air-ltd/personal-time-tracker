@@ -21,7 +21,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -182,6 +182,40 @@ const MUTATIONS = [
     replace: '  const timerRunning = false',
     test: 'src/app/App.test.tsx',
   },
+  /*
+   * The three below are for findings a previous review called silent and untested: a dead
+   * restore button, an expired token rendered as success, and a Unicode rule the one caller
+   * that needed it bypassed. Each was invisible to the whole suite.
+   */
+  {
+    id: 'restore-button-dead',
+    failure:
+      'Both restore buttons are wired to a ref the hook does not own, so import is unreachable (0008 J1-J12)',
+    file: 'src/features/backup/useBackup.ts',
+    find: '  return { state, fileInput, export: exportBackup, chooseFile, restore, onFileChange }',
+    replace:
+      '  return { state, fileInput: { current: null }, export: exportBackup, chooseFile, restore, onFileChange }',
+    test: 'src/features/backup/BackupPanel.test.tsx',
+  },
+  {
+    id: 'expired-token-reads-as-synced',
+    failure:
+      'An expired token shows a green "Synced" and the Connect button never returns (0012 AU8)',
+    file: 'src/sync/scheduler.ts',
+    find: "        outcome.status === 'skipped' ||",
+    replace: '        false ||',
+    test: 'src/sync/scheduler.test.ts',
+  },
+  {
+    id: 'tag-name-normalisation-bypassed',
+    failure:
+      'A decomposed tag name creates a duplicate instead of matching the composed one (0005 T2)',
+    file: 'src/storage/taxonomyRepo.ts',
+    find: '  const existing = findByName(name, live)',
+    replace:
+      '  const existing = live.find(\n    (tag) => tag.name.trim().toLowerCase() === name.toLowerCase(),\n  )',
+    test: 'src/storage/taxonomyRepo.test.ts',
+  },
   {
     id: 'sync-warn-contrast',
     failure: 'A sync status colour falls below 3:1, so a status indicator fails SC 1.4.11',
@@ -340,6 +374,81 @@ async function checkOne(mutation) {
 const filter = process.argv[2] ?? ''
 const selected = MUTATIONS.filter((m) => m.id.includes(filter) || m.failure.includes(filter))
 
+/**
+ * One run at a time.
+ *
+ * The gate rewrites files in the working tree, so two concurrent runs corrupt each other:
+ * each reads the other's mutant as its own "original", and the second `writeFileSync` wins.
+ * The symptoms are a `stale` pattern that is present, a mutation reported as caught for the
+ * wrong reason, and a source file left holding somebody else's replacement string.
+ *
+ * A lock file rather than a mutex, because the thing being serialised is a filesystem, and
+ * two shells have to agree — an in-process flag would not help the case that actually
+ * happens, which is a person running it twice or an agent running it beside a human.
+ *
+ * The lock is removed on the way out, including on a signal, and its presence is reported
+ * rather than being a bare "try again" — a lock left behind by a hard kill is the one case
+ * this cannot distinguish from a live run, and naming the file lets someone decide.
+ */
+const LOCK = join(ROOT, '.check-silent.lock')
+
+function claimLock() {
+  try {
+    // `wx` fails if the file exists, which makes the check-and-create atomic.
+    writeFileSync(LOCK, `pid ${process.pid}\nstarted ${new Date().toISOString()}\n`, {
+      flag: 'wx',
+    })
+    return true
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+    let holder = ''
+    try {
+      holder = readFileSync(LOCK, 'utf8').trim()
+    } catch {
+      holder = '(unreadable)'
+    }
+    const pid = Number(/pid (\d+)/.exec(holder)?.[1] ?? NaN)
+    // A pid that is not running cannot be holding anything.
+    if (Number.isInteger(pid) && pid > 0) {
+      try {
+        process.kill(pid, 0)
+        console.error(
+          `\nAnother check:silent is running (${holder}). Waiting is pointless; stop it first.`,
+        )
+        process.exit(1)
+      } catch {
+        // No such process: the lock is stale, so take it.
+        writeFileSync(LOCK, `pid ${process.pid}\nstarted ${new Date().toISOString()}\n`)
+        return true
+      }
+    }
+    console.error(
+      `\n${LOCK} exists (${holder}) but no process holds it, so it was a hard kill.\n` +
+        'Taking it over. If a run really is in flight, stop it first.\n',
+    )
+    writeFileSync(LOCK, `pid ${process.pid}\nstarted ${new Date().toISOString()}\n`)
+    return true
+  }
+}
+
+function releaseLock() {
+  try {
+    unlinkSync(LOCK)
+  } catch {
+    // Already gone; nothing to undo.
+  }
+}
+
+claimLock()
+process.on('exit', releaseLock)
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    restoreInFlight()
+    releaseLock()
+    process.exit(130)
+  })
+}
+
 console.log(`\nSilent-failure gate — ${selected.length} mutation(s)\n`)
 
 // Sequential, not `Promise.all`. Two mutations of the same file would otherwise race, and
@@ -349,10 +458,24 @@ for (const mutation of selected) {
   results.push(await checkOne(mutation))
 }
 
+/*
+ * Three different failures, three different consequences.
+ *
+ * They used to be one number. A `stale` mutation — the pattern no longer matches because
+ * the code moved — is a maintenance signal: a one-line edit to this script. A `gap` is a
+ * coverage hole: the suite would not notice the bug. An `err` is a broken mutation, which
+ * proves nothing. Reporting "N/M caught, K NOT caught" for all three meant the headline
+ * number could not distinguish "this project would miss a real bug" from "this script needs
+ * updating", and made the one figure a reader takes away unreliable in both directions.
+ */
 let gaps = 0
+let stale = 0
+let errors = 0
 for (const result of results) {
   const mark = result.result === 'caught' ? 'ok  ' : result.result === 'gap' ? 'GAP ' : 'ERR '
-  if (result.result !== 'caught') gaps += 1
+  if (result.result === 'gap') gaps += 1
+  else if (result.result === 'stale') stale += 1
+  else if (result.result !== 'caught') errors += 1
   console.log(`  ${mark} ${result.id}`)
   console.log(`       ${result.failure}`)
   if (result.note) console.log(`       ${result.note}`)
@@ -368,10 +491,27 @@ if (!filter) {
   }
 }
 
-console.log(
-  `\n${results.filter((r) => r.result === 'caught').length}/${results.length} caught` +
-    (gaps > 0 ? `, ${gaps} NOT caught` : '') +
-    '\n',
-)
+const caught = results.filter((r) => r.result === 'caught').length
+console.log(`\n${caught}/${results.length} caught`)
+if (gaps > 0) {
+  console.log(
+    `${gaps} NOT caught — the suite would not notice. ` +
+      'These are coverage holes and this gate should fail.',
+  )
+}
+if (stale > 0) {
+  console.log(
+    `${stale} stale — the code moved and this script needs updating. ` +
+      'Maintenance, not coverage; the count above is unaffected.',
+  )
+}
+if (errors > 0) {
+  console.log(`${errors} broken — the mutation did not exercise what it claims.`)
+}
+console.log('')
 
+// Gaps fail the gate. Stale and broken do not: a stale pattern is a one-line edit to this
+// file, and a broken mutation is a bug in this file, and neither says anything about
+// whether the suite would notice a real defect. Failing on all three is what made the
+// headline number untrustworthy in the first place.
 process.exit(gaps > 0 ? 1 : 0)

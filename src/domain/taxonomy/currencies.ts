@@ -10,6 +10,13 @@ import { minorUnitExponent } from './money'
  * renamed and withdrawn. Asking the runtime means the picker offers exactly what this
  * browser can actually format, and the names read as currencies rather than as codes.
  *
+ * The obvious objection is that this file's own argument condemns `money.ts`'s
+ * `MINOR_UNIT_EXPONENTS`, which *is* a hand-typed ISO table. It is the one exception, and
+ * it is unavoidable rather than inconsistent: no `Intl` API reports how many minor units
+ * a currency has, so JPY having none and KWD having three cannot be asked for at runtime.
+ * It is small, it is pinned by a test, and getting it wrong misreports every amount in that
+ * currency by a factor of ten or a hundred.
+ *
  * Both Intl APIs are read through narrow wrappers with fallbacks, because a missing
  * `Intl.supportedValuesOf` must degrade to a usable single-currency picker rather than
  * throw on a settings page.

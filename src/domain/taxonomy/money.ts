@@ -98,6 +98,12 @@ export function groupByCurrency(
  * Most currencies have two decimals, but not all: JPY has none and KWD has three.
  * Getting this wrong misreports every amount in that currency by a factor of ten or a
  * hundred, so it is a table rather than an assumption (0003 CU1).
+ *
+ * This is the one hand-typed ISO table in the codebase, and `currencies.ts` argues at
+ * length for the opposite choice — correctly, because it gets its codes from the runtime.
+ * The exception is forced: no `Intl` API reports a currency's minor-unit exponent, so this
+ * cannot be asked for. It is small and it is pinned by a test; a currency that changes its
+ * exponent is a rare event, which is the same reason the table is tolerable at all.
  */
 const MINOR_UNIT_EXPONENTS: Record<string, number> = {
   BHD: 3,

@@ -266,7 +266,7 @@ export function TaxonomySettings({ now }: { now: Date }) {
           // re-reads on that. A second copy of this value in component state is the
           // thing 0002 S2 exists to avoid, and it is how the value being displayed and
           // the value being resolved could come to disagree.
-          onChange={(code) => void writeDefaultCurrency(code)}
+          onChange={(code) => void writeDefaultCurrency(code).catch(report)}
         />
         <p className="hint">
           Reports show money in the project&apos;s currency, then the client&apos;s, then this
@@ -429,7 +429,12 @@ function ClientRow({
         <button
           type="button"
           className="button"
-          onClick={() => void setArchived('client', client.id, !client.archived, now)}
+          onClick={() => {
+            // Caught: the user has pressed Archive and a silent failure leaves the row
+            // unchanged with no explanation, which reads as the button being broken. `report`
+            // is already used for every other failure in this file.
+            void setArchived('client', client.id, !client.archived, now).catch(report)
+          }}
         >
           {client.archived ? 'Restore' : 'Archive'}
         </button>
@@ -724,7 +729,9 @@ function ProjectRow({
         <button
           type="button"
           className="button"
-          onClick={() => void setArchived('project', project.id, !project.archived, now)}
+          onClick={() => {
+            void setArchived('project', project.id, !project.archived, now).catch(report)
+          }}
         >
           {project.archived ? 'Restore' : 'Archive'}
         </button>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { summariseEntries } from './summary'
+import { groupEntriesByDay } from './group'
 import { dayKey, weekKey } from '../time/days'
 import { entry } from '../../test/factories'
 import type { Client, Project } from '../../domain/taxonomy/types'
@@ -314,5 +315,68 @@ describe('weeks start on Monday', () => {
   it('puts a Monday on itself', () => {
     const monday = new Date('2026-10-12T12:00:00.000Z')
     expect(weekKey(monday)).toBe(dayKey(monday))
+  })
+})
+
+/**
+ * The summary and the list must never disagree (0006 RP2).
+ *
+ * `summary.ts` argues for handling both axes in one function precisely so "a summary cannot
+ * disagree with the rows above it". The two implementations did disagree, in the one case
+ * that matters: an entry whose duration cannot be recovered made the list print `—` while
+ * the summary reported a confident total that quietly omitted it. The user saw two numbers
+ * for the same day and had no way to know which was true.
+ *
+ * So this asserts the agreement directly, by running both over the same corrupt input,
+ * rather than asserting the rule twice in two files — which is how they came to disagree.
+ */
+describe('agreement with the entry list', () => {
+  const NOW = new Date('2026-10-13T18:00:00.000Z')
+  const DAY = dayKey(NOW)
+
+  /**
+   * A start that parses and an end that does not.
+   *
+   * The `end` specifically: an unreadable `start` is dropped from the day buckets entirely,
+   * which is a different and already-tested path. It is the *duration* that has to survive
+   * the row and reach the total, and that is what disagrees between the two.
+   */
+  const corrupt = {
+    ...entry({ start: new Date('2026-10-13T09:00:00.000Z') }),
+    end: 'not-a-timestamp',
+  }
+
+  it('reports an unrecoverable duration as unknown in both places', () => {
+    const summary = summariseEntries({
+      entries: [corrupt],
+      projects: [],
+      clients: [],
+      clientId: null,
+      period: 'day',
+      now: NOW,
+    })
+    const grouped = groupEntriesByDay([corrupt], NOW)
+
+    const bucket = summary.find((candidate) => candidate.dayKey === DAY)
+    const group = grouped.find((candidate) => candidate.key === DAY)
+
+    // Both must say "cannot be computed". The list already did; the summary did not.
+    expect(bucket?.totalMs).toBeNull()
+    expect(group?.totalMs).toBeNull()
+  })
+
+  it('does not let one bad row poison an unrelated day', () => {
+    const good = entry({ start: new Date('2026-10-12T09:00:00.000Z') })
+    const summary = summariseEntries({
+      entries: [good, corrupt],
+      projects: [],
+      clients: [],
+      clientId: null,
+      period: 'day',
+      now: NOW,
+    })
+
+    const clean = summary.find((candidate) => candidate.dayKey === dayKey(new Date(good.start)))
+    expect(clean?.totalMs).not.toBeNull()
   })
 })

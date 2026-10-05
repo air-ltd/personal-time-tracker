@@ -11,9 +11,14 @@
  *   `files.content.write`. Both are `auth = "user"`, so a bearer token is right.
  * - `download` is `style = "download"` with a `DownloadArg` struct, so its
  *   arguments travel in the `Dropbox-API-Arg` header, not the URL.
- * - `WriteMode` is a `union_closed`. Its void variants serialise as bare strings,
- *   so `overwrite` is the string `"overwrite"` and `update` is `{"update": "<rev>"}`.
- *   There is no `.tag` discriminator — that form is for open unions.
+ * - `WriteMode` is a `union_closed`. Its Void member serialises as a bare string, and
+ *   the member that carries a value needs an object — which is what `updateMode` and
+ *   `overwriteMode` below each emit, and why the two are spelled differently.
+ *
+ *   An earlier version of this comment claimed there was "no `.tag` discriminator",
+ *   which is the opposite of what the code two dozen lines below does and says, citing
+ *   the same spec. Both were confident; only one was right. The per-member comments
+ *   are now the single place this is explained.
  *
  * A pure client-side app should use short-lived tokens with no refresh token,
  * re-authorising on expiry, which is usually silent because the user's approval

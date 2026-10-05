@@ -48,10 +48,29 @@ export interface SyncConfig {
   writeLastRev?: (rev: string | null) => Promise<void>
   writeLastSyncAt?: (at: string) => Promise<void>
   readLastSyncAt?: () => Promise<string | null>
+  /**
+   * Called after the scheduler discards a token it cannot use.
+   *
+   * The scheduler is the only thing that discovers this — the provider notices a token has
+   * expired, and nothing else observes the sign-out. So whoever owns the *connection*
+   * state has to be told, or the app keeps claiming to be connected to a provider it has
+   * just disconnected from, and never offers the button that would fix it.
+   */
+  onAuthLost?: () => void
 }
 
 export interface SyncStatus {
-  state: 'idle' | 'syncing' | 'error' | 'disabled'
+  /**
+   * `disabled` was removed rather than rendered.
+   *
+   * It was emitted for a `skipped` outcome, which is always `not-authenticated` — a token
+   * that has expired or been revoked, not a provider that is switched off. Nothing else
+   * could produce it, and no view handled it, so an expired token rendered as a green
+   * "Synced". Adding a branch for a state that can only mean "disconnected while claiming
+   * to be connected" would have been a fourth way to say the same wrong thing; the honest
+   * end state is that the state cannot be represented because the condition cannot occur.
+   */
+  state: 'idle' | 'syncing' | 'error'
   lastOutcome: SyncOutcome | null
   lastSyncAt: string | null
   /**
@@ -80,6 +99,18 @@ function isAuthFailure(kind: string): boolean {
   return kind === 'auth' || kind === 'scope-missing'
 }
 
+/**
+ * What to say when the stored token turns out to be unusable.
+ *
+ * Says what happened and what is still true, and nothing more. The precise cause — expired,
+ * revoked, or the app's permissions changed — is not knowable from here, and guessing
+ * between them is the kind of confident wrong answer that costs the user more time than
+ * admitting it.
+ */
+const TOKEN_LOST =
+  'Dropbox sign-in has expired or is no longer valid, so sync is paused. ' +
+  'Your data is safe in this browser — reconnect to carry on syncing.'
+
 export class SyncScheduler {
   private readonly provider: SyncProvider
   private readonly path: string
@@ -93,6 +124,7 @@ export class SyncScheduler {
   private readonly writeLastRev: (rev: string | null) => Promise<void>
   private readonly writeLastSyncAt: (at: string) => Promise<void>
   private readonly readLastSyncAt: () => Promise<string | null>
+  private readonly onAuthLost: (() => void) | undefined
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   private onVisibilityChange: (() => void) | null = null
@@ -146,6 +178,7 @@ export class SyncScheduler {
     this.writeLastRev = config.writeLastRev ?? writeLastRev
     this.writeLastSyncAt = config.writeLastSyncAt ?? writeLastSyncAt
     this.readLastSyncAt = config.readLastSyncAt ?? readLastSyncAt
+    this.onAuthLost = config.onAuthLost
   }
 
   /**
@@ -288,16 +321,44 @@ export class SyncScheduler {
       // permissions the app now needs. Discarding it loses nothing (local data is
       // untouched by sign-out) and turns a dead end into a single reconnect, rather
       // than an error message explaining that disconnecting is the fix.
-      if (outcome.status === 'failed' && isAuthFailure(outcome.kind)) {
-        this.log('Dropbox rejected the saved token; discarded it so you can reconnect.', 'warn')
+      /*
+       * `skipped` is `not-authenticated`, and it means the token died rather than that
+       * there was never one.
+       *
+       * The scheduler only runs while `connection === 'connected'`, so "not signed in"
+       * arriving here cannot be a first run — it is a token that has expired or been
+       * revoked since the last cycle. It used to emit `disabled`, a state no view renders:
+       * the indicator tests `state === 'error'`, so an expired token produced a green
+       * "Synced" indefinitely and the Connect button never came back.
+       *
+       * That is the failure this whole implementation exists to prevent (0012 AU8): the
+       * user is told their work is on the other device when it is not. It is handled as
+       * the auth failure it is, so the existing recovery runs.
+       */
+      const tokenUnusable =
+        outcome.status === 'skipped' ||
+        (outcome.status === 'failed' && isAuthFailure(outcome.kind))
+
+      if (tokenUnusable) {
+        this.log(
+          'The saved Dropbox token stopped working; discarded it so you can reconnect.',
+          'warn',
+        )
         await this.provider.signOut()
+        // Whoever owns the connection state has to learn about this, or the app goes on
+        // claiming to be connected to a provider it has just signed out of.
+        this.onAuthLost?.()
       }
 
       if (outcome.status === 'pushed' || outcome.status === 'up-to-date') {
         await this.writeLastSyncAt(at)
         this.emit({ state: 'idle', lastOutcome: outcome, lastSyncAt: at, message: null })
-      } else if (outcome.status === 'skipped') {
-        this.emit({ state: 'disabled', lastOutcome: outcome, message: null })
+      } else if (tokenUnusable) {
+        this.emit({
+          state: 'error',
+          lastOutcome: outcome,
+          message: TOKEN_LOST,
+        })
       } else if (outcome.status === 'failed' && isAuthFailure(outcome.kind)) {
         // Already discarded above; the panel will offer Connect again.
         //

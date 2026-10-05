@@ -14,5 +14,9 @@ coverage
 # code and specifications.
 review
 
+# The mutation gate's lock. Present only while a run is in flight; if one is committed it
+# is a run that was killed hard enough to miss its own cleanup.
+.check-silent.lock
+
 # Local logs
 *.log

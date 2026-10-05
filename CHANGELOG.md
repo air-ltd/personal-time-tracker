@@ -114,6 +114,31 @@ Nothing has been released yet. This is the first release candidate.
 
 ### Fixed
 
+- **Restoring a backup was unreachable.** Both restore buttons were wired to a file input the
+  hook did not own, so pressing one ran `null?.click()` and did nothing — no error, no
+  change, no feedback. A backup could be downloaded and never put back. The whole import
+  half of the backup format was dead in the running app.
+- **An expired Dropbox sign-in showed a green "Synced".** The token was found unusable
+  before any request, which was reported as "nothing to do" rather than as a failure, and the
+  state that produced had no display — so the header claimed the work was on the other
+  device when it was not, indefinitely, and the Connect button never came back.
+- **A tag typed with a decomposed accent created a duplicate.** "Café" in two Unicode forms
+  is two byte sequences; the comparison the tag path used did not normalise, so the second
+  one became a second tag that renders identically and splits a filter. The one test of the
+  Unicode rule compared a string with itself and passed either way.
+- The entry list and the summary could disagree about the same day: one printed "cannot be
+  computed" for an entry with an unreadable end while the other reported a confident total
+  that quietly omitted it.
+- If the database could not be opened at all, the entries view said "Loading…" for ever and
+  suppressed the empty state, so a broken browser looked like a working empty one.
+- The About page dropped the changelog's opening paragraphs entirely — while still shipping
+  their bytes to every visitor — and split each wrapped paragraph into one block per source
+  line, breaking sentences mid-clause.
+- A failed backup restore was reported as "Could not read that file", sending the user to
+  re-select a perfectly good backup when the real problem was the write.
+- Archiving a project or client, changing the default currency, starting or discarding a
+  timer, and stopping one all failed silently.
+- A colour restored from a hand-edited backup was stored as-is and rendered as no swatch.
 - A timer could be started against no project at all while the client's default project was
   still being read, recording the time uncategorised with nothing to indicate it.
 - Undo of a taxonomy deletion wrote correctly but never notified views, so the restored

@@ -1,11 +1,12 @@
 import 'fake-indexeddb/auto'
-import { beforeEach, describe, expect, it } from 'vitest'
-import { act, renderHook } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { AppDb, setDbForTests } from '../../storage/db'
 import { bumpRevision, resetRevisionForTests } from '../../storage/events'
-import { createManualEntry } from '../../storage/entriesRepo'
+import * as entriesRepo from '../../storage/entriesRepo'
+import { createManualEntry, putEntry } from '../../storage/entriesRepo'
 import { useEntries } from './useEntries'
-import { T0 } from '../../test/factories'
+import { entry, T0 } from '../../test/factories'
 
 /**
  * List re-read behaviour (0002 S2).
@@ -102,5 +103,58 @@ describe('useEntries', () => {
     await settle()
 
     expect(result.current.entries).toHaveLength(0)
+  })
+})
+
+describe('a read that fails', () => {
+  beforeEach(async () => {
+    db = new AppDb(`use-entries-error-${(counter += 1)}`)
+    setDbForTests(db)
+    await db.open()
+    resetRevisionForTests()
+  })
+
+  /*
+   * The sibling hook documents this exact failure as the reason it carries an `error`
+   * field, and this one had the bug its sibling was written to avoid: no `.catch`, so a
+   * rejected read left `loadedOnce` false forever — the view rendered "Loading…" for good,
+   * suppressed the empty state, and the rejection was unhandled, which fails a whole test
+   * file on an error nothing displays.
+   */
+  it('reports the failure instead of loading for ever', async () => {
+    const list = vi.spyOn(entriesRepo, 'listEntries').mockRejectedValue(new Error('blocked'))
+
+    const { result } = renderHook(() => useEntries())
+    await waitFor(() => {
+      expect(result.current.error).toMatch(/blocked/)
+    })
+
+    // The distinction that matters: a broken read is not a slow one.
+    expect(result.current.loading).toBe(false)
+    expect(result.current.entries).toEqual([])
+    list.mockRestore()
+  })
+
+  it('clears the error once a read succeeds', async () => {
+    await putEntry(entry({}))
+    const list = vi
+      .spyOn(entriesRepo, 'listEntries')
+      .mockRejectedValueOnce(new Error('blocked'))
+      .mockImplementation(() => Promise.resolve([entry({})]))
+
+    const { result, rerender } = renderHook(() => useEntries())
+    await waitFor(() => {
+      expect(result.current.error).toMatch(/blocked/)
+    })
+
+    // The taxonomy hook already asserts this; a stale error beside fresh data is the same
+    // class of problem as a stale success beside a broken read.
+    bumpRevision()
+    rerender()
+    await waitFor(() => {
+      expect(result.current.error).toBeNull()
+    })
+    expect(result.current.entries.length).toBeGreaterThan(0)
+    list.mockRestore()
   })
 })

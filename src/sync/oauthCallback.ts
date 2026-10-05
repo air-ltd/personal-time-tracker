@@ -2,10 +2,12 @@
  * OAuth redirect handling.
  *
  * Dropbox returns the authorisation code in the query string, which the hash-based
- * router never sees. This runs once at startup, before the app renders, and clears
- * the query string afterwards so a refresh does not try to redeem the same code
- * twice — a one-time code would fail on the second attempt and look like a real
- * error.
+ * router never sees. This runs once at startup, before the app renders.
+ *
+ * It clears the query string *first*, before exchanging the code, so that a refresh
+ * cannot try to redeem the same one-time code twice: the second attempt would fail and
+ * look like a real authorisation error. Clearing afterwards would leave the code in the
+ * URL for as long as the network call took.
  *
  * No app state is needed beyond `state`, which exists to correlate the redirect
  * with the request that started it. The code itself is single-use and short-lived,

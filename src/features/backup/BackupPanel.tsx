@@ -1,4 +1,3 @@
-import { useRef } from 'react'
 import { DownloadIcon, RestoreIcon } from '../../app/Icons'
 import { BackupFileInput, BackupStatus } from '../backup/BackupParts'
 import { useBackup } from './useBackup'
@@ -18,7 +17,6 @@ export function BackupPanel({ deps }: { deps?: BackupDeps | undefined } = {}) {
   // `deps` is a seam for tests: the storage wiring is injected rather than reached for, so
   // the panel can be exercised without IndexedDB.
   const backup = useBackup({ deps })
-  const input = useRef<HTMLInputElement>(null)
   const working = backup.state.kind === 'working'
 
   return (
@@ -51,7 +49,7 @@ export function BackupPanel({ deps }: { deps?: BackupDeps | undefined } = {}) {
           Restore from file
         </button>
 
-        <BackupFileInput input={input} onChange={backup.onFileChange} />
+        <BackupFileInput input={backup.fileInput} onChange={backup.onFileChange} />
       </div>
 
       <BackupStatus state={backup.state} />

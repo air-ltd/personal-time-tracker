@@ -7,15 +7,12 @@ import { currentRedirectUri } from './redirect'
 /**
  * Provider construction.
  *
- * Kept separate so the redirect handler and the settings panel build an identical
- * provider — two instances with separate PKCE verifiers would mean the second one
- * cannot complete an authorisation the first one started (0012 AU8).
+ * Kept separate so the redirect handler and the settings panel build an identical provider.
+ * Why that matters is stated once, at the cache below.
  */
 function build(): DropboxProvider {
   // The key comes from the user's browser first, then the build-time environment
-  // (src/sync/appKey.ts). Read once at construction and held by the instance: a
-  // second instance would carry its own PKCE verifier and so could not complete an
-  // authorisation the first one began (0012 AU8).
+  // (src/sync/appKey.ts). Read once at construction and held by the instance.
   const clientId = readAppKey()
   return new DropboxProvider({
     clientId,
@@ -31,9 +28,13 @@ let cached: DropboxProvider | null = null
 /**
  * Synchronous and cached.
  *
- * One instance for the whole app: the redirect handler and the settings panel must
- * share it, because a second instance would hold its own PKCE verifier and so could
- * not complete an authorisation the first one began (0012 AU8).
+ * One instance for the whole app. The redirect handler and the settings panel must share
+ * it, because a second instance would hold its own PKCE verifier and so could not complete
+ * an authorisation the first one began (0012 AU8).
+ *
+ * That reasoning used to be written out in three places in this one file. Copies of a
+ * rationale drift independently — and here one had already begun to, by dropping the half
+ * about the verifier — so it lives at the thing it explains.
  */
 export function indexedDbDropboxProvider(): DropboxProvider {
   cached ??= build()

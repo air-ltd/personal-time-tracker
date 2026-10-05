@@ -24,12 +24,26 @@ export type BackupState =
 
 export interface Backup {
   state: BackupState
+  /**
+   * The input `chooseFile` opens, to be rendered as a `BackupFileInput`.
+   *
+   * Owned by this hook rather than by each caller because `chooseFile` dereferences *this*
+   * ref. It used to be returned as nothing at all, so both callers created their own ref,
+   * passed that one to the input, and left this one `null` — which made `chooseFile`
+   * `null?.click()`, and both restore buttons dead. The type could not see it: the
+   * interface never mentioned the ref, so the split ownership of one piece of state across
+   * two components type-checked perfectly.
+   *
+   * Two surfaces render a backup control (the settings panel and the header menu), so
+   * there really are two call sites, and returning the ref is what keeps them agreeing.
+   */
+  fileInput: React.RefObject<HTMLInputElement | null>
   /** Writes a backup file and reports what it contained. */
   export: () => void
-  /** Opens the file picker. Pass the chosen file to `restore`. */
+  /** Opens the file picker. Renders `fileInput` as a hidden input to receive the choice. */
   chooseFile: () => void
   restore: (file: File) => void
-  /** Bind to a file input's `onChange`. Resets it first, so the same file fires twice. */
+  /** Bind to the input's `onChange`. Resets it first, so the same file fires twice. */
   onFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void
 }
 
@@ -62,8 +76,27 @@ export function useBackup({
   const restore = useCallback(
     (file: File) => {
       setState({ kind: 'working' })
+      /*
+       * Two catches, not one.
+       *
+       * Reading the file and applying it are different failures with different remedies, and
+       * a single trailing `.catch` reported both as "Could not read that file." — so a
+       * *write* that failed told the user their file was unreadable, sending them off to
+       * re-select a perfectly good backup. The export path has its own catch with correct
+       * wording; these are the same mistake in the other file, so the wording now matches.
+       */
       void file
         .text()
+        .catch((error: unknown) => {
+          setState({
+            kind: 'error',
+            message: error instanceof Error ? error.message : 'Could not read that file.',
+            issues: [],
+          })
+          // Nothing to apply, and letting the chain continue would run the restore with
+          // `undefined` and overwrite this with a second, less accurate message.
+          throw error
+        })
         .then((text) => restoreBackup(deps, text))
         .then((result) => {
           if (result.status === 'rejected') {
@@ -86,7 +119,7 @@ export function useBackup({
         .catch((error: unknown) => {
           setState({
             kind: 'error',
-            message: error instanceof Error ? error.message : 'Could not read that file.',
+            message: error instanceof Error ? error.message : 'Could not apply that backup.',
             issues: [],
           })
         })
@@ -106,7 +139,7 @@ export function useBackup({
     [restore],
   )
 
-  return { state, export: exportBackup, chooseFile, restore, onFileChange }
+  return { state, fileInput, export: exportBackup, chooseFile, restore, onFileChange }
 }
 
 /**

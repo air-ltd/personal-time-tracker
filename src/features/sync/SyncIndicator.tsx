@@ -80,31 +80,50 @@ export function SyncIndicatorView({
     )
   }
 
-  // Connected. An error here is the one worth colouring: the user would otherwise assume
-  // the other device is current, which is the failure silent sync causes (0012 AU8).
+  /*
+   * Ordered by how much the user can act on it, and every branch is a distinct answer.
+   *
+   * The rule: "Synced" is only ever printed when a cycle has actually completed
+   * successfully. Anything else — running, failed, or work still waiting — says so, because
+   * a green dot labelled "Synced" next to a stale timestamp is a claim about the other
+   * device, and the whole reason this indicator exists is that silent sync must never let
+   * the user believe their work is elsewhere when it is not (0012 AU8).
+   *
+   * `syncing` used to fall through to the success branch and print "Synced" while the
+   * round trip was still in flight — the same mistake as the `disabled` state, one size
+   * down.
+   */
   const failed = status?.state === 'error'
-  // Pending is a third state rather than a variant of "Synced": a green "Synced" next to
-  // a minute-old timestamp reads as "everything you just recorded is on the other
-  // device", which is the claim this label used to make and could not support.
-  const pending = !failed && status?.pending === true
+  const running = !failed && status?.state === 'syncing'
+  const pending = !failed && !running && status?.pending === true
+  const tone = failed ? 'error' : running ? 'idle' : pending ? 'warn' : 'ok'
+  const label = failed
+    ? 'Sync failed'
+    : running
+      ? 'Syncing…'
+      : pending
+        ? 'Not synced yet'
+        : 'Synced'
 
   return (
     <a
-      className={`button sync-indicator sync-indicator-${failed ? 'error' : pending ? 'warn' : 'ok'}`}
+      className={`button sync-indicator sync-indicator-${tone}`}
       href="#/settings"
       data-testid="sync-indicator"
       title={
         failed
           ? (status?.message ?? 'The last sync failed. Open settings for the detail.')
-          : pending
-            ? 'Changes are waiting to sync.'
-            : status?.lastSyncAt
-              ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}.`
-              : 'Connected. Waiting for the first sync.'
+          : running
+            ? 'Checking with Dropbox.'
+            : pending
+              ? 'Changes are waiting to sync.'
+              : status?.lastSyncAt
+                ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}.`
+                : 'Connected. Waiting for the first sync.'
       }
     >
       <span className="sync-indicator-dot" aria-hidden="true" />
-      {failed ? 'Sync failed' : pending ? 'Not synced yet' : 'Synced'}
+      {label}
     </a>
   )
 }

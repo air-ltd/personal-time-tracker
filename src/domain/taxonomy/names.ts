@@ -84,12 +84,29 @@ export function findNameConflict(
 }
 
 /**
- * Find an existing record matching a name, ignoring case and surrounding space.
+ * The one field a name lookup needs.
+ *
+ * Narrower than `ExistingName` on purpose. `ExistingName` carries `archived`, which
+ * `findNameConflict` reasons about and which a `Tag` has no concept of — so constraining
+ * this to `ExistingName` made it unusable for tags, and the one caller that needed Unicode
+ * normalisation wrote its own comparison and lost the `.normalize('NFC')`. This function
+ * reads nothing but `name`, so it says so.
+ */
+export interface NamedRecord {
+  name: string
+}
+
+/**
+ * Find an existing record matching a name, ignoring case, surrounding space and Unicode
+ * normalisation form.
  *
  * This is what inline tag creation depends on: typing `Research` when `research` exists
- * must select the existing tag rather than create a duplicate (0005 T2).
+ * must select the existing tag rather than create a duplicate (0005 T2) — and the same
+ * holds for a name that arrives decomposed from a backup or from a different platform's
+ * keyboard. Comparison goes through `nameKey`, so there is one definition of "the same
+ * name" in the codebase rather than one per call site.
  */
-export function findByName<T extends ExistingName>(
+export function findByName<T extends NamedRecord>(
   name: string,
   existing: readonly T[],
 ): T | undefined {

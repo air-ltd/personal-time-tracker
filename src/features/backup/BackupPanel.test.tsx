@@ -214,6 +214,32 @@ describe('BackupPanel', () => {
     )
   })
 
+  it('actually opens the file picker when the button is pressed', async () => {
+    /*
+     * The test the previous version of this file claimed to have and did not.
+     *
+     * Every other restore test here reaches past the button and fires `change` on the
+     * input directly, so the button could be wired to nothing at all and the suite would
+     * stay green. It was: `useBackup` created the ref, dereferenced it in `chooseFile`,
+     * and returned neither — so both call sites attached their *own* ref, `chooseFile`
+     * ran `null?.click()`, and both restore buttons were dead. The entire import half of
+     * 0008 was unreachable, with no error and no state change.
+     *
+     * The type system could not have caught it: `Backup` never mentioned the ref, so two
+     * components each holding one looked like two independent pieces of state. This test
+     * asserts the wiring instead — the button, and the ref the button clicks.
+     */
+    const input = container.querySelector<HTMLInputElement>('[data-testid="backup-file"]')
+    if (!input) throw new Error('no file input')
+    const clicked = vi.fn()
+    input.click = clicked
+
+    click(button(/Restore/))
+    await flush()
+
+    expect(clicked).toHaveBeenCalledTimes(1)
+  })
+
   it('clears the input so choosing the same file twice runs again', async () => {
     const input = container.querySelector<HTMLInputElement>('[data-testid="backup-file"]')
     if (!input) throw new Error('no file input')
