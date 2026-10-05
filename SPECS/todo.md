@@ -185,6 +185,8 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 35. [ ] edit and discard button sizes should match as well as start/stop, so that buttons don't move when start is clicked.
 36. [ ] do not allow delete of only remaining project against a client
 37. [ ] archived clients should not appear in the list for starting a timer
+38. [ ] add info on creating github issues for feedback to the about page.
+39. [ ] add a privacy policy to the about page. (we have no interest in your data).
 
 # Where the branches are
 
