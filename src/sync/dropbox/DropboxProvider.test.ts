@@ -60,6 +60,27 @@ function jsonResponse(status: number, payload: unknown): Response {
   } as unknown as Response
 }
 
+/**
+ * Read one field of a recorded call.
+ *
+ * Asserted through helpers because the interesting claims here are about *which* request
+ * carried *which* token, and indexing `mock.calls[n]` directly makes every assertion carry
+ * a "possibly undefined" the reader has to mentally resolve.
+ */
+function requestUrl(mock: ReturnType<typeof vi.fn>, index: number): unknown {
+  return mock.mock.calls[index]?.[0]
+}
+
+function requestBody(mock: ReturnType<typeof vi.fn>, index: number): unknown {
+  return (mock.mock.calls[index]?.[1] as RequestInit | undefined)?.body
+}
+
+function requestHeader(mock: ReturnType<typeof vi.fn>, index: number, name: string): unknown {
+  const headers = (mock.mock.calls[index]?.[1] as RequestInit | undefined)?.headers as
+    Record<string, string> | undefined
+  return headers?.[name]
+}
+
 function makeProvider(store: MemoryTokenStore, fetchImpl: typeof fetch): DropboxProvider {
   return new DropboxProvider({
     clientId: CLIENT_ID,
@@ -77,6 +98,193 @@ let fetchMock: ReturnType<typeof vi.fn>
 beforeEach(() => {
   store = new MemoryTokenStore()
   fetchMock = vi.fn()
+})
+
+/**
+ * Recovering from an expired access token without involving the user (item 47).
+ *
+ * An access token lasts hours, and the only previous recovery was to send the user back
+ * through Dropbox's consent screen. That made "Sync failed, please reconnect" a scheduled
+ * event rather than a signal, so the cases below are the ones that decide whether this is
+ * worth doing at all: it must recover silently, must not spend a round trip on failures
+ * that are not the credential, and must give up rather than loop.
+ */
+describe('an expired access token', () => {
+  /** Seeds a credential with a refresh token, as an authorising build now writes. */
+  function withRefreshToken(): void {
+    store.tokens = {
+      accessToken: 'expired-tok',
+      expiresAt: Date.now() - 1,
+      refreshToken: 'refresh-1',
+    }
+  }
+
+  /** 401 from Dropbox, which is what an expired token answers with. */
+  function unauthorized(): Response {
+    return response({
+      status: 401,
+      body: JSON.stringify({ error_summary: 'invalid_access_token/' }),
+    })
+  }
+
+  it('refreshes and retries, and the retry succeeds', async () => {
+    withRefreshToken()
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(
+        response({ status: 200, json: { access_token: 'fresh-tok', expires_in: 14400 } }),
+      )
+      .mockResolvedValueOnce(
+        response({
+          status: 200,
+          body: '{"x":1}',
+          headers: { 'dropbox-api-result': JSON.stringify({ rev: 'rev-2' }) },
+        }),
+      )
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    const file = await provider.pull('/data.json')
+
+    expect(file?.rev).toBe('rev-2')
+    // The retry carried the new token, not the dead one.
+    expect(requestHeader(fetchMock, 2, 'Authorization')).toBe('Bearer fresh-tok')
+    // And the new credential was persisted, so the next request needs no refresh.
+    expect(readTokens(store)).toMatchObject({
+      accessToken: 'fresh-tok',
+      refreshToken: 'refresh-1',
+    })
+  })
+
+  it('does not ask the user to do anything', async () => {
+    withRefreshToken()
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(response({ status: 200, json: { access_token: 'fresh-tok' } }))
+      .mockResolvedValueOnce(response({ status: 200, body: '{"x":1}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.pull('/data.json')).resolves.toBeTruthy()
+    expect(store.tokens).not.toBeNull()
+  })
+
+  it('sends the right grant type, and no verifier', async () => {
+    withRefreshToken()
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(response({ status: 200, json: { access_token: 'fresh-tok' } }))
+      .mockResolvedValueOnce(response({ status: 200, body: '{"x":1}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await provider.pull('/data.json')
+
+    expect(requestUrl(fetchMock, 1)).toBe(DROPBOX.tokenUrl)
+    const sent = new URLSearchParams(String(requestBody(fetchMock, 1)))
+    expect(sent.get('grant_type')).toBe('refresh_token')
+    expect(sent.get('refresh_token')).toBe('refresh-1')
+    // A refresh needs no PKCE verifier, and sending one would be asking Dropbox to verify
+    // a challenge for a request that is not a continuation of the original authorisation.
+    expect(sent.get('code_verifier')).toBeNull()
+  })
+
+  it('does not refresh when there is no refresh token', async () => {
+    store.tokens = { accessToken: 'old-tok', expiresAt: Date.now() - 1 }
+    fetchMock.mockResolvedValue(unauthorized())
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.pull('/data.json')).rejects.toThrow()
+
+    // One request only: no token exchange, and the failure surfaces so the scheduler can
+    // ask the user to reconnect — the old, correct behaviour for this credential.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not refresh on a failure that is not the credential', async () => {
+    withRefreshToken()
+    // A 500 is not a credential problem, and refreshing would spend a round trip and
+    // make an outage look like a reconnection.
+    fetchMock.mockResolvedValue(response({ status: 500, body: '{}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.pull('/data.json')).rejects.toThrow()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up when the refresh token itself is dead, and does not loop', async () => {
+    withRefreshToken()
+    // `invalid_grant` is Dropbox's answer for a revoked refresh token. There is nothing
+    // left to retry with, so the request must fail rather than spin.
+    fetchMock.mockResolvedValue(unauthorized())
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.pull('/data.json')).rejects.toThrow()
+
+    // Once for the request, once for the refresh. No third call.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a dead refresh token once per session, not once per request', async () => {
+    withRefreshToken()
+    fetchMock.mockResolvedValue(unauthorized())
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.pull('/data.json')).rejects.toThrow()
+    const afterFirst = fetchMock.mock.calls.length
+    await expect(provider.pull('/data.json')).rejects.toThrow()
+
+    // The second request still does not get a refresh attempt. Without this, a tab left
+    // open would spend a token exchange per cycle against a credential that will never work.
+    expect(fetchMock).toHaveBeenCalledTimes(afterFirst + 1)
+  })
+
+  it('shares one exchange between two requests that fail together', async () => {
+    withRefreshToken()
+    // `vi.fn(impl)` rather than `mockImplementation(impl)`: the two requests and the token
+    // exchange interleave, so the responses have to be routed by URL rather than queued.
+    const router = vi.fn((url: string) =>
+      Promise.resolve(
+        url === DROPBOX.tokenUrl
+          ? response({ status: 200, json: { access_token: 'fresh-tok' } })
+          : unauthorized(),
+      ),
+    )
+    const provider = makeProvider(store, router as unknown as typeof fetch)
+
+    await Promise.allSettled([
+      provider.pull('/data.json'),
+      provider.push('/data.json', '{}', null),
+    ])
+
+    // One token exchange for two failures. Two would race each other's credential write,
+    // and the loser would store a token that is already stale.
+    const tokenCalls = router.mock.calls.filter((call) => call[0] === DROPBOX.tokenUrl)
+    expect(tokenCalls).toHaveLength(1)
+  })
+
+  it('refreshes a push as readily as a pull', async () => {
+    // The path that matters most: an upload blocked by an expired token is the one that
+    // would otherwise fail with a conflict on the next attempt.
+    withRefreshToken()
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(response({ status: 200, json: { access_token: 'fresh-tok' } }))
+      .mockResolvedValueOnce(response({ status: 200, json: { rev: 'rev-9' } }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.push('/data.json', '{}', null)).resolves.toEqual({ rev: 'rev-9' })
+  })
+
+  it('leaves the original failure visible when the refresh itself errors', async () => {
+    withRefreshToken()
+    fetchMock
+      .mockResolvedValueOnce(unauthorized())
+      .mockResolvedValueOnce(response({ status: 503, body: 'upstream down' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    // The user should be asked to reconnect, not shown a token-endpoint error they cannot
+    // act on.
+    await expect(provider.pull('/data.json')).rejects.toThrow(/invalid_access_token/)
+  })
 })
 
 /**

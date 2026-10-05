@@ -121,6 +121,20 @@ export class DropboxProvider implements SyncProvider {
   private readonly storage: TokenStore
   private readonly fetchImpl: typeof fetch
   private readonly randomBytes: (length: number) => Uint8Array
+  /**
+   * The refresh state for this session (SPECS/todo.md item 47).
+   *
+   * Three states, and the difference between the first two is the whole reason this is
+   * not a boolean:
+   *
+   * - `undefined` — not attempted yet. Worth attempting.
+   * - a promise — in flight, shared, so two requests failing at once make one exchange
+   *   instead of both minting a token and racing each other's credential write.
+   * - `null` — attempted and failed, so the refresh token is dead. Never worth attempting
+   *   again this session; without this a tab left open would spend a token exchange per
+   *   cycle against a credential that will never work.
+   */
+  private refreshTokens: Promise<string | null> | null | undefined = undefined
   private readonly now: () => number
   /**
    * The pending PKCE verifier, cached for the duration of the round trip.
@@ -333,16 +347,19 @@ export class DropboxProvider implements SyncProvider {
   }
 
   async pull(path: string): Promise<RemoteFile | null> {
-    const tokens = await this.requireToken()
+    const arg = { path: normalizePath(path) }
+
     // POST with the argument in the header: `download` is `style = "download"` with a
     // DownloadArg struct, so the path does not belong in the URL.
-    const response = await this.fetchImpl(DROPBOX.downloadUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-        'Dropbox-API-Arg': JSON.stringify({ path: normalizePath(path) }),
-      },
-    })
+    const response = await this.authenticated((accessToken) =>
+      this.fetchImpl(DROPBOX.downloadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Dropbox-API-Arg': JSON.stringify(arg),
+        },
+      }),
+    )
 
     if (response.ok) {
       const rev = response.headers.get('dropbox-api-result')
@@ -351,15 +368,14 @@ export class DropboxProvider implements SyncProvider {
     }
 
     const detail = await describeFailure(response, {
-      op: `download ${normalizePath(path)}`,
-      args: { path: normalizePath(path) },
+      op: `download ${arg.path}`,
+      args: arg,
     })
     if (detail.kind === 'not-found') return null
     throw detail.error
   }
 
   async push(path: string, body: string, expectedRev: string | null): Promise<{ rev: string }> {
-    const tokens = await this.requireToken()
     const args = {
       path: normalizePath(path),
       mode: expectedRev ? DROPBOX.updateMode(expectedRev) : DROPBOX.overwriteMode,
@@ -368,15 +384,17 @@ export class DropboxProvider implements SyncProvider {
       strict_conflict: STRICT_CONFLICT,
     }
 
-    const response = await this.fetchImpl(DROPBOX.uploadUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-        'Content-Type': 'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify(args),
-      },
-      body,
-    })
+    const response = await this.authenticated((accessToken) =>
+      this.fetchImpl(DROPBOX.uploadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/octet-stream',
+          'Dropbox-API-Arg': JSON.stringify(args),
+        },
+        body,
+      }),
+    )
 
     if (response.ok) {
       const json = (await response.json()) as { rev?: string }
@@ -394,6 +412,105 @@ export class DropboxProvider implements SyncProvider {
     const tokens = toTokens(await this.storage.read())
     if (!tokens?.accessToken) throw new SyncError('auth', 'Not connected to Dropbox.')
     return tokens
+  }
+
+  /**
+   * Make an authenticated request, refreshing once if the token has expired.
+   *
+   * An access token lasts hours. Before this, the only recovery was to send the user back
+   * through Dropbox's consent screen — so "Sync failed, reconnect" was a routine event that
+   * happened on a timer, and a user who had connected Dropbox once would keep being asked
+   * to prove it (SPECS/todo.md item 47).
+   *
+   * **Once, and only on an auth failure.** Two bounds, both load-bearing:
+   *
+   * - Only a 401/403 triggers it. Refreshing on any failure would spend a round trip on
+   *   every rate limit and every offline attempt, and would make a network problem look
+   *   like a credential problem.
+   * - Only one retry. A refresh token that is itself dead returns `invalid_grant`, and an
+   *   unbounded retry against one is a loop that looks like syncing. `refreshTokens` is
+   *   held for the duration and cleared by a concurrent refresh, so two requests failing
+   *   at once cannot both mint a token and race each other's write.
+   *
+   * A refresh that fails is reported as `auth`, which is what the scheduler already knows
+   * how to recover from: discard the credential and ask the user once.
+   */
+  private async authenticated(
+    send: (accessToken: string) => Promise<Response>,
+  ): Promise<Response> {
+    const tokens = await this.requireToken()
+    const response = await send(tokens.accessToken)
+    if (!isAuthFailure(response.status)) return response
+    if (tokens.refreshToken === undefined) return response
+
+    if (this.refreshTokens === undefined) this.refreshTokens = this.refreshAccessToken()
+    try {
+      const fresh = await this.refreshTokens
+      if (fresh === null) return response
+      return await send(fresh)
+    } catch {
+      // The refresh itself failed. The original response is still the more informative one
+      // to classify, and it will read as `auth`, so the user is asked to reconnect rather
+      // than shown a token-endpoint error they cannot act on.
+      return response
+    }
+  }
+
+  /**
+   * Mints a new access token, or `null` when there is nothing to mint one with.
+   *
+   * Memoised in `refreshTokens` for the life of the provider so concurrent failures share
+   * one exchange. Cleared to `null` — not left rejected — when the exchange fails, so a
+   * revoked refresh token is not retried for every subsequent request in the session.
+   */
+  private async refreshAccessToken(): Promise<string | null> {
+    const stored = toTokens(await this.storage.read())
+    const refreshToken = stored?.refreshToken
+    if (refreshToken === undefined) return null
+
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: this.clientId,
+    })
+
+    try {
+      const response = await this.fetchImpl(DROPBOX.tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      })
+      if (!response.ok) {
+        this.refreshTokens = null
+        return null
+      }
+      const json = (await response.json()) as {
+        access_token?: string
+        expires_in?: number
+      }
+      if (typeof json.access_token !== 'string' || json.access_token === '') {
+        this.refreshTokens = null
+        return null
+      }
+
+      await this.storage.write({
+        // Spread the existing credential rather than assembling one, so a field added to
+        // `DropboxTokens` later is not silently dropped on the first refresh — which is
+        // how the refresh token itself was nearly lost.
+        ...stored,
+        accessToken: json.access_token,
+        expiresAt:
+          this.now() +
+          (typeof json.expires_in === 'number'
+            ? json.expires_in
+            : TOKEN_TTL_FALLBACK_MS / 1000) *
+            1000,
+      })
+      return json.access_token
+    } catch {
+      this.refreshTokens = null
+      return null
+    }
   }
 }
 
@@ -413,6 +530,18 @@ function normalizePath(path: string): string {
   // extra slashes still addresses the intended file rather than a differently-named
   // one.
   return `/${path.trim().replace(/^\/+/, '')}`
+}
+
+/**
+ * The HTTP statuses that mean "this credential is no longer valid".
+ *
+ * Status-based rather than body-based on purpose: the body has to be read to be understood,
+ * and by the time it has been parsed the request has already failed for a reason that may
+ * not be the credential. Refreshing on a 404 or a 409 would spend a round trip to fix
+ * nothing.
+ */
+function isAuthFailure(status: number): boolean {
+  return status === 401 || status === 403
 }
 
 interface FailureDetail {
