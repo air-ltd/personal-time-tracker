@@ -794,6 +794,26 @@ code {
   gap: 0.3rem;
 }
 
+/*
+ * Each button's width is pinned to the widest word that ever occupies its slot, so
+ * pressing Start moves nothing (SPECS/todo.md item 35).
+ *
+ * The two states swap four words for four others: Start/Stop in the first slot and
+ * Edit/Discard in the second. `Start` is wider than `Stop` and `Edit` is narrower than
+ * `Discard`, so without this the first button shrank and the second grew under the
+ * pointer — the control you are about to press changing shape as you press it.
+ *
+ * Sized in `rem` rather than `ch` because the buttons have horizontal padding that `ch`
+ * would not account for, and the words differ in more than their character count.
+ */
+.timer-client-actions .button-primary {
+  min-width: 4.3rem;
+}
+
+.timer-client-actions .button:not(.button-primary) {
+  min-width: 5rem;
+}
+
 /* Currency preferences (items 13–14): chosen first, then the rest. */
 .currency-picker-list {
   border: 1px solid var(--border);

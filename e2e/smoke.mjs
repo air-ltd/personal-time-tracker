@@ -637,6 +637,13 @@ async function main() {
     // that did nothing would have satisfied every other check here.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
     const projectRow = page.locator('.taxonomy-row', { hasText: 'Website' }).first()
+    const clientRow = page.locator('.taxonomy-row', { hasText: 'Acme Ltd' }).first()
+    // Waited on before counting. `count()` does not retry, and settings renders a loading
+    // line first, so an uncounted assert read 0 rows on a slow load and passed on a fast
+    // one. The absence assertions below then trivially held — which is exactly the shape of
+    // check that makes a broken button look correct.
+    await projectRow.getByRole('button', { name: 'Archive' }).waitFor()
+    await clientRow.getByRole('button', { name: 'Archive' }).waitFor()
     check(
       'a project row offers Archive and no Delete (0005 X1)',
       (await projectRow.getByRole('button', { name: 'Delete' }).count()) === 0 &&
@@ -644,11 +651,8 @@ async function main() {
     )
     check(
       'a client row offers Archive and no Delete (0005 X1)',
-      (await page
-        .locator('.taxonomy-row', { hasText: 'Acme Ltd' })
-        .first()
-        .getByRole('button', { name: 'Delete' })
-        .count()) === 0,
+      (await clientRow.getByRole('button', { name: 'Delete' }).count()) === 0 &&
+        (await clientRow.getByRole('button', { name: 'Archive' }).count()) === 1,
     )
 
     // X3: archiving asks for nothing, because it moves no entry.
@@ -804,6 +808,37 @@ async function main() {
       'starting a timer does not move the client rows (item 19)',
       Math.abs((idleHeights?.height ?? 0) - (activeHeights?.height ?? 0)) < 24,
       `idle=${idleHeights?.height} running=${activeHeights?.height}`,
+    )
+    // Item 35: the row held still, but the buttons inside it did not. Start is wider than
+    // Stop and Edit narrower than Discard, so pressing Start shrank the first and grew the
+    // second — the control under the pointer changing shape as it is pressed. Asserted on
+    // position as well as width, because a button that keeps its width but shifts sideways
+    // is the same defect.
+    const idleButtons = await page
+      .locator('.timer-client-row', { hasText: 'Acme Ltd' })
+      .locator('.timer-client-actions .button')
+      .evaluateAll((nodes) =>
+        nodes.map((n) => {
+          const box = n.getBoundingClientRect()
+          return { w: Math.round(box.width), x: Math.round(box.left) }
+        }),
+      )
+    const activeButtons = await page
+      .locator('.timer-client-row', { hasText: 'Acme Ltd' })
+      .locator('.timer-client-actions .button')
+      .evaluateAll((nodes) =>
+        nodes.map((n) => {
+          const box = n.getBoundingClientRect()
+          return { w: Math.round(box.width), x: Math.round(box.left) }
+        }),
+      )
+    check(
+      'starting a timer does not resize or move its buttons (item 35)',
+      idleButtons.length === 2 &&
+        activeButtons.length === 2 &&
+        idleButtons.every((b, i) => Math.abs(b.w - activeButtons[i].w) <= 1) &&
+        idleButtons.every((b, i) => Math.abs(b.x - activeButtons[i].x) <= 1),
+      `idle=${JSON.stringify(idleButtons)} running=${JSON.stringify(activeButtons)}`,
     )
     check(
       'the running client is indicated on its own line',

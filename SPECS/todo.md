@@ -182,12 +182,12 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     than wrapped, so a long client name cannot move it either. Measured in a browser, because
     auto-placement has a subtlety that looks correct in review: with only two children the
     controls landed in column 2 and jumped to column 3 the moment the note appeared.
-35. [ ] edit and discard button sizes should match as well as start/stop, so that buttons don't move when start is clicked.
-   *Confirmed real, not fixed.* `Start` is wider than `Stop`, so pressing Start shrinks the
-   first button; `Edit` is narrower than `Discard`, so the second grows. Both move. The
-   browser suite already checks row *height* across this transition (item 19) but nothing
-   checks width, so the fix needs a min-width per button role plus a width assertion beside
-   the existing height one — otherwise the same drift returns unnoticed.
+35. [x] edit and discard button sizes should match as well as start/stop, so that buttons
+   don't move when start is clicked — **done.** `Start` is wider than `Stop` and `Edit`
+   narrower than `Discard`, so pressing Start shrank the first button and grew the second:
+   the control under the pointer changing shape as it is pressed. Each slot is pinned to the
+   widest word that ever occupies it, and the browser suite now asserts both width *and*
+   left position across the transition, beside the existing row-height check.
 36. [x] do not allow delete of only remaining project against a client — **closed by item 41.**
    Answered at the root rather than per-case: clients and projects are not deletable at all,
    so there is no path to deleting a client's last project.
