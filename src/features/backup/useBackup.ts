@@ -85,6 +85,22 @@ export function useBackup({
        * re-select a perfectly good backup. The export path has its own catch with correct
        * wording; these are the same mistake in the other file, so the wording now matches.
        */
+      /*
+       * Size checked before reading, not after.
+       *
+       * `file.text()` materialises the whole file as one string, so a 2 GB file is fully in
+       * memory before the parser ever sees it and the tab dies without a word to the user.
+       * `file.size` is known from the `File` handle alone, so the cap costs nothing and
+       * refuses politely instead. The download path reasons about the same trade-off.
+       */
+      if (file.size > MAX_BACKUP_BYTES) {
+        setState({
+          kind: 'error',
+          message: `That file is ${MB(file.size)} MB. A backup this app wrote is a fraction of that, so this is probably not one.`,
+          issues: [],
+        })
+        return
+      }
       void file
         .text()
         .catch((error: unknown) => {
@@ -149,6 +165,19 @@ export function useBackup({
  * in memory twice. Revoked afterwards, since a leaked URL pins the blob for the life of
  * the document.
  */
+/**
+ * A ceiling on a restored file, chosen to sit well above any backup this app could write.
+ *
+ * Generous enough not to refuse a real backup of a long history, low enough that a
+ * mistakenly selected video cannot take the tab down with it.
+ */
+const MAX_BACKUP_BYTES = 64 * 1024 * 1024
+
+/** Whole megabytes, for the message. Rounded up so 0.1 MB does not read as "0 MB". */
+function MB(bytes: number): string {
+  return String(Math.ceil(bytes / (1024 * 1024)))
+}
+
 function downloadBackup(filename: string, body: string): void {
   const url = URL.createObjectURL(new Blob([body], { type: 'application/json' }))
   const link = document.createElement('a')
@@ -157,7 +186,18 @@ function downloadBackup(filename: string, body: string): void {
   document.body.append(link)
   link.click()
   link.remove()
-  URL.revokeObjectURL(url)
+  /*
+   * Revoked on the next task, not synchronously after the click.
+   *
+   * Revoking in the same task aborts the download in some Firefox and Safari versions: the
+   * click has been dispatched but the navigation has not been read yet, so the blob is gone
+   * by the time it is fetched. `setTimeout(…, 0)` is the conventional fix and costs
+   * nothing. The element is removed immediately either way — it is never in the document
+   * while the browser resolves the link.
+   */
+  setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 0)
 }
 
 /**

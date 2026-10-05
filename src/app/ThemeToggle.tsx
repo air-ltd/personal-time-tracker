@@ -33,7 +33,11 @@ export function ThemeToggle({ value, onChange }: Props) {
             <input
               type="radio"
               id={id}
-              name="theme"
+              // Scoped like the id. `name` decides which radios are one group, so a static
+              // value merges two instances into a single control: choosing Light in the
+              // second toggle would silently clear the first, because they would be the
+              // same group.
+              name={`${baseId}-group`}
               value={option}
               checked={value === option}
               onChange={() => onChange(option)}

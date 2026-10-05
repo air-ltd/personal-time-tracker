@@ -1,6 +1,7 @@
 import { groupEntriesByDay } from '../../domain/entries/group'
 import { formatClock, formatDuration, entryDurationMs } from '../../domain/time/duration'
-import { localDayBounds } from '../../domain/time/days'
+import { dayHeading } from '../../domain/entries/dayHeading'
+import { EmptyState } from './emptyState'
 import type { TimeEntry } from '../../domain/entries/types'
 import { useEntries } from './useEntries'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
@@ -78,26 +79,22 @@ function FilteredEntryList({
   if (loading) return <p className="hint">Loading…</p>
 
   if (groups.length === 0) {
-    return (
-      <p className="hint" data-testid="empty-state">
-        No entries yet. Start the timer above, or add one by hand.
-      </p>
-    )
+    return <EmptyState />
   }
 
   return (
     <div className="day-groups">
       {groups.map((group) => (
-        <section key={group.key} className="day-group" aria-label={heading(group.key)}>
+        <section key={group.key} className="day-group" aria-label={dayHeading(group.key)}>
           <header className="day-header">
-            <h3>{heading(group.key)}</h3>
+            <h3>{dayHeading(group.key)}</h3>
             <span className="day-total" data-testid={`day-total-${group.key}`}>
               {formatDuration(group.totalMs)}
             </span>
           </header>
           {/* Named so it is distinguishable from any other list on the page, both
               for assistive tech and for tests that count rows. */}
-          <ul className="entry-rows" aria-label={`Entries for ${heading(group.key)}`}>
+          <ul className="entry-rows" aria-label={`Entries for ${dayHeading(group.key)}`}>
             {group.entries.map((entry) => (
               <EntryRow
                 key={entry.id}
@@ -239,16 +236,3 @@ function EntryRow({
  * every other entry with it. Showing the key is unhelpful but honest, and keeps the rest
  * of the day readable.
  */
-function heading(key: string): string {
-  try {
-    const { start } = localDayBounds(key)
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }).format(start)
-  } catch {
-    return key
-  }
-}

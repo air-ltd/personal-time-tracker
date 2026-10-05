@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { navigate } from '../../app/router'
 import type { TimeEntry } from '../../domain/entries/types'
+import { HOUR, MINUTE } from '../../domain/time/duration'
 import {
   formatDuration,
   fromDurationInputValue,
@@ -79,6 +80,20 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
   const appDefaultCurrency = useAppDefaultCurrency()
   const [projectId, setProjectId] = useState<string | null>(entry?.projectId ?? null)
   const [tagIds, setTagIds] = useState<string[]>(entry?.tagIds ?? [])
+  /**
+   * A tag being created by the input right now, which the save has to wait for.
+   *
+   * Pressing Save blurs the tag field, and blur commits what was typed. The blur handler is
+   * fire-and-forget, so the entry was written before the tag existed: the tag ended up in
+   * the taxonomy attached to nothing, and the user had been told nothing. Awaiting this
+   * before writing is the difference between "saved with the tag I typed" and a silent
+   * loss plus an orphan.
+   */
+  const pendingTag = useRef<Promise<string[] | null> | null>(null)
+  // The tag input hands over whatever it is creating; the ref is ours, not a prop it writes.
+  const noteCommittingTag = useCallback((work: Promise<string[] | null>) => {
+    pendingTag.current = work
+  }, [])
   // P5: a project with a default rate implies billable work, so the checkbox starts
   // ticked for it. Held separately from the project so it can still be turned off for a
   // one-off piece of unbilled work on a normally-billable project.
@@ -171,6 +186,17 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
     setIssues(result.issues)
     if (!result.ok) return
 
+    // Before the write, not after: the tag must exist and be in the ids for it to be
+    // attached. Awaiting alone is not enough — `onChange` schedules a state update, so
+    // `tagIds` is still the old value in this closure — hence the resolved selection is
+    // used in place of it when there is one.
+    let ids = tagIds
+    if (pendingTag.current !== null) {
+      const pending = pendingTag.current
+      pendingTag.current = null
+      ids = (await pending) ?? tagIds
+    }
+
     setSubmitting(true)
     try {
       if (entry) {
@@ -183,7 +209,7 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
             end: end === null ? null : end.toISOString(),
             note,
             projectId,
-            tagIds,
+            tagIds: ids,
             billable,
           },
           now,
@@ -197,7 +223,7 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
         if (end === null) {
           throw new Error('a new manual entry must have an end')
         }
-        await createManualEntry({ start, end, note, now, projectId, tagIds, billable })
+        await createManualEntry({ start, end, note, now, projectId, tagIds: ids, billable })
       }
       navigate('/')
     } finally {
@@ -322,7 +348,7 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
       {durationPreview !== null && (
         <p className="hint" data-testid="duration-preview">
           That is {formatDuration(durationPreview, { seconds: true })}
-          {durationPreview < 3_600_000 && ` (${Math.round(durationPreview / 60000)} minutes)`}
+          {durationPreview < HOUR && ` (${Math.round(durationPreview / MINUTE)} minutes)`}
         </p>
       )}
 
@@ -391,6 +417,7 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
         report={(problem) =>
           setTaxonomyError(problem instanceof Error ? problem.message : String(problem))
         }
+        onCommitting={noteCommittingTag}
       />
 
       <div className="field">

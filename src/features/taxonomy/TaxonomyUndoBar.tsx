@@ -1,18 +1,17 @@
 import { useEffect } from 'react'
+import { AUTO_HIDE_MS } from '../entries/undoWindow'
 
 /**
  * Undo for a taxonomy deletion (0005 X5).
  *
  * Separate from the entry `UndoBar` because the receipt is not an entry id: undoing
  * restores a record *and* the references the deletion cleared, which is a different shape
- * of thing to put a countdown on. The window is the same one 0003 D3 sets.
+ * of thing to put a countdown on. The window is shared, not re-derived — see `undoWindow`.
  *
  * Takes a finished sentence rather than a receipt. The caller knows what kind of record
  * it deleted and what that did to its entries, and the only reason to reach past it would
  * be to re-derive that — which is how this ends up narrowing a union it does not own.
  */
-
-const AUTO_HIDE_MS = 10_000
 
 export interface TaxonomyUndo {
   /** What was deleted, e.g. `project "Acme"`. */

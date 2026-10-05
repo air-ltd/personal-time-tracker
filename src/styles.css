@@ -87,8 +87,8 @@ body {
     Arial,
     sans-serif;
   line-height: 1.5;
-  /* Avoid a flash of the wrong background if the theme attribute is late. */
-  background-color: var(--bg);
+  /* No second `background-color`: the `background` shorthand above already sets it, and a
+     declaration repeated inside the same rule is a no-op whatever it claims to prevent. */
 }
 
 .app {
@@ -405,10 +405,9 @@ code {
   padding: 0;
 }
 
-.entry-tags {
-  /* Inside the content column now, so it needs no width of its own. */
-  flex-wrap: wrap;
-}
+/* `.entry-tags` and `.tag-chips` share the rule above, including the wrap. It used to
+   declare `flex-wrap: wrap` again in a rule of its own, which read as a second decision
+   rather than the same one. */
 
 /*
  * Reserved feedback line under a rate field.
@@ -682,9 +681,10 @@ code {
 
 /* A settings section heading with its add button on the same line (items 32, 33). */
 .taxonomy-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  /* Composed onto `.panel-header`, which now carries the layout: heading left, add button
+     right. Only what genuinely differs — a tighter gap, because the taxonomy sections sit
+     closer together, and a little space before the list. It used to restate all four flex
+     declarations, which reads as a second decision rather than a variant. */
   gap: 0.5rem;
   margin-bottom: 0.3rem;
 }
@@ -697,16 +697,12 @@ code {
 /* Item 32: the add button shares the "Timer" heading's line, right-aligned. The separate
    header row it lived in is gone — it cost a whole row of height on the card the user
    looks at most often. */
-.timer-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
 /* A plus rather than a word: the rows beneath are all add-actions already. Sized for a
    fingertip rather than matched to the small text buttons beside it. */
-.timer-add-client {
+/* The add button that sits on a section heading's line. Named for its role rather than for
+   the timer card, which used to be the only one with a name — so the taxonomy sections'
+   buttons were styled by a class that said "timer". */
+.heading-add-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1410,8 +1406,7 @@ code {
      could drift from the wide one unnoticed.
 
      `padding` stays because it does differ — a slightly larger target at a width where a
-     mis-tap is likelier — and an earlier version of this comment claimed it had been
-     removed while leaving it in place directly underneath. */
+     mis-tap is likelier. */
   .entry-edit {
     padding: 0.2rem 0.35rem;
     grid-column: 2;
@@ -1456,9 +1451,8 @@ code {
     padding: 1rem 0.75rem;
   }
 
-  .button-row {
-    flex-wrap: wrap;
-  }
+  /* `.button-row` already wraps at every width, so there is nothing narrow-specific to say
+     here. The override repeated the base rule, which reads as a second decision. */
 
   /* Taxonomy rows stack rather than compete for three columns on a phone. */
   .taxonomy-row {

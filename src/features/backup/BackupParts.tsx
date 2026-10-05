@@ -50,8 +50,12 @@ export function BackupStatus({ state }: { state: BackupState }) {
         <p>{state.message}</p>
         {state.issues.length > 0 && (
           <ul className="backup-issues">
-            {state.issues.map((issue) => (
-              <li key={issue}>{issue}</li>
+            {/* Indexed, not keyed by the text: two problems with the same wording are
+                legitimately both listed — an entry can be too long and start in the future
+                is a different message, but "end must be after start" can appear once per
+                entry — and a duplicate key makes React drop one of them silently. */}
+            {state.issues.map((issue, index) => (
+              <li key={`${index}-${issue}`}>{issue}</li>
             ))}
           </ul>
         )}

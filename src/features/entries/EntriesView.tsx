@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useEntries } from '../entries/useEntries'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
 import { EntryList } from '../entries/EntryList'
+import { EmptyState } from '../entries/emptyState'
 import { EntrySummary, PeriodControl } from '../entries/EntrySummary'
 import { useTimer } from '../timer/useTimer'
 import { useEntryPeriod } from '../entries/useEntryPeriod'
@@ -140,9 +141,7 @@ export function EntriesView({ now, selectedClientId }: EntriesViewProps) {
             causes.
           </p>
         ) : entries.length === 0 && !loading ? (
-          <p className="hint" data-testid="empty-state">
-            No entries yet. Start the timer above, or add one by hand.
-          </p>
+          <EmptyState />
         ) : period === 'all' ? (
           /*
            * All-entries keeps the list rather than summarising: a total for everything is

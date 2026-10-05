@@ -424,6 +424,32 @@ describe('triggers', () => {
     scheduler.stop()
   })
 
+  it('keeps reporting pending when a change lands mid-cycle (8.11)', async () => {
+    // The cycle's `finally` used to clear `pending` unconditionally. A write landing during
+    // a cycle set the flag, then the in-flight cycle cleared it — so for the whole 5s
+    // debounce the indicator claimed the work was on the other device when it was not.
+    const { scheduler } = counting()
+    await scheduler.start()
+
+    bumpRevision()
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(scheduler.getStatus().pending).toBe(false)
+
+    // Straight into another cycle, and a write while it is in flight.
+    bumpRevision()
+    void scheduler.syncNow()
+    bumpRevision()
+    expect(scheduler.getStatus().pending).toBe(true)
+
+    // The first cycle finishes inside this advance; the flag must survive it.
+    await vi.advanceTimersByTimeAsync(1)
+    expect(scheduler.getStatus().pending).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(scheduler.getStatus().pending).toBe(false)
+    scheduler.stop()
+  })
+
   it('coalesces a burst of edits into one cycle (C2)', async () => {
     const { scheduler, pulls } = counting()
     await scheduler.start()

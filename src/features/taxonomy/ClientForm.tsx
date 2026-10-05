@@ -6,6 +6,7 @@ import { createClientWithDefaultProject, updateClient } from '../../storage/taxo
 import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 import { currencyLabel } from '../../domain/taxonomy/currencies'
 import { FALLBACK_CURRENCY } from '../../domain/taxonomy/money'
+import { suggestColour } from '../../domain/taxonomy/colour'
 import type { Client } from '../../domain/taxonomy/types'
 
 /**
@@ -23,7 +24,13 @@ import type { Client } from '../../domain/taxonomy/types'
 export interface ClientFormProps {
   /** Absent for a new client. */
   client?: Client | undefined
-  /** Colours already in use, so the default is visibly distinct (0005 P4). */
+  /**
+   * Colours already in use, so the default is visibly distinct (0005 P4).
+   *
+   * Now the seed for a new client's colour as well as the picker's exclusions, which is
+   * what it was documented to be. It used to be passed and only used for exclusions, so a
+   * new client always opened as `PALETTE[0]`.
+   */
   takenColours?: readonly string[]
   now: Date
   onDone: () => void
@@ -60,7 +67,16 @@ export function ClientForm({
   const currency = picked ?? appDefaultCurrency ?? FALLBACK_CURRENCY
 
   const [rate, setRate] = useState<number | null>(client?.defaultRateMinor ?? null)
-  const [colour, setColour] = useState(client?.colour ?? '#2e6aae')
+  /**
+   * A new client's colour, chosen rather than hardcoded.
+   *
+   * It was `'#2e6aae'`, which is `PALETTE[0]` written out — so every client ever created
+   * opened as the same blue, and a new project opened as the same blue too. `takenColours`
+   * is threaded in for exactly this, and had nothing to do.
+   */
+  const [colour, setColour] = useState(
+    () => client?.colour ?? suggestColour(takenColours ?? []),
+  )
   // 0005 P8: only worth warning about when editing. On creation there is no history to
   // relabel, so the same warning would be noise.
   const [currencyChanged, setCurrencyChanged] = useState(false)

@@ -145,6 +145,17 @@ export class SyncScheduler {
   private stopped = false
   private running = false
   private queuedWhileRunning = false
+  /**
+   * Whether changes are still outstanding: an armed debounce, or work that arrived after the
+   * current cycle started reading.
+   *
+   * This is what makes `pending` *work*-scoped rather than cycle-scoped. The cycle's
+   * `finally` used to clear `pending` unconditionally, so a write landing mid-cycle lit the
+   * indicator and then had it cleared by a cycle that had already passed it — leaving the
+   * flag false for the whole 5s debounce before the change was actually pushed. Nothing was
+   * lost, but the indicator was wrong in exactly the window it exists to describe.
+   */
+  private workOutstanding = false
   private started = false
   private status: SyncStatus = {
     lastRev: null,
@@ -277,6 +288,7 @@ export class SyncScheduler {
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     // Announced the moment the change is registered rather than when the cycle runs, so
     // "pending" covers the whole debounce window rather than only the round trip.
+    this.workOutstanding = true
     this.emit({ pending: true })
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null
@@ -297,6 +309,9 @@ export class SyncScheduler {
       return null
     }
     this.running = true
+    // Everything outstanding is being read by this cycle from here on, so it no longer needs
+    // announcing. Anything that arrives afterwards re-arms the flag in `schedule`.
+    this.workOutstanding = false
     this.emit({ state: 'syncing', message: null })
 
     try {
@@ -387,11 +402,12 @@ export class SyncScheduler {
       return outcome
     } finally {
       this.running = false
-      // Cleared here rather than on the success path: a failed cycle has still resolved
-      // whatever it could, and leaving the indicator lit forever would train the user to
-      // ignore it. A queued cycle re-arms it immediately below if work did arrive
-      // mid-flight.
-      this.emit({ pending: false })
+      // Cleared rather than left lit forever on a failed cycle: a failure has still resolved
+      // whatever it could, and an indicator that never goes out trains the user to ignore it.
+      // But only when nothing is outstanding — a write that arrived mid-flight set
+      // `workOutstanding`, and clearing the flag then would misreport the 5s debounce
+      // window as synced. That write's own cycle, or the queued one below, clears it.
+      if (!this.workOutstanding) this.emit({ pending: false })
       if (this.queuedWhileRunning) {
         this.queuedWhileRunning = false
         void this.syncNow()

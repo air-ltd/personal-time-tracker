@@ -5,8 +5,10 @@
  * to timer output, manual entry, and any future import path.
  */
 
-export const MAX_ENTRY_MS = 24 * 60 * 60 * 1000
-export const LONG_ENTRY_MS = 12 * 60 * 60 * 1000
+import { HOUR } from '../time/duration'
+
+export const MAX_ENTRY_MS = 24 * HOUR
+export const LONG_ENTRY_MS = 12 * HOUR
 /** Small tolerance to absorb clock skew (0004 V3). */
 export const FUTURE_TOLERANCE_MS = 5 * 60 * 1000
 export const MAX_NOTE_LENGTH = 2000
@@ -95,7 +97,7 @@ export function validateEntry(
       issues.push({
         field: 'end',
         code: 'duration_too_long',
-        message: `An entry cannot be longer than 24 hours. This one is ${(ms / 3_600_000).toFixed(1)} hours, which usually means a typo or a timer left running.`,
+        message: `An entry cannot be longer than 24 hours. This one is ${(ms / HOUR).toFixed(1)} hours, which usually means a typo or a timer left running.`,
         severity: 'error',
       })
     } else if (ms > LONG_ENTRY_MS) {
@@ -103,7 +105,7 @@ export function validateEntry(
       issues.push({
         field: 'end',
         code: 'duration_long',
-        message: `That is a ${(ms / 3_600_000).toFixed(1)}-hour entry. Save it only if the time really is right.`,
+        message: `That is a ${(ms / HOUR).toFixed(1)}-hour entry. Save it only if the time really is right.`,
         severity: 'warning',
       })
     }

@@ -1,5 +1,6 @@
 import { entryDurationMs } from '../time/duration'
-import { dayKey, isValidDayKey, localDayBounds, localWeekBounds } from '../time/days'
+import { dayKey, localDayBounds, weekKeyFromDayKey } from '../time/days'
+import { dayHeading } from './dayHeading'
 import type { TimeEntry } from './types'
 import type { Project } from '../taxonomy/types'
 import type { Client } from '../taxonomy/types'
@@ -137,7 +138,7 @@ export function summariseEntries({
   // date inside the week would be ambiguous in any month with two of them.
   const byWeek = new Map<string, TimeEntry[]>()
   for (const key of keys) {
-    const week = safeWeekKey(key)
+    const week = weekKeyFromDayKey(key)
     if (week === null) continue
     byWeek.set(week, [...(byWeek.get(week) ?? []), ...(byDay.get(key) ?? [])])
   }
@@ -228,24 +229,6 @@ function safeDayKey(iso: string): string | null {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return null
   return dayKey(date)
-}
-
-function safeWeekKey(key: string): string | null {
-  if (!isValidDayKey(key)) return null
-  return dayKey(localWeekBounds(key).start)
-}
-
-function dayHeading(key: string): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }).format(localDayBounds(key).start)
-  } catch {
-    return key
-  }
 }
 
 function weekHeading(weekKeyValue: string): string {

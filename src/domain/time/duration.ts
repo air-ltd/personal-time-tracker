@@ -28,8 +28,16 @@ export function entryDurationMs(entry: TimeEntry, now: Date): number | null {
   return ms < 0 ? null : ms
 }
 
-const SECOND = 1000
-const MINUTE = 60_000
+/**
+ * Time units in milliseconds, exported because they were being written out by hand
+ * elsewhere.
+ *
+ * `3_600_000` appeared three times and `60_000`/`60000` two spellings of the same literal
+ * in one file — which is how a typo becomes a factor-of-60 bug that still type-checks.
+ */
+export const SECOND = 1000
+export const MINUTE = 60_000
+export const HOUR = 60 * MINUTE
 
 export interface DurationFormat {
   /**

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { AUTO_HIDE_MS } from './undoWindow'
 import { formatDuration } from '../../domain/time/duration'
 
 /**
@@ -12,8 +13,6 @@ export interface PendingDelete {
   label: string
   durationMs: number | null
 }
-
-const AUTO_HIDE_MS = 10_000
 
 export function UndoBar({
   pending,

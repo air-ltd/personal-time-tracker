@@ -998,7 +998,7 @@ async function main() {
     // Only checkable here: jsdom has no layout engine, so it cannot tell a drawn path from
     // an empty <svg>, and a broken path fails silently everywhere else.
     const iconGeometry = await page.evaluate(() => {
-      const wanted = ['.timer-add-client svg', '.entry-edit svg', '.header-menu-toggle svg']
+      const wanted = ['.heading-add-button svg', '.entry-edit svg', '.header-menu-toggle svg']
       return wanted.map((selector) => {
         const svg = document.querySelector(selector)
         if (!svg) return { selector, missing: true }

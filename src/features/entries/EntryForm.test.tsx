@@ -455,6 +455,55 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
  * yen was previewed in dollars, and in another form in pounds. The chain is now
  * `resolveCurrency`, and these pin the three links that were once independent copies.
  */
+/**
+ * A tag typed and then saved (0005 T1, T2).
+ *
+ * The tag field commits on blur, and pressing Save is a blur. The blur handler was
+ * fire-and-forget, so the entry was written before the tag existed: the tag arrived in the
+ * taxonomy attached to nothing, and nothing told the user. A silent loss, plus an orphan.
+ *
+ * Two things had to be true for the fix, and only fixing one of them changes nothing:
+ * the save has to *await* the commit, and it has to use the selection the commit produced —
+ * `onChange` schedules a state update, so the form's own `tagIds` is still the old value in
+ * the closure that is about to write.
+ */
+describe('a tag typed and then saved', () => {
+  async function typeTagThenSave(user: UserEvent): Promise<void> {
+    render(<EntryForm now={new Date('2026-10-13T11:00:00.000Z')} />)
+    await user.type(await screen.findByLabelText('Duration'), '90')
+    // The name is typed and *not* committed with a separator, so the only thing that can
+    // commit it is losing focus — which is what pressing Save does.
+    await user.type(await screen.findByLabelText('Tags'), 'research')
+    await user.click(screen.getByRole('button', { name: 'Add entry' }))
+  }
+
+  it('attaches the tag to the entry', async () => {
+    await typeTagThenSave(user)
+
+    await waitFor(async () => {
+      const saved = await listEntries()
+      expect(saved).toHaveLength(1)
+      expect(saved[0]?.tagIds).toHaveLength(1)
+    })
+    const tag = (await listTags())[0]
+    expect((await listEntries())[0]?.tagIds).toEqual([tag?.id])
+    // And not left orphaned.
+    expect(tag?.name).toBe('research')
+  })
+
+  it('leaves no tag behind unattached', async () => {
+    await typeTagThenSave(user)
+
+    await waitFor(async () => {
+      expect(await listEntries()).toHaveLength(1)
+    })
+    const entries = await listEntries()
+    const tags = await listTags()
+    // Every tag the user created is on the entry they created it for.
+    expect(tags.map((tag) => tag.id).sort()).toEqual([...(entries[0]?.tagIds ?? [])].sort())
+  })
+})
+
 describe('the billing preview resolves currency through the whole chain', () => {
   /** Render the form, pick the project named `name`, and return the billing hint. */
   async function previewFor(name: string): Promise<HTMLElement> {

@@ -23,6 +23,12 @@ export function currentRedirectUri(): string {
 }
 
 /**
+ * A name for the app's own URL, which is also its OAuth redirect.
+ *
+ * Delegates rather than recomputing. The two were byte-identical implementations under two
+ * names and two rationales, so a change to how the base path is derived would have had to
+ * be made twice and nothing would say the two had to agree.
+ *
  * Where this repository is published.
  *
  * Only the host, because the path is derived from `BASE_URL` and therefore follows a
@@ -54,5 +60,5 @@ export function deployedRedirectUri(): string {
  * to the directory can turn the click into a 404 on some hosts.
  */
 export function appHomeUrl(): string {
-  return `${window.location.origin}${basePath()}`
+  return currentRedirectUri()
 }

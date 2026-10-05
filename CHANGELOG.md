@@ -114,6 +114,24 @@ Nothing has been released yet. This is the first release candidate.
 
 ### Fixed
 
+- **A tag typed and then saved was silently lost.** Pressing Save moved focus off the tag
+  field, which committed the name, and the form saved the entry before that commit finished —
+  so the tag landed in the taxonomy attached to nothing. The field now clears only once the
+  commit succeeds, and the form waits for it before writing.
+- **A timer against a client's second project belonged to no one.** The running timer was
+  attributed through the client's _default_ project rather than its own, so it appeared in an
+  "uncategorised" row while a client was plainly selected. It also stopped filing against
+  the right project after a project was added or removed, because the lookup was keyed on
+  client ids that never change.
+- **Stopping a timer twice raced the second stop against the first.** Two presses in one
+  render pass both read the timer as running and both called `stopTimer`. The button is now
+  disabled while the write is in flight.
+- Rates were shown as the storage integer — "7500 minor units/hour" — and a project's row
+  said only "billable" with nowhere to read the rate. Both are money now.
+- Every new project and every new client opened as the same blue, and each new project reused
+  the colour of the one before it, because the seed came from an empty list.
+- "Show archived clients" also revealed archived projects: two labelled checkboxes bound to
+  one value.
 - **Restoring a backup was unreachable.** Both restore buttons were wired to a file input the
   hook did not own, so pressing one ran `null?.click()` and did nothing — no error, no
   change, no feedback. A backup could be downloaded and never put back. The whole import

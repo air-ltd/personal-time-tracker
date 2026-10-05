@@ -1,4 +1,5 @@
 import { mergeSnapshots, type Snapshot } from '../domain/merge'
+import { MINUTE } from '../domain/time/duration'
 import { parseEnvelope, serialiseEnvelope, toEnvelope } from './envelope'
 
 /**
@@ -44,7 +45,7 @@ export type RestoreOutcome =
  * backup taken at 23:30 in London should not be labelled with tomorrow's date.
  */
 export function backupFilename(now: Date): string {
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * MINUTE)
   const day = local.toISOString().slice(0, 10)
   return `time-tracker-backup-${day}.json`
 }

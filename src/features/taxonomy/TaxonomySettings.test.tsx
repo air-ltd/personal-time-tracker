@@ -76,6 +76,93 @@ function formFor(labelText: string): HTMLElement {
   return form
 }
 
+describe('showing what is stored in user units', () => {
+  it('shows a rate as money, not as the storage integer', async () => {
+    // £75/hour is 7500 minor units. "7500 minor units/hour" is the storage layer talking to
+    // the user, which is the exact thing the money rules exist to stop.
+    await createClient({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      defaultRateMinor: 7_500,
+      now: T0,
+    })
+    await show()
+
+    // A regex, because the currency label and the rate are sibling text nodes in one span.
+    expect(await screen.findByText(/75\.00\/hour/)).toBeInTheDocument()
+    expect(screen.queryByText(/minor units/)).not.toBeInTheDocument()
+  })
+
+  it('shows a project rate as money, and not just the word "billable"', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await createProject({
+      name: 'Widget',
+      clientId: client.id,
+      defaultRateMinor: 1_200,
+      now: T0,
+    })
+    await show()
+
+    expect(screen.getByText(/Client: Acme Ltd/)).toBeInTheDocument()
+    expect(screen.getByText(/£12.00\/hour/)).toBeInTheDocument()
+  })
+})
+
+describe('the two archived toggles', () => {
+  it('shows archived clients and archived projects independently', async () => {
+    // One flag drove both controls, so ticking "Show archived clients" also revealed
+    // archived projects — two checkboxes bound to one value, each reporting the other's
+    // state. Each label has to show exactly what it names.
+    const live = await createClient({ name: 'Live Co', currency: 'GBP', now: T0 })
+    const gone = await createClient({ name: 'Gone Co', currency: 'GBP', now: T0 })
+    await setArchived('client', gone.id, true, T0)
+    await createProject({ name: 'Current', clientId: live.id, now: T0 })
+    const retired = await createProject({ name: 'Retired', clientId: live.id, now: T0 })
+    await setArchived('project', retired.id, true, T0)
+    await show()
+
+    expect(screen.queryByText('Gone Co')).toBeNull()
+    expect(screen.queryByText('Retired')).toBeNull()
+
+    await user.click(screen.getByLabelText('Show archived clients'))
+
+    // The client toggle moves the clients and nothing else.
+    expect(screen.getByText('Gone Co')).toBeInTheDocument()
+    expect(screen.queryByText('Retired')).toBeNull()
+
+    await user.click(screen.getByLabelText('Show archived projects'))
+    expect(screen.getByText('Retired')).toBeInTheDocument()
+  })
+})
+
+describe('giving each new project its own colour', () => {
+  it('does not reuse the colour of the project just created', async () => {
+    // It used to: the form reset the name, rate and currency but not the colour, so the
+    // second project opened as the first project's colour and a chart needed its legend
+    // decoded — the thing the palette exists to prevent.
+    const user = userEvent.setup()
+    await show()
+    await user.click(screen.getByTestId('new-project'))
+
+    let form = formFor('Project name')
+    await user.type(within(form).getByLabelText('Project name'), 'Widget')
+    await user.click(within(form).getByRole('button', { name: 'Add project' }))
+    await waitFor(() => expect(rowFor('Widget')).toBeDefined())
+
+    await user.click(screen.getByTestId('new-project'))
+    form = formFor('Project name')
+    await user.type(within(form).getByLabelText('Project name'), 'Gadget')
+    await user.click(within(form).getByRole('button', { name: 'Add project' }))
+    await waitFor(() => expect(rowFor('Gadget')).toBeDefined())
+
+    // Read from storage, not the DOM: this is about what was *written*, and a DOM read
+    // would pass even if the list were rendering a stale row.
+    const colours = (await listProjects()).map((project) => project.colour)
+    expect(colours).toHaveLength(2)
+    expect(colours[0]).not.toBe(colours[1])
+  })
+})
+
 describe('creating records (0005 P1, P2, P7)', () => {
   it('creates a client with a currency and a rate', async () => {
     await show()
@@ -389,7 +476,10 @@ describe('tags (0005 T2, T4)', () => {
     await user.type(screen.getByLabelText('New tag'), 'Research')
     await user.click(screen.getByRole('button', { name: 'Add tag' }))
 
-    expect(await screen.findByTestId('settings-error')).toHaveTextContent(/already exists/i)
+    // A note, not an error: an existing name is an expected outcome, and announcing it
+    // through `role="alert"` with a Dismiss button dressed it as a failure.
+    expect(await screen.findByTestId('settings-notice')).toHaveTextContent(/already exists/i)
+    expect(screen.queryByTestId('settings-error')).toBeNull()
     expect(await listTags()).toHaveLength(1)
   })
 

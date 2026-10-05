@@ -1,6 +1,7 @@
 import { getDb } from './db'
 import { bumpRevision } from './events'
 import { newId } from '../domain/time/ids'
+import { MINUTE } from '../domain/time/duration'
 import { PALETTE, normaliseColour, suggestColour } from '../domain/taxonomy/colour'
 import {
   findByName,
@@ -494,7 +495,7 @@ export async function projectDeleteImpact(projectId: string): Promise<DeleteImpa
   return {
     entryCount: entries.filter((row) => row.deletedAt === null).length,
     billableEntryCount,
-    billableMinutes: Math.round(billableMs / 60_000),
+    billableMinutes: Math.round(billableMs / MINUTE),
   }
 }
 

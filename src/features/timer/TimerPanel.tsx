@@ -6,8 +6,8 @@ import { ClientForm } from '../taxonomy/ClientForm'
 import { entryDurationMs, formatDuration } from '../../domain/time/duration'
 import { useEntries } from '../entries/useEntries'
 import type { TimerState } from '../timer/useTimer'
-import type { Client } from '../../domain/taxonomy/types'
-import { PlusIcon } from '../../app/Icons'
+import type { Client, Project } from '../../domain/taxonomy/types'
+import { AddToHeading } from '../../app/AddToHeading'
 
 /**
  * Timer panel: the one thing a user touches most often.
@@ -44,6 +44,16 @@ export interface TimerPanelProps {
   onSelectClient?: ((clientId: string | null) => void) | undefined
 }
 
+/**
+ * A stable default for an optional callback.
+ *
+ * It used to be a `const noop = () => {}` inside the component, which is a new function on
+ * every render. That reached `ClientList` as a fresh prop each time — harmless only because
+ * nothing downstream was memoised. A module constant is referentially stable, which is what
+ * a default prop should be.
+ */
+const NOOP = () => {}
+
 export function TimerPanel({
   timer,
   onStopped,
@@ -68,6 +78,20 @@ export function TimerPanel({
   // that opens it sits in the panel header (item 32).
   const [editingId, setEditingId] = useState<string | null | undefined>(undefined)
 
+  /**
+   * Project to owning client, computed once for the whole panel.
+   *
+   * Both consumers need it and they must not be able to disagree: the totals below and the
+   * running timer's line in the header are the same question asked twice. They were once
+   * answered two different ways — totals through this map, the header through the
+   * default-project rule — and a timer started against a client's second project was
+   * attributed to one and displayed against the other.
+   */
+  const projectToClient = useMemo(
+    () => new Map(projects.map((row) => [row.id, row.clientId])),
+    [projects],
+  )
+
   /*
    * Time tracked per client, summed over every project that client owns.
    *
@@ -76,7 +100,6 @@ export function TimerPanel({
    * them to, and guessing one would put time somewhere the user did not put it.
    */
   const totals = useMemo(() => {
-    const projectToClient = new Map(projects.map((row) => [row.id, row.clientId]))
     const sum = new Map<string, number>()
     for (const entry of entries) {
       const clientId =
@@ -87,15 +110,13 @@ export function TimerPanel({
       sum.set(clientId, (sum.get(clientId) ?? 0) + duration)
     }
     return sum
-  }, [entries, projects, now])
+  }, [entries, projectToClient, now])
 
   // Anything caught is rendered as text. Handing an `Error` straight to JSX renders
   // "[object Error]", which tells the user nothing about what failed.
   const reportError = useCallback((problem: unknown) => {
     setError(problem instanceof Error ? problem.message : String(problem))
   }, [])
-
-  const noop = () => {}
 
   const reminder = dismissed ? null : (
     <>
@@ -113,19 +134,14 @@ export function TimerPanel({
         its own above the list, which cost a whole row of height on the card the user looks
         at most often, for a button that is about the list below it.
       */}
-      <div className="panel-header timer-panel-header">
-        <h2 id="timer-heading">Timer</h2>
-        <button
-          type="button"
-          className="button timer-add-client"
-          onClick={() => setEditingId('')}
-          aria-label="New client"
-          title="New client"
-          data-testid="timer-new-client"
-        >
-          <PlusIcon />
-        </button>
-      </div>
+      <AddToHeading
+        headingId="timer-heading"
+        heading="Timer"
+        addLabel="New client"
+        onAdd={() => setEditingId('')}
+        className="panel-header"
+        testId="timer-new-client"
+      />
 
       <ClientList
         editingId={editingId}
@@ -134,12 +150,14 @@ export function TimerPanel({
         now={now}
         timer={timer}
         totals={totals}
+        projectToClient={projectToClient}
+        projects={projects}
         onStopped={onStopped}
         onSaved={onClientsChanged}
         onError={reportError}
         reminder={reminder}
         selectedClientId={selectedClientId ?? null}
-        onSelectClient={onSelectClient ?? noop}
+        onSelectClient={onSelectClient ?? NOOP}
       />
 
       {/* Both channels land in the same place: this panel's own failures (a rejected stop,
@@ -181,12 +199,22 @@ function ClientList({
   onSelectClient,
   editingId,
   onEdit,
+  projectToClient,
+  projects: projectsProp,
 }: {
   /** Typed as the real record, so looking one up here is type-checked. */
   clients: Client[]
   now: Date
   timer: TimerState
   totals: Map<string, number>
+  /** Project to owning client — the same map the totals use. */
+  projectToClient: Map<string, string | null>
+  /**
+   * Every project in the taxonomy, passed purely so the default-project read below can be
+   * keyed on project changes. A client's default is its oldest project (item 12), so
+   * adding or deleting one leaves every client id untouched.
+   */
+  projects: readonly Project[]
   /** Called after the entry is written, so the caller can route to the form (0001 US2). */
   onStopped: (id: string) => void | Promise<void>
   onSaved?: (() => void) | undefined
@@ -205,7 +233,19 @@ function ClientList({
   const [defaultProjects, setDefaultProjects] = useState<Map<string, string | null> | null>(
     null,
   )
+  // A stop is in flight, so the button cannot be pressed a second time.
+  const [stopping, setStopping] = useState(false)
+  /**
+   * What the effect below is keyed on: the clients *and* their projects.
+   *
+   * Clients alone were not enough. A client's default project is its oldest project (item
+   * 12), so adding or deleting a project changes no client id — the map went stale and
+   * Start kept filing time against the project it had read before, while the taxonomy
+   * showed something else. The comment below justifies skipping *object* churn, which is a
+   * different thing from skipping *data* changes.
+   */
   const ids = clients.map((client) => client.id).join(',')
+  const projectIds = projectsProp.map((project) => project.id).join(',')
 
   useEffect(() => {
     let cancelled = false
@@ -223,25 +263,35 @@ function ClientList({
     // Keyed on the ids rather than the objects: `useTaxonomy` hands back a fresh array
     // whenever anything in the taxonomy changes, and re-reading every project on any
     // change would be a storage read per keystroke elsewhere on the page.
-  }, [ids]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ids, projectIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /**
    * Which client's line the running timer belongs to.
    *
-   * Resolved through the same default-project rule as the Start button, so the line that
-   * counts up is the line that would have started it. An uncategorised timer belongs to no
-   * client, which is why a timer with no project still has to be stoppable somewhere.
+   * Through the running entry's **project**, mapped to that project's client — not through
+   * the default-project rule the Start button uses. Matching on the default project meant a
+   * timer started against a client's second project resolved to nobody and rendered in the
+   * orphan row under the wording "a timer with no client has no line of its own", while the
+   * totals above attributed the same work to the client correctly. The header and the
+   * totals disagreed about who the work belonged to.
+   *
+   * The project-to-client map is the one already computed for the totals; reusing it is why
+   * the two cannot drift apart again.
    */
   const activeClientId = useMemo(() => {
-    if (running?.projectId == null) return null
-    return (
-      clients.find((client) => defaultProjects?.get(client.id) === running.projectId)?.id ??
-      null
-    )
-  }, [running, clients, defaultProjects])
+    const projectId = running?.projectId
+    if (projectId == null) return null
+    // A project that has been deleted has no client to name, and inventing one would put
+    // the time somewhere the user did not put it.
+    return projectToClient.get(projectId) ?? null
+  }, [running, projectToClient])
 
   async function handleStop(): Promise<void> {
-    if (!running) return
+    // Two clicks in one render pass both reach here, and two `stopTimer` calls race: the
+    // second reads an entry the first has already ended. The button is also the only thing
+    // between the user and that, so it is disabled below while this is in flight.
+    if (!running || stopping) return
+    setStopping(true)
     // Awaited before navigating: the write is asynchronous, and navigating first races the
     // read the edit route immediately performs.
     //
@@ -256,6 +306,8 @@ function ClientList({
     } catch (problem) {
       reportError(problem)
       return
+    } finally {
+      setStopping(false)
     }
     try {
       await onStopped(running.id)
@@ -329,6 +381,7 @@ function ClientList({
                         type="button"
                         className="button button-primary"
                         onClick={() => void handleStop()}
+                        disabled={stopping}
                         aria-label={`Stop the timer for ${client.name}`}
                       >
                         Stop
@@ -403,6 +456,7 @@ function ClientList({
               type="button"
               className="button button-primary"
               onClick={() => void handleStop()}
+              disabled={stopping}
             >
               Stop
             </button>
@@ -427,16 +481,53 @@ function ClientList({
         </p>
       )}
 
-      {editingId !== undefined && (
-        <ClientForm
-          client={editingId === '' ? undefined : clients.find((row) => row.id === editingId)}
-          takenColours={clients.map((row) => row.colour)}
-          now={now}
-          onDone={() => onEdit(undefined)}
-          onSaved={onSaved}
-          report={onError}
-        />
-      )}
+      {/*
+        Three states, not two, and the third is the one that used to be missing.
+
+        `editingId` is `undefined` for "not editing", `''` for "creating", and an id
+        otherwise. The id was resolved with `clients.find`, and `ClientForm` treats
+        `client === undefined` as *create* — so a client deleted from another tab or by a
+        sync made the lookup miss, the form rendered in create mode, and pressing Save
+        wrote a brand-new client instead of reporting that the original was gone. The user
+        would see their client reappear with a new id and its history detached from it.
+
+        So a miss is resolved here and stated, rather than being passed down as `undefined`
+        and reinterpreted.
+      */}
+      {editingId !== undefined &&
+        (() => {
+          if (editingId === '') {
+            return (
+              <ClientForm
+                client={undefined}
+                takenColours={clients.map((row) => row.colour)}
+                now={now}
+                onDone={() => onEdit(undefined)}
+                onSaved={onSaved}
+                report={onError}
+              />
+            )
+          }
+          const editing = clients.find((row) => row.id === editingId)
+          if (editing === undefined) {
+            return (
+              <p className="alert alert-error" role="alert" data-testid="client-gone">
+                That client no longer exists — it was deleted, perhaps on another device.
+                Nothing was changed.
+              </p>
+            )
+          }
+          return (
+            <ClientForm
+              client={editing}
+              takenColours={clients.map((row) => row.colour)}
+              now={now}
+              onDone={() => onEdit(undefined)}
+              onSaved={onSaved}
+              report={onError}
+            />
+          )
+        })()}
     </div>
   )
 }

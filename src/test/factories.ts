@@ -1,6 +1,5 @@
 import type { Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
-import { entryDurationMs } from '../domain/time/duration'
 
 /**
  * Shared test fixtures (0010 "shared fixtures").
@@ -29,10 +28,6 @@ export class Ids {
   next(prefix = 'e'): string {
     this.counter += 1
     return `${prefix}-${String(this.counter).padStart(4, '0')}`
-  }
-
-  reset(): void {
-    this.counter = 0
   }
 }
 
@@ -111,25 +106,6 @@ export function snapshotOf(entries: TimeEntry[], schemaVersion = 1): Snapshot {
   return { schemaVersion, entities: { entries } }
 }
 
-/** Entries by id, for asserting on a specific record in a merged snapshot. */
-export function byId(snapshot: Snapshot, id: string): TimeEntry | undefined {
-  return ((snapshot.entities['entries'] ?? []) as TimeEntry[]).find((e) => e.id === id)
-}
-
-/** Ids present in a snapshot, sorted, so order never affects an assertion. */
-export function idsOf(snapshot: Snapshot): string[] {
-  return ((snapshot.entities['entries'] ?? []) as TimeEntry[]).map((e) => e.id).sort()
-}
-
-/** Total duration in whole minutes across a snapshot, for reconciliation checks. */
-export function totalMinutes(snapshot: Snapshot, now = T0): number {
-  return ((snapshot.entities['entries'] ?? []) as TimeEntry[]).reduce((total, record) => {
-    if (record.deletedAt !== null) return total
-    const ms = entryDurationMs(record, now)
-    return ms === null ? total : total + Math.round(ms / 60_000)
-  }, 0)
-}
-
 /**
  * Deterministic pseudo-random generator.
  *
@@ -167,9 +143,4 @@ export class Rng {
   bool(trueProbability = 0.5): boolean {
     return this.next() < trueProbability
   }
-}
-
-/** An ISO instant offset from the epoch base, for generated records. */
-export function at(minutesFromT0: number): Date {
-  return new Date(T0.getTime() + minutesFromT0 * 60_000)
 }

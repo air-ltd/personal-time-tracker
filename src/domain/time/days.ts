@@ -100,7 +100,20 @@ export function localWeekBounds(key: string): { start: Date; end: Date } {
   return { start: monday, end: addLocalDays(monday, 7) }
 }
 
-/** The Monday of the local week containing `key`, as a day key. */
+/** The Monday of the local week containing `value`, as a day key. */
 export function weekKey(value: Date): string {
   return dayKey(localWeekBounds(dayKey(value)).start)
+}
+
+/**
+ * The same thing from a day key, or `null` when the key is not one.
+ *
+ * Kept beside `weekKey` rather than re-derived by each caller: grouping a day summary into
+ * weeks needs it, and a private copy of the conversion in the summary module was a third
+ * spelling of the same idea. The `null` is for keys that came from outside — a corrupt
+ * grouping key — because `weekKey` cannot express "not a day key".
+ */
+export function weekKeyFromDayKey(key: string): string | null {
+  if (!isValidDayKey(key)) return null
+  return dayKey(localWeekBounds(key).start)
 }

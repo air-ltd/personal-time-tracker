@@ -1,38 +1,22 @@
 import { useCallback, useState } from 'react'
 import { useTaxonomy } from './useTaxonomy'
-import { ColorPicker } from './ColorPicker'
+import { useTaxonomyDeletes } from './useTaxonomyDeletes'
 import { CurrencySelect } from './CurrencySelect'
-import { RateField } from './RateField'
-import { DeleteConfirm } from './DeleteConfirm'
 import { ClientForm } from './ClientForm'
-import { PlusIcon } from '../../app/Icons'
-import { ProjectUndoBar, type TaxonomyUndo } from './TaxonomyUndoBar'
+import { ProjectForm } from './ProjectForm'
+import { AddToHeading } from '../../app/AddToHeading'
 import {
-  clientDeleteImpact,
-  type DeleteClientReceipt,
-  type DeleteProjectReceipt,
-  type DeleteTagReceipt,
   createOrFindTag,
   createProject,
-  deleteClient,
-  deleteProject,
-  deleteTag,
   mergeTags,
-  projectDeleteImpact,
   setArchived,
-  tagEntryCount,
-  undoDeleteClient,
-  undoDeleteProject,
-  undoDeleteTag,
   updateProject,
   updateTag,
 } from '../../storage/taxonomyRepo'
 import { writeDefaultCurrency } from '../../storage/settingsRepo'
 import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 import { FALLBACK_CURRENCY, resolveCurrency } from '../../domain/taxonomy/money'
-import { currencyLabel } from '../../domain/taxonomy/currencies'
-import { suggestColour } from '../../domain/taxonomy/colour'
-import { formatDuration } from '../../domain/time/duration'
+import { currencyLabel, formatMinor } from '../../domain/taxonomy/currencies'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
 
 /**
@@ -58,21 +42,19 @@ function counted(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
-interface DeleteState {
-  kind: 'project' | 'client' | 'tag'
-  id: string
-  name: string
-  impact: string[]
-  keeps: string
-  requireStrongConfirm: boolean
-}
-
 export function TaxonomySettings({ now }: { now: Date }) {
   const { projects, clients, tags, loading, error: loadError } = useTaxonomy()
-  const [showArchived, setShowArchived] = useState(false)
+  /*
+   * Two flags, not one.
+   *
+   * A single `showArchived` drove both toggles, so ticking "Show archived clients" also
+   * revealed archived projects — two labelled controls bound to one value, where each
+   * checkbox then reported the other's state. Split per section: the label says which
+   * records it shows, and it shows exactly those.
+   */
+  const [showArchivedClients, setShowArchivedClients] = useState(false)
+  const [showArchivedProjects, setShowArchivedProjects] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [undo, setUndo] = useState<TaxonomyUndo | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<DeleteState | null>(null)
 
   // The app-wide default, from `meta` rather than a taxonomy table — which is why it is
   // its own hook instead of another field on `useTaxonomy`, whose name would then be a
@@ -80,156 +62,20 @@ export function TaxonomySettings({ now }: { now: Date }) {
   // reimplemented there with a hardcoded `GBP` is now the domain chain.
   const defaultCurrency = useAppDefaultCurrency()
 
-  const visibleProjects = showArchived ? projects : projects.filter((p) => !p.archived)
-  const visibleClients = showArchived ? clients : clients.filter((c) => !c.archived)
+  const visibleProjects = showArchivedProjects ? projects : projects.filter((p) => !p.archived)
+  const visibleClients = showArchivedClients ? clients : clients.filter((c) => !c.archived)
 
   const report = useCallback((problem: unknown) => {
     setError(problem instanceof Error ? problem.message : String(problem))
   }, [])
 
   // --- delete flow -------------------------------------------------------------
-
-  async function askToDelete(
-    kind: 'project' | 'client' | 'tag',
-    record: Project | Client | Tag,
-  ) {
-    setError(null)
-    try {
-      if (kind === 'project') {
-        // X1/X3: the count and the billable hours are loaded before the prompt, and
-        // billable hours are what decide whether a second step is required.
-        const impact = await projectDeleteImpact(record.id)
-        const billable =
-          impact.billableEntryCount > 0 ? formatDuration(impact.billableMinutes * 60_000) : null
-        setPendingDelete({
-          kind,
-          id: record.id,
-          name: record.name,
-          requireStrongConfirm: impact.billableEntryCount > 0,
-          impact: [
-            `${counted(impact.entryCount, 'entry uses', 'entries use')} this project.`,
-            ...(impact.billableEntryCount > 0
-              ? [
-                  `${counted(impact.billableEntryCount, 'is', 'are')} billable — ${billable} of billable time.`,
-                ]
-              : []),
-          ],
-          keeps: 'The entries are kept. They lose their project and appear as Uncategorised.',
-        })
-      } else if (kind === 'client') {
-        // X4: projects survive; it is their client that goes.
-        const impact = await clientDeleteImpact(record.id)
-        setPendingDelete({
-          kind,
-          id: record.id,
-          name: record.name,
-          requireStrongConfirm: false,
-          impact: [
-            `${counted(impact.projectCount, 'project belongs', 'projects belong')} to this client.`,
-          ],
-          keeps:
-            'The projects are kept. They stop belonging to a client, and their entries count as uncategorised by client.',
-        })
-      } else {
-        const count = await tagEntryCount(record.id)
-        setPendingDelete({
-          kind,
-          id: record.id,
-          name: record.name,
-          requireStrongConfirm: false,
-          impact: [`${counted(count, 'entry carries', 'entries carry')} this tag.`],
-          keeps: 'The entries are kept. They lose the tag.',
-        })
-      }
-    } catch (problem) {
-      report(problem)
-    }
-  }
-
-  async function runDelete() {
-    if (!pendingDelete) return
-    const { kind, id, name } = pendingDelete
-    setPendingDelete(null)
-    try {
-      if (kind === 'project') {
-        const receipt = await deleteProject(id, now)
-        if (receipt) {
-          const count = receipt.orphanedEntryIds.length
-          setUndoReceipt({ kind, receipt })
-          setUndo({
-            label: `${kind} "${name}"`,
-            detail:
-              count > 0
-                ? `${count} ${count === 1 ? 'entry is' : 'entries are'} now uncategorised`
-                : null,
-          })
-        }
-      } else if (kind === 'client') {
-        const receipt = await deleteClient(id, now)
-        if (receipt) {
-          const count = receipt.unlinkedProjectIds.length
-          setUndoReceipt({ kind, receipt })
-          setUndo({
-            label: `${kind} "${name}"`,
-            detail:
-              count > 0
-                ? `${count} ${count === 1 ? 'project has' : 'projects have'} no client`
-                : null,
-          })
-        }
-      } else {
-        const receipt = await deleteTag(id, now)
-        if (receipt) {
-          const count = receipt.untaggedEntryIds.length
-          setUndoReceipt({ kind, receipt })
-          setUndo({
-            label: `${kind} "${name}"`,
-            detail:
-              count > 0
-                ? `${count} ${count === 1 ? 'entry lost' : 'entries lost'} the tag`
-                : null,
-          })
-        }
-      }
-    } catch (problem) {
-      report(problem)
-    }
-  }
-
-  /**
-   * Undo needs the receipt, but the bar is told a sentence rather than being handed the
-   * union to narrow — so the receipt is held here and the bar stays a presentation
-   * concern.
-   */
-  const [undoReceipt, setUndoReceipt] = useState<
-    | { kind: 'project'; receipt: DeleteProjectReceipt }
-    | { kind: 'client'; receipt: DeleteClientReceipt }
-    | { kind: 'tag'; receipt: DeleteTagReceipt }
-    | null
-  >(null)
-
-  // Stable, so the undo bar's auto-hide timer is armed once per deletion.
-  const dismissUndo = useCallback(() => {
-    setUndo(null)
-    setUndoReceipt(null)
-  }, [])
-
-  async function runUndo() {
-    if (!undoReceipt) return
-    try {
-      const outcome =
-        undoReceipt.kind === 'project'
-          ? await undoDeleteProject(undoReceipt.receipt, now)
-          : undoReceipt.kind === 'client'
-            ? await undoDeleteClient(undoReceipt.receipt, now)
-            : await undoDeleteTag(undoReceipt.receipt, now)
-      if (!outcome.ok) setError(outcome.reason)
-      setUndoReceipt(null)
-      setUndo(null)
-    } catch (problem) {
-      report(problem)
-    }
-  }
+  //
+  // Extracted to a hook: it was ~140 lines of state machine with no JSX in it, wedged
+  // between the component's own state and its render, and it needed state declared after
+  // the code that set it.
+  const clearError = useCallback(() => setError(null), [])
+  const deletes = useTaxonomyDeletes({ now, report, clearError })
 
   if (loading) return <p className="hint">Loading settings…</p>
 
@@ -277,9 +123,9 @@ export function TaxonomySettings({ now }: { now: Date }) {
       <ClientSection
         clients={visibleClients}
         allClients={clients}
-        showArchived={showArchived}
-        onToggleArchived={setShowArchived}
-        onDelete={(client) => void askToDelete('client', client)}
+        showArchived={showArchivedClients}
+        onToggleArchived={setShowArchivedClients}
+        onDelete={(client) => deletes.onDelete('client', client)}
         now={now}
         report={report}
       />
@@ -289,35 +135,22 @@ export function TaxonomySettings({ now }: { now: Date }) {
         allProjects={projects}
         clients={clients}
         defaultCurrency={defaultCurrency}
-        showArchived={showArchived}
-        onToggleArchived={setShowArchived}
-        onDelete={(project) => void askToDelete('project', project)}
+        showArchived={showArchivedProjects}
+        onToggleArchived={setShowArchivedProjects}
+        onDelete={(project) => deletes.onDelete('project', project)}
         now={now}
         report={report}
       />
 
       <TagSection
         tags={tags}
-        onDelete={(tag) => void askToDelete('tag', tag)}
+        onDelete={(tag) => deletes.onDelete('tag', tag)}
         now={now}
         report={report}
       />
 
-      {pendingDelete && (
-        <DeleteConfirm
-          name={pendingDelete.name}
-          entity={pendingDelete.kind}
-          impact={pendingDelete.impact}
-          keeps={pendingDelete.keeps}
-          requireStrongConfirm={pendingDelete.requireStrongConfirm}
-          onConfirm={() => void runDelete()}
-          onCancel={() => setPendingDelete(null)}
-        />
-      )}
-
-      {undo && (
-        <ProjectUndoBar pending={undo} onUndo={() => void runUndo()} onDismiss={dismissUndo} />
-      )}
+      {deletes.confirmation}
+      {deletes.undoBar}
     </section>
   )
 }
@@ -346,7 +179,15 @@ function ClientSection({
 
   return (
     <div className="settings-block">
-      <SectionHeading noun="client" onAdd={() => setCreating(true)} />
+      <AddToHeading
+        headingId="settings-clients-heading"
+        heading="Clients"
+        addLabel="New client"
+        onAdd={() => setCreating(true)}
+        className="panel-header taxonomy-section-heading"
+        testId="new-client"
+        headingLevel={3}
+      />
 
       {creating ? (
         <ClientForm
@@ -420,7 +261,11 @@ function ClientRow({
       </span>
       <span className="taxonomy-meta">
         {currencyLabel(client.currency)}
-        {client.defaultRateMinor !== null && ` · ${client.defaultRateMinor} minor units/hour`}
+        {/* Formatted, not raw. `9000` is the storage unit; the user bills in £90.00 an
+            hour, and a list showing "9000 minor units/hour" is the storage layer talking
+            to the user — which is what 0003 CU1 exists to stop. */}
+        {client.defaultRateMinor !== null &&
+          ` · ${formatMinor(client.defaultRateMinor, client.currency ?? FALLBACK_CURRENCY)}/hour`}
       </span>
       <span className="taxonomy-actions">
         <button type="button" className="button" onClick={() => setEditing(true)}>
@@ -466,104 +311,36 @@ function ProjectSection({
   onDelete: (project: Project) => void
 }) {
   const [creating, setCreating] = useState(false)
-  const [name, setName] = useState('')
-  const [clientId, setClientId] = useState<string | null>(null)
-  const [rate, setRate] = useState<number | null>(null)
-  const [currency, setCurrency] = useState<string | null>(null)
-  const [colour, setColour] = useState<string>(() => suggestColour([]))
-
-  const client = clients.find((c) => c.id === clientId) ?? null
-  // The rate field needs a currency to know the exponent, so it follows the same chain
-  // the saved record will resolve by: what this form has picked, then the client, then
-  // the app default. It used to end at a hardcoded `GBP`, so a user whose default is JPY
-  // was shown a rate in pounds and saved a rate that is interpreted in yen.
-  const effectiveCurrency = resolveCurrency({ currency }, client, defaultCurrency).code
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault()
-    try {
-      await createProject({ name, clientId, defaultRateMinor: rate, currency, colour, now })
-      setName('')
-      setRate(null)
-      setCurrency(null)
-      setCreating(false)
-    } catch (problem) {
-      report(problem)
-    }
-  }
-
+  /** Colours already in use, so a new project opens on a visibly distinct one (0005 P4). */
+  const takenColours = useCallback(
+    () => [...projects.map((row) => row.colour), ...clients.map((row) => row.colour)],
+    [projects, clients],
+  )
   return (
     <div className="settings-block">
-      <SectionHeading noun="project" onAdd={() => setCreating(true)} />
+      <AddToHeading
+        headingId="settings-projects-heading"
+        heading="Projects"
+        addLabel="New project"
+        onAdd={() => setCreating(true)}
+        className="panel-header taxonomy-section-heading"
+        testId="new-project"
+        headingLevel={3}
+      />
 
       {creating ? (
-        <form className="taxonomy-form" onSubmit={(e) => void submit(e)}>
-          <div className="field">
-            <label htmlFor="project-name">Project name</label>
-            <input
-              id="project-name"
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="project-client">Client</label>
-            <select
-              id="project-client"
-              value={clientId ?? ''}
-              onChange={(e) => setClientId(e.target.value || null)}
-            >
-              {/* 0005 R1/U1: no client is a legitimate state, so it is offered as a
-                  choice rather than being an absent option. */}
-              <option value="">No client — internal work</option>
-              {clients
-                .filter((c) => !c.archived)
-                .map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-            </select>
-          </div>
-          <RateField
-            label="Default hourly rate"
-            currency={effectiveCurrency}
-            value={rate}
-            onChange={setRate}
-            // Always supplied, so the line is already there when the rate commits: a hint
-            // that appears at the moment focus leaves the field moves the Save button under
-            // the pointer mid-click. See the note on `.rate-feedback`.
-            hint={
-              rate === null
-                ? 'A rate here makes new entries for this project billable.'
-                : 'Entries for this project will default to billable.'
-            }
-          />
-          <CurrencySelect
-            label="Currency override"
-            inheritLabel={
-              client ? `Use the client’s ${currencyLabel(client.currency)}` : 'Use the default'
-            }
-            value={currency}
-            onChange={setCurrency}
-          />
-          <ColorPicker
-            label="Project colour"
-            value={colour}
-            onChange={setColour}
-            takenColours={projects.map((p) => p.colour)}
-          />
-          <div className="button-row">
-            <button type="submit" className="button button-primary">
-              Add project
-            </button>
-            <button type="button" className="button" onClick={() => setCreating(false)}>
-              Cancel
-            </button>
-          </div>
-        </form>
+        <ProjectForm
+          clients={clients}
+          defaultCurrency={defaultCurrency}
+          takenColours={takenColours()}
+          idPrefix="project"
+          report={report}
+          onSubmit={async (fields) => {
+            await createProject({ ...fields, now })
+            setCreating(false)
+          }}
+          onCancel={() => setCreating(false)}
+        />
       ) : null}
 
       {projects.length === 0 && <p className="hint">No projects yet.</p>}
@@ -626,83 +403,36 @@ function ProjectRow({
   onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(project.name)
-  const [clientId, setClientId] = useState<string | null>(project.clientId)
-  const [rate, setRate] = useState<number | null>(project.defaultRateMinor)
-  const [currency, setCurrency] = useState<string | null>(project.currency)
-  const [colour, setColour] = useState(project.colour)
-
-  const client = clients.find((c) => c.id === clientId) ?? null
-  const effectiveCurrency = resolveCurrency({ currency }, client, defaultCurrency).code
-
-  async function save() {
-    try {
-      await updateProject(
-        project.id,
-        { name, clientId, defaultRateMinor: rate, currency, colour },
-        now,
-      )
-      setEditing(false)
-    } catch (problem) {
-      report(problem)
-    }
-  }
 
   if (editing) {
     return (
-      <div className="taxonomy-edit">
-        <div className="field">
-          <label htmlFor={`project-${project.id}-name`}>Project name</label>
-          <input
-            id={`project-${project.id}-name`}
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor={`project-${project.id}-client`}>Client</label>
-          <select
-            id={`project-${project.id}-client`}
-            value={clientId ?? ''}
-            onChange={(e) => setClientId(e.target.value || null)}
-          >
-            <option value="">No client — internal work</option>
-            {clients
-              .filter((c) => !c.archived)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-        </div>
-        <RateField
-          label="Default hourly rate"
-          currency={effectiveCurrency}
-          value={rate}
-          onChange={setRate}
-        />
-        <CurrencySelect
-          label="Currency override"
-          inheritLabel={
-            client ? `Use the client’s ${currencyLabel(client.currency)}` : 'Use the default'
-          }
-          value={currency}
-          onChange={setCurrency}
-        />
-        <ColorPicker label="Project colour" value={colour} onChange={setColour} />
-        <div className="button-row">
-          <button type="button" className="button button-primary" onClick={() => void save()}>
-            Save
-          </button>
-          <button type="button" className="button" onClick={() => setEditing(false)}>
-            Cancel
-          </button>
-        </div>
-      </div>
+      <ProjectForm
+        project={project}
+        clients={clients}
+        defaultCurrency={defaultCurrency}
+        // Every client colour on record, so a colour is offered that no other row uses.
+        takenColours={clients.map((c) => c.colour)}
+        idPrefix={`project-${project.id}`}
+        report={report}
+        onSubmit={async (fields) => {
+          await updateProject(project.id, fields, now)
+          setEditing(false)
+        }}
+        onCancel={() => setEditing(false)}
+      />
     )
   }
+
+  /*
+   * The same chain the form uses, for the rate this row displays. A project's stored rate
+   * is minor units with no currency of its own unless one was overridden, so reading it
+   * without resolving would divide by the wrong exponent and print nonsense.
+   */
+  const shownCurrency = resolveCurrency(
+    { currency: project.currency },
+    clients.find((c) => c.id === project.clientId) ?? null,
+    defaultCurrency,
+  ).code
 
   return (
     <>
@@ -719,7 +449,11 @@ function ProjectRow({
           no client says so rather than showing nothing. */}
       <span className="taxonomy-meta">
         {clientName === null ? 'No client' : `Client: ${clientName}`}
-        {project.defaultRateMinor !== null && ' · billable'}
+        {/* The rate, where there is one. It used to say only "billable", which told the
+            user nothing they could not already see — and left the one number on this row
+            with nowhere to read it. */}
+        {project.defaultRateMinor !== null &&
+          ` · ${formatMinor(project.defaultRateMinor, shownCurrency)}/hour`}
         {project.currency !== null && ` · ${currencyLabel(project.currency)}`}
       </span>
       <span className="taxonomy-actions">
@@ -752,6 +486,15 @@ function TagSection({
   const [newName, setNewName] = useState('')
   const [mergeFrom, setMergeFrom] = useState<string | null>(null)
   const [mergeInto, setMergeInto] = useState<string>('')
+  /**
+   * An informational outcome, kept out of the shared error banner.
+   *
+   * Reusing `report` meant "that tag already exists" was announced through `role="alert"`
+   * with a **Dismiss** button — an ordinary, expected result dressed as a failure, and
+   * dismissible like one. It is a plain note here instead: no alert role, nothing to
+   * dismiss, because nothing went wrong.
+   */
+  const [notice, setNotice] = useState<string | null>(null)
 
   async function create(event: React.FormEvent) {
     event.preventDefault()
@@ -759,8 +502,10 @@ function TagSection({
       const { created } = await createOrFindTag({ name: newName, now })
       // T2: typing a name that already exists selects it rather than duplicating it, so
       // saying so is the difference between a helpful merge and a silent one.
-      if (!created) {
-        report(new Error(`"${newName.trim()}" already exists — nothing new was created.`))
+      if (created) {
+        setNotice(null)
+      } else {
+        setNotice(`"${newName.trim()}" already exists — nothing new was created.`)
       }
       setNewName('')
     } catch (problem) {
@@ -801,6 +546,13 @@ function TagSection({
           Add tag
         </button>
       </form>
+
+      {/* A note, not an alert: no `role="alert"`, no Dismiss. Nothing failed here. */}
+      {notice !== null && (
+        <p className="hint" data-testid="settings-notice">
+          {notice}
+        </p>
+      )}
 
       {tags.length === 0 && <p className="hint">No tags yet.</p>}
 
@@ -957,29 +709,6 @@ function TagRow({
  * `aria-label` still carries the full verb, so the control is named rather than being a
  * bare symbol to a screen reader.
  */
-function SectionHeading({ noun, onAdd }: { noun: 'client' | 'project'; onAdd: () => void }) {
-  return (
-    <div className="taxonomy-section-heading">
-      <h3>{noun === 'client' ? 'Clients' : 'Projects'}</h3>
-      <button
-        type="button"
-        className="button timer-add-client"
-        onClick={onAdd}
-        /*
-         * "New client", not "Add client": the form's own submit button is called "Add
-         * client", and while that form is open both were on screen with the same
-         * accessible name — so "Add client" matched two controls.
-         */
-        aria-label={`New ${noun}`}
-        title={`New ${noun}`}
-        data-testid={`new-${noun}`}
-      >
-        <PlusIcon />
-      </button>
-    </div>
-  )
-}
-
 function ArchivedToggle({
   plural,
   singular,

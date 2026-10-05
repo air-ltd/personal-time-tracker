@@ -151,6 +151,31 @@ describe('BackupPanel', () => {
     expect(status()?.textContent).toContain('3 entries')
   })
 
+  it('refuses an oversized file from its size, without reading it (8.12)', async () => {
+    // `file.text()` materialises the whole thing as one string, so an oversized file
+    // exhausted memory before the parser saw it and before the user was told anything.
+    // `file.size` comes from the handle, so refusing costs nothing.
+    const input = container.querySelector<HTMLInputElement>('[data-testid="backup-file"]')
+    if (!input) throw new Error('no file input')
+
+    const oversize = {
+      name: 'huge.json',
+      size: 80 * 1024 * 1024,
+      text: () => {
+        throw new Error('the file should never have been read')
+      },
+    } as unknown as File
+
+    act(() => {
+      Object.defineProperty(input, 'files', { value: [oversize], configurable: true })
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flush()
+
+    expect(status()?.textContent).toContain('80 MB')
+    expect(status()?.textContent).toContain('probably not one')
+  })
+
   it('reports that nothing was imported when the file is not a backup', async () => {
     const input = container.querySelector<HTMLInputElement>('[data-testid="backup-file"]')
     if (!input) throw new Error('no file input')
