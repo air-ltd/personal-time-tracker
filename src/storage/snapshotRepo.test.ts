@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { AppDb, setDbForTests, SCHEMA_VERSION } from './db'
 import { getRevision, resetRevisionForTests, subscribe } from './events'
 import { readSnapshot, writeSnapshot } from './snapshotRepo'
+import { mergeSnapshots } from '../domain/merge'
 import type { Mergeable, Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
 
@@ -154,6 +155,109 @@ describe('every entity table is bridged', () => {
     // and syncing either would be a bug in its own right.
     expect(Object.keys(snapshot.entities)).not.toContain('meta')
     expect(Object.keys(snapshot.entities)).not.toContain('secrets')
+  })
+})
+
+/**
+ * Settings travel, bookkeeping does not (SPECS/todo.md item 46).
+ *
+ * These are separate assertions because they are separate guarantees, and the second one is
+ * the one that could have gone wrong quietly: `meta` used to hold the settings *and* the
+ * sync bookkeeping together, so syncing settings meant choosing which rows of one table to
+ * send. Splitting them into `settings` and `meta` makes the exclusion a property of the
+ * schema instead of a filter someone has to remember.
+ */
+describe('settings sync, bookkeeping does not', () => {
+  beforeEach(async () => {
+    await db.settings.put({
+      id: 'app-default-currency',
+      value: 'GBP',
+      updatedAt: '2026-10-13T09:00:00.000Z',
+      deletedAt: null,
+    })
+    // The rows that must never leave this device.
+    await db.meta.put({ key: 'last-rev', value: 'a1b2' })
+    await db.meta.put({ key: 'last-sync-at', value: '2026-10-13T09:00:00.000Z' })
+    await db.secrets.put({ key: 'dropbox-token', value: 'secret-token' })
+  })
+
+  it('includes the user settings', async () => {
+    const snapshot = await readSnapshot()
+    expect(snapshot.entities['settings']).toEqual([
+      {
+        id: 'app-default-currency',
+        value: 'GBP',
+        updatedAt: '2026-10-13T09:00:00.000Z',
+        deletedAt: null,
+      },
+    ])
+  })
+
+  it('still keeps the revision, the sync time and the token at home', async () => {
+    const snapshot = await readSnapshot()
+    const serialised = JSON.stringify(snapshot)
+    expect(serialised).not.toContain('a1b2')
+    expect(serialised).not.toContain('secret-token')
+    // Belt and braces: the tables themselves, not just their serialisation.
+    expect(Object.keys(snapshot.entities)).not.toContain('meta')
+    expect(Object.keys(snapshot.entities)).not.toContain('secrets')
+  })
+
+  it('shapes a setting as a mergeable, so it needs no merge rule of its own', async () => {
+    const snapshot = await readSnapshot()
+    const [setting] = snapshot.entities['settings'] ?? []
+    // `Mergeable` is the contract `mergeSnapshots` relies on. Asserted here because the
+    // alternative is a setting that merges by accident rather than by design.
+    expect(typeof setting?.id).toBe('string')
+    expect(typeof setting?.updatedAt).toBe('string')
+    expect(setting?.deletedAt).toBeNull()
+  })
+
+  it('resolves a same-key conflict by last write, whichever device that was', async () => {
+    const local = await readSnapshot()
+    // `Mergeable` is the merge contract and carries no `value`, so the test states the full
+    // row shape and casts once — rather than widening the production type to suit a test.
+    type SettingRow = Mergeable & { value: unknown }
+    const remote: Snapshot = {
+      schemaVersion: SCHEMA_VERSION,
+      entities: {
+        settings: [
+          {
+            id: 'app-default-currency',
+            value: 'JPY',
+            updatedAt: '2026-10-14T09:00:00.000Z',
+            deletedAt: null,
+          } as SettingRow,
+        ],
+      },
+    }
+
+    const outcome = mergeSnapshots(local, remote, SCHEMA_VERSION)
+
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.merged.entities['settings']).toEqual([
+      {
+        id: 'app-default-currency',
+        value: 'JPY',
+        updatedAt: '2026-10-14T09:00:00.000Z',
+        deletedAt: null,
+      },
+    ])
+  })
+
+  it('leaves settings alone when the file has none, rather than resetting them', async () => {
+    // A file written before settings existed must not assert that the user has no settings.
+    const local = await readSnapshot()
+    const outcome = mergeSnapshots(
+      local,
+      { schemaVersion: SCHEMA_VERSION, entities: {} },
+      SCHEMA_VERSION,
+    )
+
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.merged.entities['settings']).toHaveLength(1)
   })
 })
 

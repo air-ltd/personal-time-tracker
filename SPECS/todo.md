@@ -268,7 +268,26 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 43. [ ] About page needs work.
 44. [ ] settings page needs work.
 45. [ ] what shows by default needs some work.
-46. [ ] all settings should remain across the page in dropbox storage (storage is to cover one user on multiple devices).
+46. [x] **all settings should remain across the page in dropbox storage** — **done.**
+   The three settings that describe how you work — default currency, visible currencies,
+   entries period — now live in their own `settings` table and travel in the sync payload
+   and in backups.
+
+   The obstacle was not the envelope, it was that `meta` held two unrelated things: the
+   user's preferences and this device's `lastRev`/`lastSyncAt`. Syncing settings therefore
+   meant deciding which rows of one table to send, and getting it wrong would have shipped a
+   revision number to Dropbox. Splitting the tables makes the exclusion structural.
+
+   Each setting is written as a `Mergeable`, so it merges through the existing union-by-id,
+   last-write-wins path with no rule of its own to be wrong.
+
+   Two settings are deliberately still local. The theme, because 0002 TH4 needs it before
+   first paint and only `localStorage` can be read synchronously. The Dropbox app key,
+   because it is chosen by host — syncing it would let a local build inherit the deployed
+   app's identity, which is the one mistake in this file that could damage real data.
+
+   Schema v4 carries the three existing `meta` rows across. They are copied rather than
+   moved, so downgrading loses nothing.
 47. [ ] when should dropbox connect auto-run? perhaps keep a record of when last connected attempt and if that time is >x mins then auto try to connect again.
 48. [ ] on timer stop, do not go to edit screen automatically
 
@@ -342,11 +361,15 @@ Per `0014-development-plan.md`. Not started.
    genuine fix look broken twice, because the browser was faithfully running the previous
    code. Worth remembering when a browser check fails after a change that should have fixed
    it.
-3. [ ] **The app default currency is device-local.** It lives in IndexedDB `meta`, and `meta`
-   is excluded from both sync and backup, so a second device does not inherit it and a
-   restore does not bring it back. Deliberate for now: it is a display preference, not
-   data. If it ever becomes something a user would be upset to lose, it has to move into
-   the snapshot like everything else.
+3. [x] **The app default currency was device-local** — **fixed by item 46.** It lived in
+   IndexedDB `meta` alongside this device's own sync bookkeeping, and `meta` is excluded from
+   both sync and backup, so a second device did not inherit it. Settings now have their own
+   table, so syncing them needed no new merge rule: each setting is one row shaped exactly
+   like every other mergeable record, and union-by-id with last-write-wins is already the
+   right rule for a single value under a stable key.
+
+   The theme stays device-local on purpose, and cannot be otherwise: 0002 TH4 needs it
+   readable before first paint, which IndexedDB cannot do.
 4. [ ] **The taxonomy undo window closes when you leave the settings view.** The receipt is
    component state, so navigating away discards it and the deletion stands. The entry undo
    bar in `App.tsx` survives navigation because it lives at the app level; moving the

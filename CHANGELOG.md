@@ -121,6 +121,13 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
 
 ### Changed
 
+- **Your preferences now follow you across devices.** The default currency, the currencies you
+  work in, and the entries period were stored per browser, so a second device started from
+  scratch and a restore did not bring them back. They now travel in the sync payload and in
+  backups, merged by whichever device changed them most recently.
+
+  Your theme stays on each device, because it has to be read before the page paints.
+
 - **Clients and projects can no longer be deleted — they are archived instead.** Retiring a
   project is usually not a rare destructive act; it is a project that has finished. Offering
   both "archive" and "delete" meant the safe option got used less than it should have, because

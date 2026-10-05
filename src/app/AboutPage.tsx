@@ -51,9 +51,9 @@ export function AboutPage() {
         </ul>
 
         <p className="hint">
-          Your display preferences — theme, chosen currencies, entries period — are kept per
-          device rather than synced. They are preferences rather than data, and they are not
-          included in a backup either.
+          Your preferences — default currency, which currencies you work in, entries period —
+          travel with you when you sync. Your theme does not, because it has to be readable
+          before the page paints and only <code>localStorage</code> can do that.
         </p>
       </section>
 
