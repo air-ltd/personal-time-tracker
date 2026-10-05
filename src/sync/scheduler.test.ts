@@ -289,6 +289,196 @@ describe('triggers', () => {
     }
   }
 
+  /**
+   * A transiently failed cycle is retried (SPECS/todo.md item 47).
+   *
+   * The distinction these protect is between retrying a *failure* and polling, because
+   * 0012 C6 forbids the second and permits nothing that looks like it. Nothing here arms a
+   * timer on a healthy cycle; the timer exists only because a cycle actually failed.
+   */
+  describe('a transient failure', () => {
+    /** The delay between attempt `index` and the one after it. */
+    function gap(at: number[], index: number): number {
+      const from = at[index]
+      const to = at[index + 1]
+      if (from === undefined || to === undefined) throw new Error('expected two attempts')
+      return to - from
+    }
+
+    it('retries a network failure on a timer', async () => {
+      const built = build(new SyncError('network', 'offline'))
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.reject(new SyncError('network', 'offline'))
+      }
+      await built.scheduler.start()
+      expect(attempts).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(attempts).toBe(2)
+      built.scheduler.stop()
+    })
+
+    it('retries a rate-limited cycle too', async () => {
+      const built = build(new SyncError('rate-limited', 'slow down'))
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.reject(new SyncError('rate-limited', 'slow down'))
+      }
+      await built.scheduler.start()
+
+      await vi.advanceTimersByTimeAsync(5_000)
+
+      expect(attempts).toBe(2)
+      built.scheduler.stop()
+    })
+
+    it('does not retry a dead credential, because waiting cannot fix it', async () => {
+      // The important negative. Retrying `auth` would re-arm on every cycle and arrive at
+      // the same answer, and the scheduler discards the token each time — so it would keep
+      // destroying a credential the user has not had a chance to replace.
+      const built = build(new SyncError('auth', 'no'))
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.reject(new SyncError('auth', 'no'))
+      }
+      await built.scheduler.start()
+      const afterOpen = attempts
+
+      await vi.advanceTimersByTimeAsync(300_000)
+
+      expect(attempts).toBe(afterOpen)
+      built.scheduler.stop()
+    })
+
+    it('does not retry a missing scope either', async () => {
+      // That one is fixed in the Dropbox App Console, not by waiting.
+      const built = build(new SyncError('scope-missing', 'nope'))
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.reject(new SyncError('scope-missing', 'nope'))
+      }
+      await built.scheduler.start()
+      const afterOpen = attempts
+
+      await vi.advanceTimersByTimeAsync(300_000)
+
+      expect(attempts).toBe(afterOpen)
+      built.scheduler.stop()
+    })
+
+    it('gives up after three attempts rather than retrying for ever (C5 reasoning)', async () => {
+      const built = build(new SyncError('network', 'offline'))
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.reject(new SyncError('network', 'offline'))
+      }
+      await built.scheduler.start()
+
+      // Generous enough to cover every backoff step several times over.
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+
+      // One initial attempt plus three retries, then silence.
+      expect(attempts).toBe(4)
+      built.scheduler.stop()
+    })
+
+    it('backs off further each time, rather than hammering at a fixed interval', async () => {
+      const built = build(new SyncError('network', 'offline'))
+      const at: number[] = []
+      let elapsed = 0
+      built.provider.pull = () => {
+        at.push(elapsed)
+        return Promise.reject(new SyncError('network', 'offline'))
+      }
+      await built.scheduler.start()
+
+      elapsed = 5_000
+      await vi.advanceTimersByTimeAsync(5_000)
+      elapsed = 35_000
+      await vi.advanceTimersByTimeAsync(30_000)
+      elapsed = 155_000
+      await vi.advanceTimersByTimeAsync(120_000)
+
+      // Increasing gaps: 5s, then 30s, then 120s.
+      expect(at).toHaveLength(4)
+      expect(gap(at, 0)).toBe(5_000)
+      expect(gap(at, 1)).toBe(30_000)
+      expect(gap(at, 2)).toBe(120_000)
+      built.scheduler.stop()
+    })
+
+    it('stops retrying once a cycle succeeds, and resets the budget', async () => {
+      // `build(null)`, not `build(failure)`: the stub's `push` rejects from the same
+      // `failure` field as `pull`, so building with a failure would keep failing the cycle
+      // after the pull recovered and this test would be asserting nothing. The failure is
+      // introduced on `pull` alone, which is the transient case that matters.
+      const built = build(null)
+      let fail = true
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return fail
+          ? Promise.reject(new SyncError('network', 'offline'))
+          : Promise.resolve(null)
+      }
+      await built.scheduler.start()
+
+      await vi.advanceTimersByTimeAsync(5_000)
+      fail = false
+      // Far enough for every armed retry to have fired at least once.
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+      const afterRecovery = attempts
+      expect(afterRecovery).toBeGreaterThan(1)
+
+      // A stale timer left over from the outage would keep firing after a good sync.
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+
+      expect(attempts).toBe(afterRecovery)
+      built.scheduler.stop()
+    })
+
+    it('arms nothing at all while cycles succeed — this is not polling (C6)', async () => {
+      // The claim that lets any of the above coexist with C6. If a healthy scheduler
+      // scheduled anything, it would be a background poll wearing a different hat.
+      const built = build(null)
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.resolve(null)
+      }
+      await built.scheduler.start()
+      const afterOpen = attempts
+
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+
+      expect(attempts).toBe(afterOpen)
+      built.scheduler.stop()
+    })
+
+    it('drops the armed retry when stopped, so a torn-down scheduler stops syncing', async () => {
+      const built = build(new SyncError('network', 'offline'))
+      let attempts = 0
+      built.provider.pull = () => {
+        attempts += 1
+        return Promise.reject(new SyncError('network', 'offline'))
+      }
+      await built.scheduler.start()
+      built.scheduler.stop()
+      const afterStop = attempts
+
+      await vi.advanceTimersByTimeAsync(30 * 60_000)
+
+      expect(attempts).toBe(afterStop)
+    })
+  })
+
   it('syncs once when the app opens (C1)', async () => {
     const { scheduler, pulls } = counting()
     await scheduler.start()

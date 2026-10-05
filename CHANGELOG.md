@@ -148,6 +148,12 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
 
 ### Fixed
 
+- **Sync no longer asks you to reconnect every few hours.** An expired access token is now
+  exchanged for a new one silently, using the refresh token Dropbox was already sending and
+  this app was discarding. The failure it removes was routine enough to train you to ignore
+  the one sync message that matters.
+- A cycle that fails because the network dropped is retried a few times, backing off, rather
+  than waiting for you to reopen the tab. A stopped scheduler no longer keeps syncing.
 - **Stopping a timer no longer takes the screen away.** It used to jump straight to the
   entry form, which made one action — pressing Stop — look like three. The entry is written
   either way, so the offer to classify it is now a line on the timer panel with a link to the

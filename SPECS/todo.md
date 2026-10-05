@@ -288,7 +288,36 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
    Schema v4 carries the three existing `meta` rows across. They are copied rather than
    moved, so downgrading loses nothing.
-47. [ ] when should dropbox connect auto-run? perhaps keep a record of when last connected attempt and if that time is >x mins then auto try to connect again.
+47. [x] **when should dropbox connect auto-run?** — **answered, and the premise changed.**
+   The item asks to record the last connection attempt and retry after *x* minutes. That
+   turns out to retry the wrong thing: the provider was receiving a refresh token from
+   Dropbox and discarding it, so there was nothing to retry *with*. Every timed retry would
+   hit the same wall, fail, and — worse — re-run the discard path, silently deleting a
+   working credential on a schedule.
+
+   So the answer is not a timer, it is three pieces:
+
+   - **Store the refresh token.** Already present in the token response, read and thrown
+     away, on the stated reasoning that Dropbox only issues one to confidential clients.
+     That was factually wrong. Stored beside the access token in `secrets`, so it stays out
+     of backups by table structure.
+   - **Refresh on 401/403, once.** Both `pull` and `push`, through one shared wrapper. Bounded
+     to a single retry, because a dead refresh token answers `invalid_grant` and an unbounded
+     retry is a loop that looks like syncing. One exchange per session for a dead token, so
+     an open tab does not spend a token request per cycle. Concurrent failures share the
+     exchange rather than racing each other's credential write.
+   - **Retry a transiently failed cycle, backed off.** `network` and `rate-limited` only,
+     three attempts at 5s/30s/120s, budget reset on success. Specified as C6.1, because the
+     distinction from the C6 polling ban is the whole reason this is allowed: the timer only
+     exists after a failure, so a healthy tab schedules nothing.
+
+   `auth` and `scope-missing` are excluded from retrying: waiting fixes neither, and
+   re-arming on them would destroy a dead credential once per cycle.
+
+   Two defects found while doing it, both by tests written for the new behaviour:
+   `stop()` did not clear the armed retry, so a torn-down scheduler kept syncing; and
+   `syncNow()` did not check `stopped` at all, so a manual sync after teardown started a
+   cycle nobody held.
 48. [x] on timer stop, do not go to edit screen automatically — **done.** Stopping writes
    the entry and stays put. The offer to classify it is a line on the timer panel with a link
    to the form, which is what US2's routing actually bought, and it expires when the next

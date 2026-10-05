@@ -100,6 +100,31 @@ function isAuthFailure(kind: string): boolean {
 }
 
 /**
+ * Failures worth trying again on our own (SPECS/todo.md item 47).
+ *
+ * Deliberately narrower than `SyncError.retryable`, which also includes `conflict` — a
+ * conflict is handled *inside* the cycle by re-reading and retrying the push (0012 C5), so
+ * one reaching here means that handling was exhausted.
+ *
+ * `auth` and `scope-missing` are excluded because waiting cannot fix them: the user has to
+ * authorise again, or the Dropbox app console has to change. Retrying those would spend
+ * requests to arrive at the same answer, and — worse — would re-arm the cycle every time a
+ * token turned out to be dead.
+ */
+function isTransientFailure(kind: string): boolean {
+  return kind === 'network' || kind === 'rate-limited'
+}
+
+/**
+ * How long to wait before retrying a transiently failed cycle.
+ *
+ * Three attempts, then it stops. An unbounded retry is what 0012 C5 warns about for
+ * conflicts, and the same reasoning applies here: a network that stays down should cost a
+ * few requests, not a request every minute until the tab is closed.
+ */
+const RETRY_BACKOFF_MS = [5_000, 30_000, 120_000] as const
+
+/**
  * What to say when the stored token turns out to be unusable.
  *
  * Says what happened and what is still true, and nothing more. The precise cause — expired,
@@ -127,6 +152,10 @@ export class SyncScheduler {
   private readonly onAuthLost: (() => void) | undefined
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
+  /** Armed only after a transient failure; see `armRetry` (item 47). */
+  private retryTimer: ReturnType<typeof setTimeout> | null = null
+  /** How many retries have already been spent on the current run of failures. */
+  private retryCount = 0
   private onVisibilityChange: (() => void) | null = null
   private onPageHide: (() => void) | null = null
   private onRevision: (() => void) | null = null
@@ -176,6 +205,10 @@ export class SyncScheduler {
     this.readLocal = config.readLocal ?? readSnapshot
     // Wrapped rather than assigned directly: this is the only place the scheduler can
     // cause a revision bump, and the subscription below has to be able to tell.
+    //
+    // The bookkeeping writes are *not* wrapped, because they do not bump the revision —
+    // checked rather than assumed, after a plausible-looking theory about redundant cycles
+    // turned out to be wrong.
     const writeLocal = config.writeLocal ?? writeSnapshot
     this.writeLocal = async (snapshot: Snapshot) => {
       this.writingLocally = true
@@ -249,6 +282,36 @@ export class SyncScheduler {
   }
 
   /**
+   * Arm a retry after a transiently failed cycle (SPECS/todo.md item 47).
+   *
+   * **This is not polling.** 0012 C6 forbids a background interval that syncs
+   * unconditionally; this fires only when the last cycle actually failed, and there is
+   * nothing to retry once one succeeds — so a healthy tab schedules nothing at all. The
+   * distinction is the whole reason this can coexist with C6 rather than override it.
+   *
+   * Bounded by `RETRY_BACKOFF_MS`, for the reason C5 gives about conflicts: a network that
+   * stays down should cost a few requests, not a request every minute until the tab closes.
+   */
+  private armRetry(): void {
+    if (this.stopped) return
+    if (this.retryCount >= RETRY_BACKOFF_MS.length) return
+    const wait = RETRY_BACKOFF_MS[this.retryCount]
+    this.retryCount += 1
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null
+      void this.syncNow()
+    }, wait)
+  }
+
+  /** Drop any armed retry and reset the budget. */
+  private clearRetry(): void {
+    if (this.retryTimer !== null) clearTimeout(this.retryTimer)
+    this.retryTimer = null
+    this.retryCount = 0
+  }
+
+  /**
    * Stop scheduling.
    *
    * Detaches the listeners as well as clearing the pending timer. Clearing the timer
@@ -259,6 +322,11 @@ export class SyncScheduler {
     this.stopped = true
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = null
+    // With the debounce timer. Without it an armed retry survives teardown and the stopped
+    // scheduler goes on syncing, which is the exact failure the rest of this method exists
+    // to prevent — and `schedule()`'s own stopped check does not help, because a retry
+    // calls `syncNow()` directly.
+    this.clearRetry()
     this.detachRevision?.()
     this.detachRevision = null
     this.onRevision = null
@@ -304,6 +372,11 @@ export class SyncScheduler {
    * run in parallel.
    */
   async syncNow(): Promise<SyncOutcome | null> {
+    // Stopped means stopped, whoever is asking. `schedule()` already checks; this did not,
+    // so a manual "Sync now" — or a retry timer that was mid-flight when teardown began —
+    // could start a cycle on a scheduler nobody holds. The method's own comment says
+    // clearing the timer alone once left it syncing anyway.
+    if (this.stopped) return null
     if (this.running) {
       this.queuedWhileRunning = true
       return null
@@ -392,6 +465,13 @@ export class SyncScheduler {
               : outcome.message,
         })
       } else {
+        // A cycle that failed transiently is retried on a timer (item 47); one that failed
+        // permanently is not, and nothing is armed. Disarming on anything else matters as
+        // much as arming: a stale retry left over from an outage would keep firing after a
+        // successful manual sync.
+        if (outcome.status === 'failed' && isTransientFailure(outcome.kind)) this.armRetry()
+        else this.clearRetry()
+
         this.emit({
           state: 'error',
           lastOutcome: outcome,
