@@ -383,7 +383,17 @@ function ClientList({
                   data-testid={`select-client-${client.id}`}
                 >
                   {client.name}
-                  {active && <span className="badge badge-active">running</span>}
+                  {/*
+                    No "running" badge (SPECS/todo.md item 42). The ticking elapsed figure on
+                    this row already says it, and saying it twice meant the badge was read
+                    before the number: the user had to read a word to learn what the digits
+                    beside it were for.
+
+                    What the badge carried that the number does not is *which* client, and
+                    that is unchanged — the row keeps `aria-current` and the active class, so
+                    the state is still conveyed to a screen reader and still drives the
+                    highlight. Only the visible duplicate word goes.
+                  */}
                 </button>
 
                 {/* The count-up lives on the client's line, not in a separate block. */}

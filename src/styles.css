@@ -769,17 +769,6 @@ code {
   font-weight: 600;
 }
 
-.badge-active {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--fg);
-  border: 1px solid currentColor;
-  border-radius: 0.2rem;
-  padding: 0 0.25rem;
-  margin-left: 0.35rem;
-}
-
 .timer-orphan {
   display: flex;
   flex-wrap: wrap;

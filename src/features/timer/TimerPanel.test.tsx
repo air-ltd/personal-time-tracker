@@ -242,6 +242,55 @@ describe('archived clients (0005 X4, todo 37)', () => {
   })
 })
 
+describe('the running client (SPECS/todo.md item 42)', () => {
+  it('shows the ticking timer without a "running" badge', async () => {
+    // The badge said "running" beside a figure that was already counting up, so the word
+    // was read first and the number read as decoration. What the badge carried that the
+    // number does not — which client — has to survive.
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: T0 })
+    await createProject({ name: 'Work', clientId: client.id, now: T0 })
+    const timer = timerHarness()
+    const onStopped = () => {}
+    const view = render(<TimerPanel timer={timer} onStopped={onStopped} now={NOW} />)
+
+    const started = new Date('2026-10-13T09:00:00.000Z')
+    const [project] = await listProjects({ clientId: client.id })
+    if (project === undefined) throw new Error('the project should exist by now')
+    timer.running = {
+      id: 'running-1',
+      projectId: project.id,
+      tagIds: [],
+      start: started.toISOString(),
+      end: null,
+      note: '',
+      billable: false,
+      rateOverrideMinor: null,
+      source: 'timer',
+      createdAt: started.toISOString(),
+      updatedAt: started.toISOString(),
+      deletedAt: null,
+    }
+    // The harness does not compute elapsed time, and the live figure falls back to the
+    // client's running total when it is null — which is what makes this assertion about the
+    // ticking number rather than about the fallback.
+    timer.elapsedMs = 3_661_000
+    view.rerender(<TimerPanel timer={timer} onStopped={onStopped} now={NOW} />)
+
+    const row = await screen.findByRole('button', { name: 'Stop the timer for Acme Ltd' })
+    const listRow = row.closest('li')
+    if (listRow === null) throw new Error('no row for the running client')
+
+    // No badge.
+    expect(within(listRow).queryByText('running')).toBeNull()
+    expect(listRow.querySelector('.badge-active')).toBeNull()
+    // The figure that replaced it is still there and counting.
+    expect(listRow.querySelector('.timer-client-live')?.textContent).toMatch(/\d+:\d{2}:\d{2}/)
+    // And "which client" is still conveyed, for a screen reader and for the highlight.
+    expect(listRow.getAttribute('aria-current')).toBe('true')
+    expect(listRow.className).toContain('timer-client-row-active')
+  })
+})
+
 describe('stopping a timer', () => {
   it('ignores a second press while the first stop is still writing', async () => {
     // A `stop` that has not resolved yet is the whole point: two clicks in one render pass

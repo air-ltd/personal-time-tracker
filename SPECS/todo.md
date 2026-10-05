@@ -245,12 +245,16 @@ Numbered, not bulleted. Ordered roughly by when they came up.
      attributes by name. The consequence is that archiving is a one-way door for a *client's
      name* even though the record itself is restorable. Asserted side by side so the
      asymmetry is deliberate rather than accidental.
-42. [ ] remove the "running" tag from client with running timer - just keep the timers ticking.
+42. [x] remove the "running" tag from client with running timer - just keep the timers
+   ticking — **done.** The badge said "running" beside a figure already counting up, so the
+   word was read first and the number read as decoration. Only the visible word went: the
+   row keeps `aria-current` and its active class, so *which* client is still conveyed to a
+   screen reader and still drives the highlight.
 43. [ ] About page needs work.
 44. [ ] settings page needs work.
 45. [ ] what shows by default needs some work.
-46. [ ] all settings should remain across the page in dropbox storage.
-47. [ ] when should dropbox connect auto-run?
+46. [ ] all settings should remain across the page in dropbox storage (storage is to cover one user on multiple devices).
+47. [ ] when should dropbox connect auto-run? perhaps keep a record of when last connected attempt and if that time is >x mins then auto try to connect again.
 
 # Where the branches are
 
