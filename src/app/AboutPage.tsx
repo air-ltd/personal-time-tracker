@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import changelog from '../../CHANGELOG.md?raw'
+import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 
 /**
  * About, and the release notes.
@@ -53,6 +54,120 @@ export function AboutPage() {
           Your display preferences — theme, chosen currencies, entries period — are kept per
           device rather than synced. They are preferences rather than data, and they are not
           included in a backup either.
+        </p>
+      </section>
+
+      {/*
+        Items 38 and 39. Kept on the About page rather than a separate document because a
+        privacy policy behind a link is a privacy policy nobody opens, and the facts it has to
+        state — what is stored, where, and what a stolen account would expose — are the same
+        facts a user is already on this page to check.
+      */}
+      <section className="panel" aria-labelledby="privacy-heading">
+        <h2 id="privacy-heading">Privacy</h2>
+
+        <p className="hint">
+          This app has no interest in your data, and the shortest way to show that is to say
+          what it cannot do.
+        </p>
+
+        <h3>What this app does not do</h3>
+        <ul>
+          <li>
+            <strong>No analytics, no telemetry, no crash reporting, no session replay.</strong>{' '}
+            There is no code path in it that sends usage data. If a page view were interesting
+            enough to record, it would have somewhere to go — it does not.
+          </li>
+          <li>
+            <strong>No cookies</strong>, and no third-party cookies. Nothing on this page sets
+            one.
+          </li>
+          <li>
+            <strong>No third-party assets.</strong> No CDN scripts, no hosted fonts, no
+            analytics tags. Fonts are your operating system&rsquo;s, so loading this page does
+            not tell anyone else you visited it.
+          </li>
+          <li>
+            <strong>No accounts and no server.</strong> The app is a static site. It cannot see
+            who you are because it has nobody to tell.
+          </li>
+        </ul>
+
+        <h3>Where your data lives</h3>
+        <ul>
+          <li>
+            Your entries, projects, clients and tags, and your Dropbox token, are in this
+            browser&rsquo;s <strong>IndexedDB</strong>. They are not encrypted by this app —
+            they are as protected as the browser profile they sit in.
+          </li>
+          <li>
+            Your theme choice and the Dropbox app id are in <code>localStorage</code>. Neither
+            is personal data, and neither is a credential: the app id is a public identifier
+            that ships in the JavaScript anyway.
+          </li>
+          <li>
+            While you are signing in to Dropbox, a piece of pending OAuth state sits in{' '}
+            <code>sessionStorage</code> and is cleared when the redirect finishes.
+          </li>
+          <li>
+            A Content Security Policy restricts what this page is allowed to load and connect
+            to. The only external origins it permits are Dropbox&rsquo;s two APIs, and nothing
+            works without that permission.
+          </li>
+        </ul>
+
+        <h3>If you connect Dropbox</h3>
+        <ul>
+          <li>
+            Syncing writes <strong>one JSON file</strong> to your own Dropbox account, and
+            nothing is written anywhere else.
+          </li>
+          <li>
+            <strong>That file is not encrypted by this app.</strong> It is ordinary JSON, in
+            readable text, in your Dropbox account. Dropbox encrypts it at rest and controls who
+            can read it, but there is no passphrase from this app on top. Anyone with access to
+            the file can read your work history, and so can Dropbox under a court order or a
+            service change. That was a deliberate choice over client-side encryption, not an
+            oversight — see 0011 &sect;Accepted risks.
+          </li>
+          <li>
+            So the protection on that account is entirely your account&rsquo;s: a strong unique
+            password, two-factor authentication, and app-specific authorisation where Dropbox
+            offers it.
+          </li>
+          <li>
+            Disconnecting stops syncing and deletes the stored token. It does not touch what is
+            already in your Dropbox, and it does not touch this browser either.
+          </li>
+        </ul>
+
+        <h3>If you want it gone</h3>
+        <p>
+          Clearing this site&rsquo;s data in your browser removes everything, including the
+          running timer. Deleting the file from your Dropbox removes the copy that left this
+          device. There is nothing else, because there is nowhere else.
+        </p>
+      </section>
+
+      <section className="panel" aria-labelledby="feedback-heading">
+        <h2 id="feedback-heading">Found a problem?</h2>
+        <p>
+          This is a small project and problems are read and usually fixed. If something did not
+          work, or worked in a way you did not expect,{' '}
+          <a className="link-button" href={NEW_ISSUE_URL} rel="noreferrer noopener">
+            open an issue
+          </a>
+          . A sentence about what you did and what you expected is worth more than a
+          reproduction you have not had time to write down.
+        </p>
+        <p className="hint">
+          Please do not attach a backup file to an issue. A backup contains your work, and a
+          public issue is the last place it belongs. If a specific entry is the problem,
+          describe it in words. The code is at{' '}
+          <a href={REPOSITORY_URL} rel="noreferrer noopener">
+            the repository
+          </a>
+          .
         </p>
       </section>
 

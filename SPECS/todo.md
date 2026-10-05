@@ -196,8 +196,23 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    and `TimerPanel` was the one view that never filtered. The wrinkle held up: a client
    archived *while* one of its timers runs stays visible, or the row vanishes and the timer
    reappears in the orphan row claiming it has no client. Both halves have tests.
-38. [ ] add info on creating github issues for feedback to the about page.
-39. [ ] add a privacy policy to the about page. (we have no interest in your data).
+38. [x] add info on creating github issues for feedback to the about page — **done.** A
+   "Found a problem?" panel with a prefilled new-issue link, plus a request *not* to attach a
+   backup file: a backup is the user's work, and a public issue is the last place it belongs.
+   The repository URL is a constant in `src/app/repository.ts` rather than a literal in the
+   view, so a fork has one place to change it.
+39. [x] add a privacy policy to the about page — **done**, and it closed an unmet MUST.
+   `0011 AR2` requires the absence of encryption to be documented *in the settings screen*,
+   and nothing in the app said so anywhere. The policy states what the app cannot do (no
+   analytics, telemetry, cookies or third-party assets; no accounts, no server), where things
+   are stored, and what a compromised Dropbox account would expose — plus how to remove
+   everything. The same disclosure now also sits on the sync panel, because that is where the
+   decision to sync is made and a policy behind a link is a policy nobody opens.
+
+   Five tests assert the *claims*, since the failure mode of a privacy policy is being quietly
+   untrue: a change to storage can invalidate a sentence without touching the page. The
+   behaviour behind "no analytics" is not asserted here and cannot be — it needs a browser
+   watching every request, which is the e2e suite's job (0011 P6).
 40. [x] the title says "dev" on a non-production origin — **done.** Marked as a small badge
    beside the name rather than as part of it: "Time Tracker DEV" reads like a fork, where a
    quiet stamp says the same app on another origin. It reads `environmentForHost`, the same
@@ -255,6 +270,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 45. [ ] what shows by default needs some work.
 46. [ ] all settings should remain across the page in dropbox storage (storage is to cover one user on multiple devices).
 47. [ ] when should dropbox connect auto-run? perhaps keep a record of when last connected attempt and if that time is >x mins then auto try to connect again.
+48. [ ] on timer stop, do not go to edit screen automatically
 
 # Where the branches are
 

@@ -58,6 +58,20 @@ export function SyncPanel() {
         </span>
       </h2>
 
+      {/*
+        0011 AR2: the app MUST document this in the settings screen rather than leaving the
+        user to assume encryption they do not have. It was a MUST, it was not implemented, and
+        the About page now carries the same statement — so the disclosure lives where the
+        decision to sync is made, not only where someone went looking for the policy.
+      */}
+      <p className="hint">
+        Your entries are written to Dropbox as one JSON file, in plain readable text. This app
+        does not encrypt it — there is no passphrase. Dropbox protects it at rest and controls
+        access to your account; anyone who can read that file can read your work history. Use a
+        strong unique password and two-factor authentication, and treat the file itself as
+        sensitive if you ever share or export it.
+      </p>
+
       <div className="button-row">
         {connection === 'connected' ? (
           <>

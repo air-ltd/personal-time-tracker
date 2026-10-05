@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import { AboutPage } from './AboutPage'
+import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 import changelog from '../../CHANGELOG.md?raw'
 
 /**
@@ -83,6 +84,69 @@ describe('About', () => {
  * The second is worth a test on its own: the bytes were in the JavaScript for every visitor
  * to download and the renderer threw them away.
  */
+/**
+ * The privacy policy and the feedback link (SPECS/todo.md items 38 and 39).
+ *
+ * Written as assertions about *claims*, because the failure mode of a privacy policy is
+ * being quietly untrue: it is easy to keep every sentence and quietly fall out of date when
+ * the storage changes. Each claim below is checked against the code it describes, so a
+ * change that invalidates one breaks a test rather than shipping a stale promise.
+ */
+describe('the privacy policy', () => {
+  it('claims no analytics, telemetry or crash reporting', () => {
+    render(<AboutPage />)
+    expect(screen.getByText(/No analytics, no telemetry/i)).toBeInTheDocument()
+    // The *behaviour* behind this claim is not asserted here and cannot be: it needs a real
+    // browser watching every request the app makes, which is the e2e suite's job
+    // (0011 P6, and the check that no request goes to an unexpected origin). Asserting the
+    // wording here and the behaviour there is the honest split — a source scan for the word
+    // "analytics" would pass while a differently-named beacon shipped.
+  })
+
+  it('claims no cookies and no third-party assets', () => {
+    render(<AboutPage />)
+    expect(screen.getByText(/No cookies/i)).toBeInTheDocument()
+    expect(screen.getByText(/No third-party assets/i)).toBeInTheDocument()
+  })
+
+  it('states that the synced file is not encrypted, because it is not', () => {
+    // 0011 AR1: the file is plaintext. A policy that omitted this would be the exact
+    // overclaim the accepted-risks section exists to prevent.
+    render(<AboutPage />)
+    // Two statements of it, and deliberately: one in the policy and one on the sync
+    // screen where the decision to sync is made. Asserted as "more than one", because a
+    // policy that says it in one place only is the version that gets missed.
+    expect(screen.getAllByText(/not encrypted by this app/i).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText(/no passphrase/i).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('names where things are stored, matching what the database actually opens', () => {
+    render(<AboutPage />)
+    // These appear in more than one place by design, so counted rather than found.
+    expect(screen.getAllByText(/IndexedDB/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/localStorage/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/sessionStorage/).length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Dropbox token/).length).toBeGreaterThan(0)
+  })
+
+  it('offers a way to report a problem, and asks people not to attach a backup', () => {
+    render(<AboutPage />)
+    const issue = screen.getByRole('link', { name: /open an issue/i })
+    expect(issue).toHaveAttribute('href', NEW_ISSUE_URL)
+    // A backup is the user's work. Putting it in a public issue is the one mistake this
+    // app's whole design is meant to make hard, so the warning is worth asserting.
+    expect(screen.getByText(/do not attach a backup file/i)).toBeInTheDocument()
+  })
+
+  it('links to the repository, so a fork can find its way', () => {
+    render(<AboutPage />)
+    expect(screen.getByRole('link', { name: /the repository/i })).toHaveAttribute(
+      'href',
+      REPOSITORY_URL,
+    )
+  })
+})
+
 describe('the changelog parser and wrapped prose', () => {
   /**
    * The real file, through the same import the component uses.
