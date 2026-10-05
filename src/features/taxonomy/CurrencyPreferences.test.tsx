@@ -145,7 +145,11 @@ describe('applying (item 13)', () => {
     await user.click(screen.getByRole('checkbox', { name: /^GBP/ }))
     await user.click(screen.getByRole('button', { name: 'Save currency selection' }))
     await waitFor(async () => {
-      expect(await getDb().meta.get('visible-currencies')).toBeUndefined()
+      // `settings`, not `meta`: this row moved in schema v4 (SPECS/todo.md item 46).
+      // Asserting against `meta` here would have gone quietly vacuous — `meta` no longer
+      // holds the row, so "it is undefined" would pass whether or not the untick deleted
+      // anything, and the mutation gate is what caught that rather than a failing test.
+      expect(await getDb().settings.get('visible-currencies')).toBeUndefined()
     })
   })
 
