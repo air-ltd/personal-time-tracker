@@ -536,6 +536,23 @@ says so.
 **11/11 was 11/12 behaviours, and the twelfth was a syntax error.** It is 18/18 now, and the
 claim is stronger than it was.
 
+The same session found a second defect in the gate, in the other direction. Its header
+claimed that restoring each file afterwards means "an interrupted run cannot leave a mutated
+file behind" — and that was false for the interruption that matters. A run cut short by a step
+timeout left two source files mutated, and the next `npm test` reported two defects that did
+not exist.
+
+The cause is not the `finally`, which is correct; it is that `runVitest` used `execFileSync`,
+which blocks the event loop, and **Node does not run a signal handler while the loop is
+blocked** — it swallows the signal and carries on. So no amount of `try`/`finally` could have
+worked, and a JS-level handler alone would have looked right and done nothing. Verified
+directly: a synchronous version runs to completion and exits 0 after `SIGTERM`.
+
+Fixed by making the test run asynchronous and adding a handler that restores the in-flight
+file on `SIGINT`/`SIGTERM`/`SIGHUP`. Verified by interrupting a real run mid-mutation: the log
+reads `Restored src/sync/scheduler.ts after an interrupt` and the tree is clean. The mutations
+run sequentially rather than under `Promise.all`, so two mutations of one file cannot race.
+
 ## 10. Still open
 
 | Item                                            | Why                                                                                              |

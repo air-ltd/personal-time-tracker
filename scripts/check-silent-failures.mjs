@@ -20,7 +20,7 @@
  * is explicit rather than invisible.
  */
 
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -220,24 +220,78 @@ const PENDING = [
   },
 ]
 
+/**
+ * Run one suite and report how it failed.
+ *
+ * Asynchronous, and that is load-bearing rather than stylistic. `execFileSync` blocks the
+ * event loop, and Node does not run a JavaScript signal handler while it is blocked — it
+ * simply swallows the signal and carries on. So a synchronous version cannot restore a
+ * mutated file on Ctrl-C or on a CI step timeout, which is exactly the case the restore
+ * exists for. Verified: `execFileSync` under `SIGTERM` runs to completion and exits 0.
+ */
 function runVitest(file) {
+  return new Promise((resolve) => {
+    execFile(
+      'npx',
+      ['vitest', 'run', file],
+      { cwd: ROOT, maxBuffer: 32 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve({ passed: true })
+          return
+        }
+        // A non-zero exit is necessary but not sufficient, and the difference matters: a
+        // syntax error or a `describe` block that throws at collection also exits
+        // non-zero. Counting that as "caught" would let the gate claim coverage it does
+        // not have — the mutation broke the file, not the behaviour. So require a failed
+        // *test* as well, which is the claim being made.
+        const output = `${stdout}${stderr}`
+        const reported = Number(/Tests\s+(\d+) failed/.exec(output)?.[1] ?? 0)
+        resolve({ passed: false, testFailed: reported > 0, output })
+      },
+    )
+  })
+}
+
+/**
+ * The file currently mutated, so a signal can put it back.
+ *
+ * The `finally` in `checkOne` handles every ordinary failure. It does *not* handle a
+ * signal: Node does not run `finally` on `SIGTERM` or `SIGINT`, it just dies. That is not
+ * hypothetical — a run cut short by a step timeout left two source files mutated, and the
+ * next `npm test` reported two defects that did not exist. The guarantee this script
+ * documents therefore needs a signal handler as well as a `finally`.
+ *
+ * This only works because `runVitest` is asynchronous. Under `execFileSync` the event loop
+ * is blocked and Node swallows the signal without ever reaching this handler — verified,
+ * a synchronous version ran to completion and exited 0 after `SIGTERM`.
+ */
+let inFlight = null
+
+function restoreInFlight() {
+  if (inFlight === null) return
+  const { path, original, file } = inFlight
+  inFlight = null
   try {
-    execFileSync('npx', ['vitest', 'run', file], { cwd: ROOT, stdio: 'pipe' })
-    return { passed: true }
+    writeFileSync(path, original)
+    console.error(`\nRestored ${file} after an interrupt.`)
   } catch (error) {
-    // A non-zero exit is necessary but not sufficient, and the difference matters: a
-    // syntax error or a `describe` block that throws at collection also exits
-    // non-zero. Counting that as "caught" would let the gate claim coverage it does
-    // not have — the mutation broke the file, not the behaviour. So require a failed
-    // *test* as well, which is the claim being made.
-    const output = `${error.stdout ?? ''}${error.stderr ?? ''}`
-    const failedTests = /Tests\s+(?:(\d+) failed)?/.exec(output)
-    const reported = failedTests?.[1] === undefined ? 0 : Number(failedTests[1])
-    return { passed: false, testFailed: reported > 0, output }
+    // Nothing useful is left to do, but saying so beats exiting quietly with a mutated
+    // tree the next person will read as real work.
+    console.error(`\nCould not restore ${file}: ${String(error)}`)
+    console.error('Run `git checkout -- .` before doing anything else.')
   }
 }
 
-function checkOne(mutation) {
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+  process.on(signal, () => {
+    restoreInFlight()
+    // 128 + SIGINT, the conventional shell code for "interrupted".
+    process.exit(130)
+  })
+}
+
+async function checkOne(mutation) {
   const path = join(ROOT, mutation.file)
   if (!existsSync(path)) {
     return { ...mutation, result: 'error', note: `missing file ${mutation.file}` }
@@ -255,11 +309,13 @@ function checkOne(mutation) {
   let outcome
   try {
     writeFileSync(path, original.replace(mutation.find, mutation.replace))
-    outcome = runVitest(mutation.test)
+    inFlight = { path, original, file: mutation.file }
+    outcome = await runVitest(mutation.test)
   } finally {
-    // Restored from the bytes read above, not by reversing the edit, so an interrupted
-    // run cannot leave a mutated file behind.
+    // Restored from the bytes read above, not by reversing the edit, so an edit that
+    // applied in more than one place cannot be left half-undone.
     writeFileSync(path, original)
+    inFlight = null
   }
 
   if (outcome.passed) {
@@ -286,7 +342,12 @@ const selected = MUTATIONS.filter((m) => m.id.includes(filter) || m.failure.incl
 
 console.log(`\nSilent-failure gate — ${selected.length} mutation(s)\n`)
 
-const results = selected.map(checkOne)
+// Sequential, not `Promise.all`. Two mutations of the same file would otherwise race, and
+// two suites running at once would make a timing-related flake look like a real result.
+const results = []
+for (const mutation of selected) {
+  results.push(await checkOne(mutation))
+}
 
 let gaps = 0
 for (const result of results) {
