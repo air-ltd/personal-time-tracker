@@ -85,27 +85,54 @@ those entries to the archived client.
 
 ## Deleting projects and clients
 
-Deleting is destructive and rare. See 0003 F3.
+> **Accepted change, NOT YET IMPLEMENTED.** Projects and clients are to stop being
+> deletable; archiving replaces it. The rules below are the agreed replacement and the code
+> does not yet follow them — `deleteProject` and `deleteClient` are still reachable from
+> settings. Tracked as `SPECS/todo.md` item 41, which carries the implementation plan.
+> Until that is done, treat A1–A5 as the archiving rules that *are* built and X1–X7 below as
+> the intent.
 
-**X1** — Deleting a project MUST set `projectId = null` on its entries rather than
-removing them. The user MUST be shown a count of affected entries and the number
-of billable hours involved before confirming.
+**X1** — Projects and clients MUST NOT be deletable. There MUST be no delete action, no
+repository operation that tombstones one, and no route to reach either.
 
-**X2** — The confirmation MUST state plainly that entries are kept but lose their
-project.
+**X2** — Archiving MUST be the only way to retire one, and it MUST be reversible. It sets a
+flag and changes nothing else: entries keep their project, projects keep their client, and
+every record survives.
 
-**X3** — Deleting a project with billable entries SHOULD require a second,
-stronger confirmation.
+**X3** — Because archiving moves and removes no entry, it MUST NOT require a confirmation, an
+impact count, or a second confirmation for billable work. A prompt with nothing actionable in
+it only teaches the user to dismiss prompts.
 
-**X4** — Deleting a client MUST NOT affect its projects. It sets `clientId` to
-`null` on those projects, which moves their entries into the client-less bucket.
-The user MUST be warned with the affected count.
+**X4** — An archived record MUST NOT be offered as a choice: not in the project picker, not
+in the client filter, and not as a target for starting a timer.
 
-**X5** — These actions MUST be undoable, since the underlying data survives. The
-undo window from 0003 D3 applies.
+**X5** — An entry that already refers to an archived record MUST continue to name it, marked
+archived. Hiding it would render historic work as uncategorised, misreporting where the time
+went — the same defect as filing time under the wrong project.
 
-**X6** — These operations MUST NOT be reachable from an entry form. Destructive
-taxonomy operations belong in settings, away from a mis-click on a save button.
+**X6** — Archiving MUST NOT cascade. A client can be archived while its projects stay active
+(A4), and entries continue to attribute to the archived client.
+
+**X7** — Because nothing is tombstoned, undo is not required for archiving: the reverse action
+is the restore already required by A5. The 0003 D3 undo window applies to **entries** and
+**tag** deletion only.
+
+### What this replaces, and why the old rules were defensible
+
+X1 to X6 previously described a soft delete that kept the entries and made the action
+undoable. That was not a mistake: it preserved data, warned with counts, and kept the
+operation out of the entry form. What it got wrong was the premise — that retiring a client
+is a rare, deliberate, destructive act. In practice the common case is a project that has
+finished, and offering two buttons for "finished" and "gone" meant the safe one got used less
+than it should have, because the destructive one looked like the official answer.
+
+Two consequences for whoever implements it:
+
+- `deletedAt` stays on `Project` and `Client` for schema stability, but no code path writes it
+  for either. Merge-by-id then has no tombstones to honour for these two types, which removes
+  the resurrection risk the old scheme depended on undo to manage.
+- Tags keep Delete, because deleting a tag *moves* entries (they lose the tag) rather than
+  hiding one, so the impact count and undo are still warranted. That is the whole difference.
 
 ## Tags
 

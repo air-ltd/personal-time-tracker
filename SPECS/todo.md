@@ -183,23 +183,76 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     auto-placement has a subtlety that looks correct in review: with only two children the
     controls landed in column 2 and jumped to column 3 the moment the note appeared.
 35. [ ] edit and discard button sizes should match as well as start/stop, so that buttons don't move when start is clicked.
-36. [ ] do not allow delete of only remaining project against a client
+   *Confirmed real, not fixed.* `Start` is wider than `Stop`, so pressing Start shrinks the
+   first button; `Edit` is narrower than `Discard`, so the second grows. Both move. The
+   browser suite already checks row *height* across this transition (item 19) but nothing
+   checks width, so the fix needs a min-width per button role plus a width assertion beside
+   the existing height one — otherwise the same drift returns unnoticed.
+36. [x] do not allow delete of only remaining project against a client — **closed by item 41.**
+   Answered at the root rather than per-case: clients and projects are not deletable at all,
+   so there is no path to deleting a client's last project.
 37. [ ] archived clients should not appear in the list for starting a timer
+   *Cause found, not fixed.* `useTaxonomy` deliberately loads archived records and leaves
+   filtering to each view, and `TimerPanel` was the one view that never filtered. See item
+   41, which does this and the rest of 0005 X4 together. One wrinkle worth keeping: a client
+   archived *while* one of its timers runs must stay visible, or the row vanishes and the
+   timer reappears in the orphan row claiming it has no client.
 38. [ ] add info on creating github issues for feedback to the about page.
 39. [ ] add a privacy policy to the about page. (we have no interest in your data).
+40. [ ] I'd like the title "Time Tracker" in non-prod version to indicate it's a dev environment rather than prod.
+   `environmentForHost` in `src/sync/appKey.ts` already answers "production or not"
+   (`PRODUCTION_HOSTS = ['air-ltd.github.io']`). Reuse that rather than inventing a second
+   build-flag notion, which is how two answers end up disagreeing. Worth doing before
+   Phase 5, which adds a reports view you will want to screenshot without mistaking for prod.
+41. [ ] **Clients and projects are not deletable; archiving replaces it.** Decided, spec
+   written (0005 X1–X7), **not implemented.** This supersedes item 36 and is a product
+   change rather than a bug fix.
+
+   *Why:* retiring a project is usually not a rare destructive act — it is a project that has
+   finished. Offering both "archive" and "delete" meant the safe button got used less than it
+   should have, because the destructive one looked like the official answer. The old rules
+   (soft delete, impact counts, second confirmation, undo) were defensible; the premise was
+   not.
+
+   *Scope:*
+   - Remove `deleteProject`, `deleteClient`, `undoDeleteProject`, `undoDeleteClient`,
+     `projectDeleteImpact`, `clientDeleteImpact` and their receipt types from
+     `storage/taxonomyRepo.ts`.
+   - Drop the Delete button from `ClientRow` and `ProjectRow`; Archive/Restore already exists.
+   - `useTaxonomyDeletes` becomes `useTagDeletes`, tags only — deleting a tag *moves* entries
+     rather than hiding one, so it keeps its count, confirmation and undo.
+   - Filter archived records out of every choice (0005 X4): the timer list, the project
+     picker, and the client filter. The client filter *is* the timer card's client name
+     button, so there is no separate control to fix.
+   - Keep an archived record visible when it is the entry's **own** current value, else the
+     `<select>` holds a value with no option and saving silently re-files the work.
+
+   *Tests to remove or rewrite:* ~7 describe blocks in `storage/taxonomyRepo.test.ts`
+   (project/client delete, tombstones, names freed by deletion, undo, impact counts),
+   35 references in `TaxonomySettings.test.tsx`, plus `EntryForm.test.tsx` and
+   `App.test.tsx`. Replacement coverage is the point and is not mechanical: archiving instead
+   of deleting, archived records absent from each picker, and the chosen-archived-record
+   exemption.
+
+   *Partial work is parked, not lost:* `git stash@{0}` on `phase-5` holds the repository,
+   settings, entry-form and hook changes, minus their tests. `git stash pop` to resume.
 
 # Where the branches are
 
-- `phase-2a` — basic end-to-end: timer, entries, storage, list. PR #3 open.
-- `phase-2b` — Dropbox sync, merge, backup. Complete and committed; **not pushed**.
-- `phase-3` — test suite. Complete and committed; folded into the `phase-4` branch's
-  history, since each phase branches from the previous phase's head.
-- `phase-4` — taxonomy. **In progress.** Current branch.
+- `phase-2a` — basic end-to-end: timer, entries, storage, list. Merged as PR #3.
+- `phase-2b` — Dropbox sync, merge, backup. Complete; **still not pushed** as its own
+  branch. Its work reached `main` via `phase-4`.
+- `phase-3` — test suite. Complete; folded into `phase-4`'s history, since each phase
+  branches from the previous phase's head.
+- `phase-4` — taxonomy. Merged as PR #4 and **released as 0.1.0**. Deployed and verified
+  live: `/package.json` 404s, so Pages is on Actions rather than branch source (0009 MP1).
+- `phase-5` — reports and charts. **Current branch.** Local only, see item 1 below.
 
 ## Outstanding on `phase-2b` and `phase-3`
 
-1. [ ] **Push the branches.** `phase-2b`, `phase-3` and `phase-4` are local only. Write
-   access now works over SSH, so this is no longer blocked on a token.
+1. [ ] **Push the branches.** `phase-2b` and `phase-5` are local only. `phase-4` is pushed.
+   Write access works over SSH, so this is no longer blocked on a token — it just needs
+   doing, and 30-odd commits of `phase-4` did sit on one machine until the release.
 2. [ ] **Neither Dropbox app can sync.** Both `gh3s5cqaz4n30ah` (production) and
    `5k94zo8ymchm1ge` (testing) have neither `files.content.read` nor
    `files.content.write` granted, so authorisation returns `scope_not_granted` and no
