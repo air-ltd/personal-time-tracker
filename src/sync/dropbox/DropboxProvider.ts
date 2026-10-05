@@ -19,11 +19,15 @@ import type { TokenStore } from '../../storage/secretsRepo'
 /**
  * The stored credential.
  *
- * Only what the app actually uses. A refresh token is deliberately absent: Dropbox issues
- * one to confidential clients, and this is a public PKCE client with no secret, so there
- * is nothing to refresh with — and even if one arrived, there is no refresh flow. An
- * expired token is recovered by asking the user to authorise again, which the scheduler
- * triggers by discarding the token it cannot use.
+ * Only what the app actually uses.
+ *
+ * **Revised.** This used to say a refresh token was deliberately absent, on the reasoning
+ * that Dropbox issues one to confidential clients and this is a public PKCE client with no
+ * secret. The second half was wrong: Dropbox does issue a refresh token to a PKCE client
+ * when `token_access_type` is offline, which is the default for an app that is going to
+ * keep using the credential — and the token *response* was already parsed and the field
+ * thrown away. So the app was discarding the means of recovering from expiry, and paying
+ * for it with a consent-screen round trip every few hours. Item 47 keeps it.
  *
  * `displayName` went for the same reason in the other direction: reading an account name
  * needs the `account_info.read` scope, and requesting a third permission purely to show a
@@ -34,6 +38,16 @@ export interface DropboxTokens {
   /** Absent when the provider did not return an expiry. */
   expiresAt?: number
   accountId?: string
+  /**
+   * Long-lived credential for minting a new access token without the user (SPECS/todo.md
+   * item 47).
+   *
+   * Stored beside the access token in `secrets`, so it is excluded from sync payloads and
+   * backups by the table's structure rather than by a filter someone has to remember
+   * (0011 R3). Dropbox's own guidance is that this value is sensitive in the same way the
+   * access token is.
+   */
+  refreshToken?: string
 }
 
 export interface DropboxProviderOptions {
@@ -67,6 +81,11 @@ function toTokens(value: unknown): DropboxTokens | null {
     accessToken: candidate.accessToken,
     ...(typeof candidate.expiresAt === 'number' ? { expiresAt: candidate.expiresAt } : {}),
     ...(typeof candidate.accountId === 'string' ? { accountId: candidate.accountId } : {}),
+    // Absent on a credential written before this field existed, which is fine: the
+    // refresh path checks for it and reports `token-lost` when there is none.
+    ...(typeof candidate.refreshToken === 'string' && candidate.refreshToken !== ''
+      ? { refreshToken: candidate.refreshToken }
+      : {}),
   }
 }
 
@@ -227,6 +246,11 @@ export class DropboxProvider implements SyncProvider {
         ? { expiresAt: this.now() + json.expires_in * 1000 }
         : { expiresAt: this.now() + TOKEN_TTL_FALLBACK_MS }),
       ...(json.account_id ? { accountId: json.account_id } : {}),
+      // Kept rather than discarded. An access token lasts hours; without this the only way
+      // past expiry was to send the user back through Dropbox's consent screen, which is
+      // why "Sync failed, please reconnect" used to be a routine event rather than a
+      // signal that something was wrong.
+      ...(json.refresh_token ? { refreshToken: json.refresh_token } : {}),
     })
     this.verifier = null
     this.inMemoryState = null

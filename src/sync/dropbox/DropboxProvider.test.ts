@@ -257,13 +257,19 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
   })
 
   /**
-   * A refresh token arriving from an older build, or from a provider that issues one.
+   * The refresh token is kept (SPECS/todo.md item 47).
    *
-   * Dropped rather than stored. There is no refresh flow to use it, so keeping it would
-   * imply a capability the app does not have, and an expired token is recovered by
-   * asking the user to authorise again.
+   * This used to assert the opposite, and the reason it gave was a factual error: it said
+   * Dropbox issues a refresh token to confidential clients, and that a public PKCE client
+   * therefore has none to keep. Dropbox issues one to a PKCE client too — `token_access_type`
+   * defaults to offline for an app that intends to keep the credential — and the token
+   * response was already being parsed, with this field read and thrown away.
+   *
+   * The consequence was that an access token lasting a few hours could only be recovered by
+   * sending the user back through Dropbox's consent screen, so the most common sync failure
+   * was a scheduled inconvenience.
    */
-  it('does not keep a refresh token even if one is issued', async () => {
+  it('keeps a refresh token when one is issued', async () => {
     fetchMock.mockResolvedValue(
       response({
         status: 200,
@@ -274,8 +280,27 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
     await provider.beginAuth('state-refresh')
     await provider.completeAuth('code', 'state-refresh')
 
-    // No account_id in this response, so nothing beyond the token and its expiry is kept.
-    expect(Object.keys(store.tokens ?? {})).toEqual(['accessToken', 'expiresAt'])
+    // No account_id in this response, so nothing beyond the token, its expiry and the
+    // refresh token is kept.
+    expect(Object.keys(store.tokens ?? {}).sort()).toEqual([
+      'accessToken',
+      'expiresAt',
+      'refreshToken',
+    ])
+  })
+
+  it('still writes a usable credential when the provider issues no refresh token', async () => {
+    // Dropbox does not always send one, and its absence is not an error — it only means
+    // expiry has to be recovered the old way, by asking the user.
+    fetchMock.mockResolvedValue(
+      response({ status: 200, json: { access_token: 'tok-1', expires_in: 60 } }),
+    )
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+    await provider.beginAuth('state-norefresh')
+    await provider.completeAuth('code', 'state-norefresh')
+
+    expect(await provider.hasUsableToken()).toBe(true)
+    expect(store.tokens).not.toHaveProperty('refreshToken')
   })
 
   it('refuses to complete an authorisation that was never started', async () => {
