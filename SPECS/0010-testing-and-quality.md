@@ -145,10 +145,27 @@ arithmetic is easy to get subtly wrong.
 
 ## Priority 3 — integration and manual
 
-- Each spec's acceptance criteria, executed against a real browser.
-- The 0009 deployment checklist, against the live URL.
-- A two-browser-profile sync scenario per 0012's acceptance criteria. Awkward to
-  automate, and the highest-value manual test in the project.
+Written as a walkthrough a person follows, in [docs/UAT.md](../docs/UAT.md). Sixteen
+sections, each a set of steps and then what to look for. It is deliberately addressed to a
+user rather than to a tester: the question it asks throughout is *does this match what you
+would expect*, which the automated layers cannot ask and which is not the same question as
+*does this behave as specified*.
+
+- The 0009 deployment checklist, against the live URL. Not restated in UAT — it is about
+  whether the build is sound, not whether the product is acceptable.
+- Two-browser sync, UAT section 15, covering the five highest-risk of 0012's ten acceptance
+  criteria. **Never run**: both registered Dropbox apps lack the
+  `files.content.read` / `files.content.write` scopes, so authorisation returns
+  `scope_not_granted` and every scenario fails identically. That is a console permission
+  rather than a setup project, and it makes this the project's largest untested assumption
+  rather than a deferral.
+
+**A gap this does not close.** Only 0012 and 0013 have an acceptance criteria section; the
+other twelve state requirements inline (`0004 W1–W7`, `0005 P1–X6`), which is good for
+implementation and not executable as a pass/fail list. UAT sidesteps this by following the
+user's route through the app rather than a requirements matrix, which is the right shape for
+a user to follow and means a requirement with no visible consequence is not exercised. The
+matrix remains worth backfilling; the two are not substitutes.
 
 ## Coverage
 

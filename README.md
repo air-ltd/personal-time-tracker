@@ -6,12 +6,15 @@ optionally syncs to your own Dropbox.
 
 ## Status
 
-In development. Through Phase 4 (taxonomy) — see
+**Released as 0.1.0** (5 October 2026), covering Phases 1 to 4. Later phases — reports,
+capacity, invoicing — are not in this version; see
 [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md) for the phase
 sequence and each phase's gate.
 
 - What has changed: [`CHANGELOG.md`](CHANGELOG.md), also readable in the app under
   **About**.
+- Before you run it: [`docs/UAT.md`](docs/UAT.md) is a walkthrough of what the app
+  does, and what to check.
 - Cutting a release: [`docs/RELEASING.md`](docs/RELEASING.md).
 - Outstanding work: [`SPECS/todo.md`](SPECS/todo.md).
 - Accepted limitations: [`SPECS/README.md`](SPECS/README.md#known-limitations).

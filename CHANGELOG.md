@@ -16,7 +16,14 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
-Nothing has been released yet. This is the first release candidate.
+## [0.1.0] - 2026-10-05
+
+First release. Phases 1 to 4: a timer that survives a reload, duration-first entry
+capture, day-grouped entries with totals, Dropbox sync across your own devices, JSON
+backup and restore, and projects, clients and tags.
+
+Reports, capacity planning and invoicing are not in this version — they are Phases 5
+and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md).
 
 ### Added — timer and entries (Phase 2A)
 

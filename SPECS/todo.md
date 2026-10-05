@@ -182,6 +182,9 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     than wrapped, so a long client name cannot move it either. Measured in a browser, because
     auto-placement has a subtlety that looks correct in review: with only two children the
     controls landed in column 2 and jumped to column 3 the moment the note appeared.
+35. [ ] edit and discard button sizes should match as well as start/stop, so that buttons don't move when start is clicked.
+36. [ ] do not allow delete of only remaining project against a client
+37. [ ] archived clients should not appear in the list for starting a timer
 
 # Where the branches are
 
@@ -193,12 +196,22 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
 ## Outstanding on `phase-2b` and `phase-3`
 
-1. [ ] **Push the branches.** The token available here cannot write to the repository, so
-   `phase-2b`, `phase-3` and `phase-4` are all local only.
-2. [ ] **Production Dropbox app is untested.** The production app
-   (`gh3s5cqaz4n30ah`) still has neither `files.content.read` nor
-   `files.content.write` ticked, so nothing has ever synced against it. The non-production
-   app is configured and working.
+1. [ ] **Push the branches.** `phase-2b`, `phase-3` and `phase-4` are local only. Write
+   access now works over SSH, so this is no longer blocked on a token.
+2. [ ] **Neither Dropbox app can sync.** Both `gh3s5cqaz4n30ah` (production) and
+   `5k94zo8ymchm1ge` (testing) have neither `files.content.read` nor
+   `files.content.write` granted, so authorisation returns `scope_not_granted` and no
+   device has ever synced to either. Verified against the live authorize endpoint and
+   recorded in `docs/dropbox-app-setup.md`.
+
+   An earlier version of this file said the non-production app was "configured and
+   working". That was wrong, and contradicted the setup doc beside it. Corrected here
+   rather than left to be found during a release.
+
+   **This gates the 0.1.0 merge.** The app is fully usable without sync (0007 AU8), so
+   this is not a data-loss risk — but shipping a Connect button that leads to a failed
+   consent flow is worse than not having one, so the merge waits on: both scopes granted,
+   a first sync completed against production, and the two-device test in UAT section 15.
 
 # What is next
 
