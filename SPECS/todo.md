@@ -289,7 +289,16 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    Schema v4 carries the three existing `meta` rows across. They are copied rather than
    moved, so downgrading loses nothing.
 47. [ ] when should dropbox connect auto-run? perhaps keep a record of when last connected attempt and if that time is >x mins then auto try to connect again.
-48. [ ] on timer stop, do not go to edit screen automatically
+48. [x] on timer stop, do not go to edit screen automatically — **done.** Stopping writes
+   the entry and stays put. The offer to classify it is a line on the timer panel with a link
+   to the form, which is what US2's routing actually bought, and it expires when the next
+   timer starts. `0001 US2` amended rather than ignored: the intent — classify while fresh —
+   is kept, only the screen-grab is dropped.
+
+   One placement detail worth keeping: the notice renders *before* the client list's
+   empty-or-not branch, not inside the list. Inside it, the person most likely to be stopping
+   their very first timer was the one person who never saw the offer, because they had no
+   clients yet.
 
 # Where the branches are
 

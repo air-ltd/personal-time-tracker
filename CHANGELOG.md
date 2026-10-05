@@ -148,6 +148,13 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
 
 ### Fixed
 
+- **Stopping a timer no longer takes the screen away.** It used to jump straight to the
+  entry form, which made one action — pressing Stop — look like three. The entry is written
+  either way, so the offer to classify it is now a line on the timer panel with a link to the
+  form, and it disappears when you start the next timer.
+
+### Changed
+
 - **A tag typed and then saved was silently lost.** Pressing Save moved focus off the tag
   field, which committed the name, and the form saved the entry before that commit finished —
   so the tag landed in the taxonomy attached to nothing. The field now clears only once the

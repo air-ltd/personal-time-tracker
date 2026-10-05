@@ -305,6 +305,18 @@ function ClientList({
     [clients, activeClientId],
   )
 
+  /*
+   * The entry just created by stopping, so the panel can point at it (item 48).
+   *
+   * Stopping used to navigate to the form itself. The entry exists either way — the timer
+   * wrote it — so the only thing navigation added was taking the screen away from the timer
+   * card, on the theory that classification is freshest immediately (0001 US2). The intent
+   * was right and the mechanism was wrong: the user had just pressed Stop, and the screen
+   * changing under them is the opposite of staying in control. So the offer to classify is
+   * made here instead, where they are, and it expires when the next timer starts.
+   */
+  const [justStopped, setJustStopped] = useState<string | null>(null)
+
   async function handleStop(): Promise<void> {
     // Two clicks in one render pass both reach here, and two `stopTimer` calls race: the
     // second reads an entry the first has already ended. The button is also the only thing
@@ -329,6 +341,7 @@ function ClientList({
       setStopping(false)
     }
     try {
+      setJustStopped(running.id)
       await onStopped(running.id)
     } catch (problem) {
       // The entry *was* written here; only the navigation failed. Say so rather than
@@ -339,6 +352,19 @@ function ClientList({
 
   return (
     <div className="timer-clients">
+      {/*
+        Ahead of the empty-client branch, not inside the list. It first rendered inside the
+        list, which meant it did not appear at all until the user had set up a client — so
+        the person most likely to be stopping their very first timer was the one person who
+        never saw the offer to classify it.
+      */}
+      {justStopped !== null && (
+        <p className="hint" data-testid="just-stopped">
+          Saved as uncategorised.{' '}
+          <a href={`#/entries/${justStopped}`}>Add a project, tags or a note</a> if you want to.
+        </p>
+      )}
+
       {visibleClients.length === 0 ? (
         <>
           <p className="hint">
@@ -446,7 +472,10 @@ function ClientList({
                         // A client with genuinely no project still starts a timer: the time
                         // is recorded uncategorised rather than refused, because refusing
                         // would lose the work.
-                        onClick={() => start(projectId ?? null)}
+                        onClick={() => {
+                          setJustStopped(null)
+                          start(projectId ?? null)
+                        }}
                         aria-label={`Start a timer for ${client.name}`}
                       >
                         Start

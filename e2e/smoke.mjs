@@ -306,10 +306,20 @@ async function main() {
       `${elapsedBefore} -> ${elapsedAfter}`,
     )
 
-    // 5. Stopping routes to the form and creates an entry (0001 US2).
+    // 5. Stopping creates an entry and stays where you are, offering to classify it
+    // (item 48, amending 0001 US2).
     await page.getByRole('button', { name: 'Stop' }).click()
+    await page.getByTestId('just-stopped').waitFor()
+    check('stopping does not take the screen away', !page.url().includes('#/entries/'))
+    check(
+      'and it offers to classify the entry just saved',
+      /uncategorised/i.test(await page.getByTestId('just-stopped').innerText()),
+    )
+    // Following the offer is what US2's routing used to do for you.
+    await page.getByTestId('just-stopped').getByRole('link').click()
     await page.getByRole('heading', { name: 'Edit entry' }).waitFor()
-    check('stopping routes to the entry form', page.url().includes('#/entries/'))
+    check('following the offer opens the entry form', page.url().includes('#/entries/'))
+    await page.getByRole('link', { name: 'Cancel' }).click()
 
     await page.goto(URL, { waitUntil: 'networkidle' })
     await page.getByRole('link', { name: /Edit/ }).first().waitFor()
@@ -873,7 +883,8 @@ async function main() {
       .locator('.timer-client-row', { hasText: 'Acme Ltd' })
       .getByRole('button', { name: /Stop the timer for Acme Ltd/ })
       .click()
-    await page.getByRole('heading', { name: 'Edit entry' }).waitFor()
+    // Item 48: stopping stays put, so nothing to wait for beyond the notice itself.
+    await page.getByTestId('just-stopped').waitFor()
 
     await page.goto(URL, { waitUntil: 'networkidle' })
     // Item 25: the client is chosen by pressing its line on the timer card, not from a
