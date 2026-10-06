@@ -358,13 +358,6 @@ function ClientList({
         the person most likely to be stopping their very first timer was the one person who
         never saw the offer to classify it.
       */}
-      {justStopped !== null && (
-        <p className="hint" data-testid="just-stopped">
-          Saved as uncategorised.{' '}
-          <a href={`#/entries/${justStopped}`}>Add a project, tags or a note</a> if you want to.
-        </p>
-      )}
-
       {visibleClients.length === 0 ? (
         <>
           <p className="hint">
@@ -526,6 +519,24 @@ function ClientList({
               row that turned out to be. */}
           {reminder !== null && <p className="hint">{reminder}</p>}
         </div>
+      )}
+
+      {/*
+        Below the list, not above it (SPECS/todo.md item 49).
+
+        Above, pressing Stop added a line of text and pushed *every* client row down the
+        card by 47px — so the second client you were aiming at moved while the button was
+        being pressed. The browser suite measures it: idle rows at y=170 and y=213, stopped
+        at y=217 and y=261.
+
+        A notice about something you just did belongs under the thing you just did. Nothing
+        above the list can shift, and the panel simply grows downward.
+      */}
+      {justStopped !== null && (
+        <p className="hint" data-testid="just-stopped">
+          Saved as uncategorised.{' '}
+          <a href={`#/entries/${justStopped}`}>Add a project, tags or a note</a> if you want to.
+        </p>
       )}
 
       {/*

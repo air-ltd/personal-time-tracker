@@ -340,6 +340,17 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    empty-or-not branch, not inside the list. Inside it, the person most likely to be stopping
    their very first timer was the one person who never saw the offer, because they had no
    clients yet.
+49. [x] client lines in the TIMER card should remain in static location — **done.** Every
+   client line moved down 47px when Stop was pressed: the "saved as uncategorised" notice
+   rendered *above* the list, so the second client you were aiming at slid out from under the
+   button. Height was already checked (item 19); position was not, and height is not position.
+   The notice now sits below the list — a notice about something you just did belongs under
+   the thing you just did, and nothing above can shift. The browser suite measures every
+   row's `top` across the transition.
+50. [ ] on settings page move tags into it's own card.
+51. [ ] settings page: projects should be grouped with their clients, client name, when clicked on should show the list of clients. default to collapsed.
+52. [ ] the "Sync Card" on settings page does not need to say "Non Production" in dev version.
+53. [ ] when scrolling on a page, keep the header static (not scrolling)
 
 # Where the branches are
 
@@ -357,11 +368,17 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 1. [ ] **Push the branches.** `phase-2b` and `phase-5` are local only. `phase-4` is pushed.
    Write access works over SSH, so this is no longer blocked on a token — it just needs
    doing, and 30-odd commits of `phase-4` did sit on one machine until the release.
-2. [ ] **Neither Dropbox app can sync.** Both `gh3s5cqaz4n30ah` (production) and
-   `5k94zo8ymchm1ge` (testing) have neither `files.content.read` nor
-   `files.content.write` granted, so authorisation returns `scope_not_granted` and no
-   device has ever synced to either. Verified against the live authorize endpoint and
-   recorded in `docs/dropbox-app-setup.md`.
+2. [ ] **Sync has never run against real Dropbox.** The scopes are now granted — re-verified
+   5 October 2026 against the live authorize endpoint, where both apps now reach consent for
+   both content scopes and previously answered `scope_not_granted`. Recorded in
+   `docs/dropbox-app-setup.md`.
+   *Still outstanding, and none of it is a code change:*
+   - [ ] a first sync against **production**, confirming the panel reports a time rather than
+         "waiting"
+   - [ ] `docs/UAT.md` section 15 — two devices, both offline, converge with nothing lost
+   - [ ] **Settings → Access token expiration** set to *Short-lived* on both apps. The app now
+         sends `token_access_type=offline`, so it does not depend on this — but the two are
+         consistent and this is what the app expects.
 
    An earlier version of this file said the non-production app was "configured and
    working". That was wrong, and contradicted the setup doc beside it. Corrected here

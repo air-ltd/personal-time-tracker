@@ -878,14 +878,29 @@ async function main() {
         ),
     )
 
-    // Stop it again so the rest of the checks start from idle.
+    // Item 49: height is not position. Pressing Stop swaps words and adds the
+    // "saved as uncategorised" notice, and either can push a client line down the card
+    // while the user is aiming at it.
+    const topsOf = async () =>
+      await page
+        .locator('.timer-client-row')
+        .evaluateAll((nodes) => nodes.map((n) => Math.round(n.getBoundingClientRect().top)))
+    const idleTops = await topsOf()
     await page
       .locator('.timer-client-row', { hasText: 'Acme Ltd' })
       .getByRole('button', { name: /Stop the timer for Acme Ltd/ })
       .click()
-    // Item 48: stopping stays put, so nothing to wait for beyond the notice itself.
     await page.getByTestId('just-stopped').waitFor()
+    const stoppedTops = await topsOf()
+    check(
+      'stopping does not move the client lines (item 49)',
+      idleTops.length > 1 && idleTops.every((top, i) => top === stoppedTops[i]),
+      `idle=${JSON.stringify(idleTops)} stopped=${JSON.stringify(stoppedTops)}`,
+    )
 
+    // Already stopped by the item 49 check above, which has to press Stop to measure
+    // anything. It used to stop here a second time; with the notice now below the list,
+    // there is no Stop button left to press and the suite timed out looking for one.
     await page.goto(URL, { waitUntil: 'networkidle' })
     // Item 25: the client is chosen by pressing its line on the timer card, not from a
     // dropdown here, so this is the whole of the interaction.
