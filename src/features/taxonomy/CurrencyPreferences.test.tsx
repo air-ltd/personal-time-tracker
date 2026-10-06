@@ -2,10 +2,54 @@ import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { CurrencyPreferences } from './CurrencyPreferences'
+import { CurrenciesPanel } from '../settings/CurrenciesPanel'
+import { TaxonomySettings } from './TaxonomySettings'
 import { CurrencySelect } from './CurrencySelect'
 import { installTestDb } from '../../test/harness'
 import { readVisibleCurrencies } from '../../storage/settingsRepo'
 import { getDb } from '../../storage/db'
+
+/*
+ * Both currency settings live in one panel (SPECS/todo.md item 44).
+ *
+ * The default currency was rendered inside `TaxonomySettings` while this list was in a
+ * different panel, so there were two answers to "where do I set my currencies?" — one of
+ * them filed under taxonomy, where the control is not a record and its own hook already
+ * lived in `features/settings`.
+ */
+describe('the currencies panel', () => {
+  it('holds both currency settings together', () => {
+    render(<CurrenciesPanel />)
+
+    // The default currency and the list to offer, side by side.
+    expect(screen.getByLabelText('Currency for work with no client')).toBeInTheDocument()
+    expect(screen.getByTestId('currency-toggle')).toBeInTheDocument()
+  })
+
+  it('names the region once, not twice', () => {
+    render(<CurrenciesPanel />)
+
+    // This was `aria-label="Currencies"` on the panel plus a visible `<h3>Currencies</h3>`
+    // inside it, with a comment explaining that the duplication it was avoiding had been
+    // avoided. Two identical headings for one region, announced one after the other.
+    // Headings only. The enclosing `<section>` is named by this same `<h2>` through
+    // `aria-labelledby`, so it necessarily shares the name — one heading, one region, one
+    // announcement. The bug was a *second* heading, which is what made the old pair read as
+    // two unrelated things called Currencies.
+    expect(screen.getAllByRole('heading', { name: 'Currencies' })).toHaveLength(1)
+    // And the sub-heading now says what it is actually about.
+    expect(screen.getByRole('heading', { name: 'Currencies to offer' })).toBeInTheDocument()
+  })
+
+  it('is no longer part of the taxonomy panel', async () => {
+    render(<TaxonomySettings now={new Date('2026-10-13T09:00:00.000Z')} />)
+    await waitFor(() => expect(screen.queryByText(/Loading settings/)).toBeNull())
+
+    // The misfiling itself: an app-wide preference under a panel headed "Settings" whose
+    // other contents are all records.
+    expect(screen.queryByLabelText('Currency for work with no client')).toBeNull()
+  })
+})
 
 /**
  * Currency preferences (items 13 and 14 of `SPECS/todo.md`).

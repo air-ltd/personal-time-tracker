@@ -69,7 +69,13 @@ export function CurrencyPreferences() {
 
   return (
     <div className="settings-block">
-      <h3>Currencies</h3>
+      {/*
+        "Currencies to offer", not "Currencies": the panel is called Currencies, and a
+        same-named heading inside it is announced twice for one region with nothing to tell
+        the two apart. More precise as well as non-duplicating — this heading is about the
+        shortlist, and the default currency above is a different setting entirely.
+      */}
+      <h3>Currencies to offer</h3>
       <p className="hint">
         Every currency picker offers these first. Clear the list, or leave nothing ticked, to go
         back to the full ISO 4217 list.

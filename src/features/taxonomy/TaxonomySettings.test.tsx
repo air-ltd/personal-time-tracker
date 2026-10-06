@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { TaxonomySettings } from './TaxonomySettings'
 import { installTestDb } from '../../test/harness'
 import { entry } from '../../test/factories'
+import { writeDefaultCurrency } from '../../storage/settingsRepo'
 import {
   createClient,
   createOrFindTag,
@@ -14,7 +15,6 @@ import {
   setArchived,
 } from '../../storage/taxonomyRepo'
 import { putEntry, getEntry } from '../../storage/entriesRepo'
-import { readDefaultCurrency, writeDefaultCurrency } from '../../storage/settingsRepo'
 import { FALLBACK_CURRENCY } from '../../domain/taxonomy/money'
 
 /**
@@ -224,15 +224,6 @@ describe('creating records (0005 P1, P2, P7)', () => {
 
     await waitFor(async () => {
       expect(await listProjects()).toMatchObject([{ name: 'Internal', clientId: null }])
-    })
-  })
-
-  it('stores the app default currency (0003 CU4)', async () => {
-    await show()
-    await user.selectOptions(screen.getByLabelText('Currency for work with no client'), 'JPY')
-
-    await waitFor(async () => {
-      expect(await readDefaultCurrency()).toBe('JPY')
     })
   })
 })

@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useTaxonomy } from './useTaxonomy'
+import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 import { useTagDeletes } from './useTagDeletes'
-import { CurrencySelect } from './CurrencySelect'
 import { ClientForm } from './ClientForm'
 import { ProjectForm } from './ProjectForm'
 import { AddToHeading } from '../../app/AddToHeading'
@@ -13,8 +13,6 @@ import {
   updateProject,
   updateTag,
 } from '../../storage/taxonomyRepo'
-import { writeDefaultCurrency } from '../../storage/settingsRepo'
-import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 import { FALLBACK_CURRENCY, resolveCurrency } from '../../domain/taxonomy/money'
 import { currencyLabel, formatMinor } from '../../domain/taxonomy/currencies'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
@@ -56,10 +54,13 @@ export function TaxonomySettings({ now }: { now: Date }) {
   const [showArchivedProjects, setShowArchivedProjects] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // The app-wide default, from `meta` rather than a taxonomy table — which is why it is
-  // its own hook instead of another field on `useTaxonomy`, whose name would then be a
-  // lie. It also feeds the project forms below, so the resolution that used to be
-  // reimplemented there with a hardcoded `GBP` is now the domain chain.
+  /*
+   * The app-wide default currency, for *resolving* rates — not for editing.
+   *
+   * The control moved to `CurrenciesPanel`, because it is a preference rather than a
+   * taxonomy record. The value still has to be read here: every project's rate on this
+   * page is shown in whatever currency it resolves to, and that chain ends at this default.
+   */
   const defaultCurrency = useAppDefaultCurrency()
 
   const visibleProjects = showArchivedProjects ? projects : projects.filter((p) => !p.archived)
@@ -101,24 +102,13 @@ export function TaxonomySettings({ now }: { now: Date }) {
         </div>
       )}
 
-      {/* 0003 CU4: the last link in the resolution chain, for client-less work. */}
-      <div className="settings-block">
-        <h3>Default currency</h3>
-        <CurrencySelect
-          label="Currency for work with no client"
-          inheritLabel={`Not set — fall back to ${FALLBACK_CURRENCY}`}
-          value={defaultCurrency}
-          // No local copy: `writeDefaultCurrency` bumps the revision, and the hook
-          // re-reads on that. A second copy of this value in component state is the
-          // thing 0002 S2 exists to avoid, and it is how the value being displayed and
-          // the value being resolved could come to disagree.
-          onChange={(code) => void writeDefaultCurrency(code).catch(report)}
-        />
-        <p className="hint">
-          Reports show money in the project&apos;s currency, then the client&apos;s, then this
-          one.
-        </p>
-      </div>
+      {/*
+        The app-wide default currency used to live here, under its own heading, while the
+        list of currencies to offer sat in a different panel. It is not a taxonomy record —
+        it is the last link in the resolution chain for *client-less* work, and its hook was
+        already in `features/settings`. Moved to `CurrenciesPanel`, where both currency
+        settings are siblings (0003 CU4).
+      */}
 
       <ClientSection
         clients={visibleClients}
