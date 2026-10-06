@@ -45,17 +45,26 @@ export function SyncPanel() {
     <section className="panel" aria-labelledby="sync-heading">
       <h2 id="sync-heading">
         Sync{' '}
-        <span
-          className={`badge badge-${keyInfo.environment}`}
-          data-testid="sync-environment"
-          title={
-            keyInfo.source === 'environment'
-              ? 'Using the key from the build configuration'
-              : `Using the key built in for the ${keyInfo.environment} environment`
-          }
-        >
-          {keyInfo.environment === 'production' ? 'production' : 'non-production'}
-        </span>
+        {/*
+          Only ever "production" (item 52). A "non-production" badge told the user something
+          they could already see: a development build says so in its title and is marked dev
+          in the header, so on the sync card it was the same fact a third time. What is worth
+          saying is the opposite — that this *is* the real Dropbox app, because that decides
+          where a user's work goes.
+        */}
+        {keyInfo.environment === 'production' && (
+          <span
+            className="badge badge-production"
+            data-testid="sync-environment"
+            title={
+              keyInfo.source === 'environment'
+                ? 'Using the key from the build configuration'
+                : 'Using the key built in for the production environment'
+            }
+          >
+            production
+          </span>
+        )}
       </h2>
 
       {/*

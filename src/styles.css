@@ -105,6 +105,31 @@ body {
   flex-wrap: wrap;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border);
+
+  /*
+   * Item 53: the header stays put while the page scrolls.
+   *
+   * It holds the way home, the sync state and the settings menu, so scrolling it away takes
+   * all three off the top of a long entries list, or a settings page with a lot of records.
+   *
+   * `sticky` rather than `fixed`, so it keeps its place in the flow: nothing overlaps the
+   * first thing on the page, and there is no padding to add back to compensate for a header
+   * that has been taken out of it.
+   *
+   * The negative margin and matching padding are the gutters. `.app` is padded, and a
+   * sticky element only covers its own box — without this, entries would scroll past in the
+   * 1.5rem either side of the header, beside it rather than behind it.
+   */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  margin-inline: -1.5rem;
+  padding-inline: 1.5rem;
+  /*
+   * Above the panels and rows, below the menu panel (z-index 20), which is positioned
+   * against the toggle and has to open over the page rather than under the header.
+   */
 }
 
 .app-header h1 {
@@ -1152,6 +1177,17 @@ code {
   border-top: 1px solid var(--border);
 }
 
+/*
+ * The taxonomy panel's block *is* the panel (item 54): it opens with the panel's own heading,
+ * so the margin, padding and rule that separate a second block inside a panel were drawing a
+ * blank line across the top of the card.
+ */
+.settings-panel > .settings-block {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .settings-block h3 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
@@ -1197,6 +1233,95 @@ code {
   max-width: 28rem;
 }
 
+/*
+ * Projects grouped under their client (SPECS/todo.md item 51).
+ *
+ * A bare `<ul>` because these are not rows of their own — each one holds a disclosure and the
+ * project rows it reveals, so the grouping is the list item rather than something bolted on
+ * beside it.
+ */
+.taxonomy-groups {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.taxonomy-group {
+  border-top: 1px dotted var(--border);
+}
+
+/*
+ * The disclosure spans the full width, because the client name *is* the control: there is no
+ * separate row for the client up here, so anywhere on the line has to be clickable. Weight
+ * matches `.taxonomy-name` so a group reads at the same level as the client list it sits
+ * under, one step above the projects it reveals.
+ */
+.taxonomy-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+
+.taxonomy-group-toggle:hover .taxonomy-group-name {
+  text-decoration: underline;
+}
+
+/*
+ * The chevron is drawn pointing down, which is the open state, so it rotates shut when the
+ * group is collapsed. It is decorative — `aria-expanded` carries the state — and the shared
+ * icon wrapper hides unlabelled SVGs from the accessibility tree, so it is not announced
+ * twice.
+ */
+.taxonomy-group-toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+/* Room for the rotated chevron, so the name does not shift as the group opens. */
+.taxonomy-group-toggle svg {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.taxonomy-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taxonomy-group-toggle .hint {
+  margin-inline-start: auto;
+}
+
+/*
+ * Indented under its group, so an open project's owner is obvious at a glance instead of
+ * having to re-read the heading it happens to fall under. The rule repeats the group's own
+ * dotted line as a continuous edge rather than restarting it per row.
+ */
+.taxonomy-group .taxonomy-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  border-inline-start: 1px dotted var(--border);
+}
+
+.taxonomy-group .taxonomy-list .taxonomy-row:first-child {
+  border-top: 0;
+}
+
+/* The per-client add button sits with the projects it adds to, not on the client row. */
+.taxonomy-add-row {
+  padding: 0.25rem 0 0.5rem;
+}
+
 .taxonomy-list {
   list-style: none;
   margin: 0.75rem 0 0;
@@ -1215,7 +1340,22 @@ code {
 }
 
 /* An archived row stays readable rather than greyed into illegibility. */
-.taxonomy-row.archived .taxonomy-name {
+/*
+ * On the name text alone, never on `.taxonomy-name` itself. `text-decoration` propagates to
+ * descendants and cannot be undone by them, so striking the wrapper struck the "archived"
+ * badge inside it too — striking the very word that says the row is archived.
+ */
+.taxonomy-row.archived .taxonomy-name-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/*
+ * An archived client's name, struck for the same reason a project's is. On the name span
+ * only: the "archived" badge is its sibling, and striking that would be arguing with
+ * itself — the word saying the row is archived, with a line through it.
+ */
+.taxonomy-row.archived .taxonomy-group-name {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }

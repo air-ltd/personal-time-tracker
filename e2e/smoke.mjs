@@ -87,6 +87,24 @@ async function waitForServer(url, timeoutMs = 30_000) {
   throw new Error(`Server did not become ready at ${url}`)
 }
 
+/**
+ * Opens the project group belonging to one client, if it is closed (item 51).
+ *
+ * Projects sit under their client and collapsed by default, so any check about a project row
+ * has to open its group first or it reads the collapsed state rather than the row it means.
+ * Waits for that specific group rather than opening every collapsed one: callers reach this
+ * straight after adding a project, and a group that has not rendered yet reads as nothing to
+ * open, which would leave the row hidden. Already-open is left alone, so this is safe to call
+ * on a page a previous check has already opened.
+ */
+async function openProjectGroup(page, client) {
+  const toggle = page.locator('.taxonomy-group-toggle', { hasText: client }).first()
+  await toggle.waitFor()
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') {
+    await toggle.click()
+  }
+}
+
 async function main() {
   /*
    * Actually build, rather than logging that we are about to.
@@ -582,21 +600,39 @@ async function main() {
     await page.getByRole('button', { name: 'Add client', exact: true }).click()
     await page.getByText('Acme Ltd').first().waitFor()
 
-    await page.getByTestId('new-project').click()
+    // Added from its own client's list (items 55, 56), so the client is already chosen.
+    await openProjectGroup(page, 'Acme Ltd')
+    await page.getByRole('button', { name: 'New project for Acme Ltd' }).click()
     await page.getByLabel('Project name').fill('Website')
-    await page.getByLabel('Client', { exact: true }).selectOption({ label: 'Acme Ltd' })
     // Typed and clicked without an intervening blur. Regression guard for a layout bug:
     // committing the rate used to insert a line, which moved the button under the pointer
     // mid-click, so the click landed on nothing and the form silently did not submit.
     // Only a real browser can catch this — jsdom has no layout engine.
     await page.getByLabel('Default hourly rate').fill('75')
     await page.getByRole('button', { name: 'Add project', exact: true }).click()
+
     await page.getByText('Website').first().waitFor()
     check('a rate can be typed and saved in one go', true)
 
+    // 0005 N2: told apart by structure — the client is the group heading, so a project is
+    // never distinguished from a client by colour alone, and the owner is named once for the
+    // group rather than repeated on every row.
+    //
+    // The second half matters more: the row used to carry a "Client: X" label fed by a prop
+    // nothing set, so every project read "No client" even under a named client. A page that
+    // *looks* grouped can still contradict itself, and only rendering the group catches it.
     check(
       'project names its client rather than relying on colour',
-      (await page.getByText('Client: Acme Ltd').count()) >= 1,
+      (await page.locator('.taxonomy-group-toggle', { hasText: 'Acme Ltd' }).count()) === 1 &&
+        (await page.getByText('Client: Acme Ltd').count()) === 0,
+    )
+    check(
+      'a project under a client is not told it has no client',
+      (await page
+        .locator('.taxonomy-row', { hasText: 'Website' })
+        .first()
+        .getByText('No client')
+        .count()) === 0,
     )
 
     // File a new entry against the rated project, and tag it inline (T1, P5).
@@ -663,6 +699,28 @@ async function main() {
     // because the failure this replaces was silent — a Delete button wired to something
     // that did nothing would have satisfied every other check here.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+
+    // Item 51: the project is grouped under its client and the group starts closed, so the
+    // client list stays short. Checked before anything opens it, or the default is not what
+    // gets asserted.
+    const clientGroup = page.locator('.taxonomy-group-toggle', { hasText: 'Acme Ltd' }).first()
+    await clientGroup.waitFor()
+    check(
+      'a client group starts collapsed',
+      (await clientGroup.getAttribute('aria-expanded')) === 'false',
+    )
+    check(
+      'a collapsed group shows no project row',
+      // Visibility, not presence: the row stays in the DOM and hidden, so `count()` would
+      // report one and this would pass while the page still showed the flat list.
+      !(await page.locator('.taxonomy-row', { hasText: 'Website' }).first().isVisible()),
+    )
+    await clientGroup.click()
+    check(
+      'opening the group reveals the project',
+      await page.locator('.taxonomy-row', { hasText: 'Website' }).first().isVisible(),
+    )
+
     const projectRow = page.locator('.taxonomy-row', { hasText: 'Website' }).first()
     const clientRow = page.locator('.taxonomy-row', { hasText: 'Acme Ltd' }).first()
     // Waited on before counting. `count()` does not retry, and settings renders a loading
@@ -724,7 +782,8 @@ async function main() {
 
     // X2/A5: restore brings it back, and only from the archived view.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    await page.getByLabel('Show archived projects').check()
+    await page.getByLabel('Show archived clients and projects').check()
+    await openProjectGroup(page, 'Acme Ltd')
     // Left checked below only for the duration of this block — the archive round trip later
     // on archives a project and expects it to leave the list, which it will not do while
     // archived records are being shown.
@@ -735,7 +794,7 @@ async function main() {
       'restoring returns the project to the list',
       (await page.locator('.taxonomy-row', { hasText: 'Website' }).count()) === 1,
     )
-    await page.getByLabel('Show archived projects').uncheck()
+    await page.getByLabel('Show archived clients and projects').uncheck()
 
     // A2: archived records stay reachable, which is only observable in a browser because
     // it is a checkbox controlling a filtered list.
@@ -744,9 +803,14 @@ async function main() {
     // is currently deleted. Keeping this flow independent of the undo round trip means a
     // change to one cannot silently stop exercising the other.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    await page.getByTestId('new-project').click()
+    // Internal work is created from a client's list with the client changed to "No client"
+    // (0005 R1/U1): there is no empty "No client" group to click, and none is shown (item 59).
+    await openProjectGroup(page, 'Acme Ltd')
+    await page.getByRole('button', { name: 'New project for Acme Ltd' }).click()
     await page.getByLabel('Project name').fill('Admin')
+    await page.getByLabel('Client', { exact: true }).selectOption('')
     await page.getByRole('button', { name: 'Add project', exact: true }).click()
+    await openProjectGroup(page, 'No client')
     await page.locator('.taxonomy-row', { hasText: 'Admin' }).first().waitFor()
 
     await page
@@ -760,7 +824,8 @@ async function main() {
       .waitFor({ state: 'detached' })
     check('archiving hides the project from the default list', true)
 
-    await page.getByLabel('Show archived projects').check()
+    await page.getByLabel('Show archived clients and projects').check()
+    await openProjectGroup(page, 'No client')
     await page.locator('.taxonomy-row', { hasText: 'Admin' }).first().waitFor()
     check('archived projects are reachable again', true)
     // Lower-cased before comparing: `innerText` returns the *rendered* text, and the
@@ -1143,20 +1208,106 @@ async function main() {
      * Items 32, 33, 34 and the settings add buttons: things only a browser can answer.
      * Focus and layout are not questions jsdom has an opinion about.
      */
+    // Item 53: the header stays put while the page scrolls. Measured rather than asserted
+    // from a class, because the whole behaviour is a computed position — and because a page
+    // too short to scroll would pass a check that never scrolled anything.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    // The taxonomy is read asynchronously, so the sections are not in the DOM on arrival.
+    await page.locator('.taxonomy-section-heading').first().waitFor()
+    const scrollProbe = await page.evaluate(async () => {
+      const header = document.querySelector('.app-header')
+      if (!header) return { ok: false, reason: 'no header' }
+      const before = header.getBoundingClientRect().top
+      const scrolled = window.scrollY
+      window.scrollTo(0, document.body.scrollHeight)
+      // A frame, so the sticky position has been resolved rather than merely requested.
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
+      return {
+        ok: true,
+        before,
+        after: header.getBoundingClientRect().top,
+        moved: window.scrollY - scrolled,
+      }
+    })
+    check(
+      'the page really does scroll, so the header check means something',
+      scrollProbe.ok && scrollProbe.moved > 0,
+      JSON.stringify(scrollProbe),
+    )
+    check(
+      'the header stays put while the page scrolls (item 53)',
+      scrollProbe.ok && Math.abs(scrollProbe.after) <= 1,
+      JSON.stringify(scrollProbe),
+    )
+    check(
+      'the header covers the full width, so nothing scrolls past beside it',
+      await page.evaluate(() => {
+        const header = document.querySelector('.app-header')
+        const app = document.querySelector('.app')
+        if (!header || !app) return false
+        // Equal to the app's full box: without the negative margin the header would be
+        // 1.5rem short either side, and rows would scroll through those gutters.
+        return Math.abs(header.clientWidth - app.clientWidth) <= 1
+      }),
+    )
+    /*
+     * The settings menu still opens over the page from a sticky header.
+     *
+     * The panel is positioned against the toggle, inside the header, so a header that now
+     * carries its own background and stacking context could have swallowed it. Clicked and
+     * waited on through Playwright's locators rather than a raw `evaluate`: the panel is
+     * mounted only while open, so a synchronous click would query before React re-rendered
+     * and report a working menu as broken.
+     */
+    await page.locator('.header-menu-toggle').click()
+    const menuPanel = page.locator('.header-menu-panel')
+    await menuPanel.waitFor()
+    const menuBox = await menuPanel.boundingBox()
+    const toggleBox = await page.locator('.header-menu-toggle').boundingBox()
+    const viewport = page.viewportSize()
+    check(
+      'the settings menu still opens over the page from a sticky header',
+      // Measured against the toggle, not the header: the panel is positioned against the
+      // toggle, and the header's bottom padding sits below it — so comparing against the
+      // header's full height would fail on a layout that was always like this.
+      menuBox !== null &&
+        toggleBox !== null &&
+        menuBox.height > 0 &&
+        menuBox.y >= toggleBox.y + toggleBox.height - 1 &&
+        menuBox.y + menuBox.height <= viewport.height,
+      JSON.stringify({ menuBox, toggleBox }),
+    )
+    await page.locator('.header-menu-toggle').click()
+    await page.evaluate(() => window.scrollTo(0, 0))
+
+    // A sticky header is height the user can no longer scroll past. On a phone it wraps to
+    // two or three lines, so its share of the screen is worth measuring rather than assuming.
+    await page.setViewportSize({ width: 320, height: 640 })
+    check(
+      'the sticky header leaves most of a phone screen for content',
+      await page.evaluate(() => {
+        const header = document.querySelector('.app-header')
+        if (!header) return false
+        return header.getBoundingClientRect().height / window.innerHeight < 0.3
+      }),
+    )
+    await page.setViewportSize({ width: 1280, height: 800 })
+
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    // The taxonomy is read asynchronously, so the heading is not in the DOM on arrival.
     await page.locator('.taxonomy-section-heading').first().waitFor()
     check(
       'the add buttons sit on their section heading line (settings)',
       await page.evaluate(() => {
-        const heads = [...document.querySelectorAll('.taxonomy-section-heading')]
-        if (heads.length < 2) return false
-        return heads.every((head) => {
-          const heading = head.querySelector('h3')
-          const add = head.querySelector('button')
-          if (!heading || !add) return false
-          // Same line: their vertical centres have to overlap.
-          const h = heading.getBoundingClientRect()
+        const head = document.querySelector('.taxonomy-section-heading')
+        if (!head) return false
+        // Clients and projects are one section now (item 54), so one heading carries one
+        // add button — "New client". Projects are added from the list they join (item 56).
+        const heading = head.querySelector('h2')
+        const adds = [...head.querySelectorAll('button')]
+        if (!heading || adds.length !== 1) return false
+        // Same line: their vertical centres have to overlap.
+        const h = heading.getBoundingClientRect()
+        return adds.every((add) => {
           const a = add.getBoundingClientRect()
           return (
             Math.abs(h.top + h.height / 2 - (a.top + a.height / 2)) <
@@ -1166,8 +1317,78 @@ async function main() {
       }),
     )
     check(
+      'each client has its own add-project button (item 55)',
+      await page.evaluate(() => {
+        // One per client, so a project is created in that client's context. Counted against
+        // the client rows rather than the per-client testids, which would pass with one
+        // button on a page that should have several.
+        const groups = [...document.querySelectorAll('.taxonomy-group')]
+        // A group with no client has no add button by design — there is no client to create
+        // the project in the context of — so only the client rows are checked. Identifying
+        // those by the Archive button they carry, rather than by the heading, because the
+        // orphan group is called "No client" and would otherwise be counted as a client.
+        const clientGroups = groups.filter((group) =>
+          group.querySelector('.taxonomy-actions button'),
+        )
+        if (clientGroups.length === 0) return false
+        return clientGroups.every(
+          (group) => group.querySelector('[data-testid^="add-project-for-"]') !== null,
+        )
+      }),
+    )
+    check(
+      'one archived control covers clients and projects (0005 A2)',
+      // Counted in a browser because it is a question about controls on a filtered list: two
+      // checkboxes under one heading, bound to one value, is the bug this replaced.
+      (await page.getByRole('checkbox', { name: /Show archived/ }).count()) === 1,
+    )
+    check(
+      'an archived name is struck, and the word "archived" is not (items 56, 59)',
+      // Only a browser can answer this: it is a computed style, and `text-decoration`
+      // propagates to descendants and cannot be undone by them — so a badge inside the
+      // struck element gets struck too, striking the word that says the row is archived.
+      await page.evaluate(() => {
+        const decorated = (el) => {
+          if (!el) return null
+          const style = getComputedStyle(el)
+          return style.textDecorationLine || style.textDecoration
+        }
+        const archivedRow = document.querySelector('.taxonomy-row.archived')
+        if (!archivedRow) return { ok: false, reason: 'no archived row on the page' }
+        const name = archivedRow.querySelector('.taxonomy-name-text, .taxonomy-group-name')
+        const badge = archivedRow.querySelector('.badge-archived')
+        return {
+          ok: !!name && !!badge && decorated(name).includes('line-through'),
+          name: decorated(name),
+          badge: decorated(badge),
+        }
+      }),
+    )
+    check(
+      'the add-project buttons are named for their client, not just "new project"',
+      // With one per client, an accessible name of "New project" would give a screen reader
+      // user several identical buttons and no way to tell which client each one serves.
+      //
+      // Read from the DOM rather than by role: the buttons sit inside their collapsed lists,
+      // which is what the previous check covers. Each label is compared against the name on
+      // its own group, so a label naming the wrong client — or the same client on every row —
+      // fails.
+      await page.evaluate(() => {
+        const wrong = []
+        for (const button of document.querySelectorAll('[data-testid^="add-project-for-"]')) {
+          const group = button.closest('.taxonomy-group')
+          const name = group?.querySelector('.taxonomy-group-name')?.textContent ?? ''
+          if (button.getAttribute('aria-label') !== `New project for ${name}`) {
+            wrong.push(`${button.getAttribute('aria-label')} in group "${name}"`)
+          }
+        }
+        return { ok: wrong.length === 0, wrong }
+      }),
+    )
+    check(
       'the add buttons are the same + as the timer card’s',
-      (await page.locator('.taxonomy-section-heading button svg').count()) >= 2,
+      // One on the heading now; the per-client ones live with the lists they add to.
+      (await page.locator('.taxonomy-section-heading button svg').count()) === 1,
     )
 
     // Item 34: the period selector must not move because a client filter appeared.

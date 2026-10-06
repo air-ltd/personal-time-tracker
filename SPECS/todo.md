@@ -357,9 +357,18 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    The remaining panel is headed **"Clients and projects"** rather than "Settings", which
    named nothing at all inside the settings page — every other panel there is named for its
    contents.
-51. [ ] settings page: projects should be grouped with their clients, client name, when clicked on should show the list of clients. default to collapsed.
-52. [ ] the "Sync Card" on settings page does not need to say "Non Production" in dev version.
-53. [ ] when scrolling on a page, keep the header static (not scrolling)
+51. [x] settings page: projects should be grouped with their clients, client name, when clicked on should show the list of clients. default to collapsed.
+52. [x] the "Sync Card" on settings page does not need to say "Non Production" in dev version.
+53. [x] when scrolling on a page, keep the header static (not scrolling)
+54. [x] settings page: compress clients and projects into one section — each client is a row that both carries its own actions and reveals the projects under it.
+55. [x] settings page: a "new project" button on each client, so the project is created in the context of that client.
+56. [x] settings page: no "new project" button in the section header; each client's button sits under the last project in that client.
+57. [x] settings page: a client's projects are hidden while the client is archived, unless "show archived" is selected.
+58. [x] settings page: no "new project" button under an archived client.
+59. [x] settings page: no "No client" group when there is no internal work.
+60. [x] settings page: an archived client's name has a strikethrough; the word "archived" does not.
+61. [ ] when selecting a customer on the main page, it should add the list of projects under that customer with buttons to start timer on that project.
+62. [ ] Dropbox sync button is opening the settings page if I click on it. that should not be the case.
 
 # Where the branches are
 

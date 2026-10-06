@@ -51,10 +51,20 @@ hand."*
 
 Go to **Settings** from the menu at the top right.
 
-Scroll to **Clients** and press the **+** next to the heading. Fill in a name — use a real one,
-like a client you work for. If you have a rate for them, add it. Press **Add client**.
+Press **New client**. Fill in a name — use a real one, like a client you work for. If you have
+a rate for them, add it. Press **Add client**.
 
-Do the same for a **Project** under your client. Give it a colour.
+Your new client is one row in **Clients and projects**. Its projects live underneath it, and
+the group starts closed, so the list does not grow every time you add a project. Click the
+client's name to open it, and again to fold it away.
+
+Open your client, then press **New project** underneath its projects. Give the project a
+colour. Notice the client is already filled in for you — you did not have to pick it.
+
+> **What to look for.** Is it obvious that the projects are there and merely folded up, rather
+> than gone? Was the client name obviously the thing to click, without hunting for a caret or
+> an arrow? Does it stay obvious which client each project belongs to once opened? Was it
+> clear that **New project** adds to *that* client?
 
 > **What to look for.** The colour picker should show you how the colour will read against the
 > page before you commit to it. Did each new thing you created get a *different* colour from
@@ -184,7 +194,8 @@ Do it again, but this time let the bar time out.
 
 ## 11. Archive a project - and check your entries survive
 
-Go to **Settings -> Projects** and press **Archive** on your project.
+Go to **Settings -> Clients and projects**, click your client's name to open its projects,
+and press **Archive** on your project.
 
 Notice what did *not* happen: no confirmation, no count of affected entries, no second
 confirmation about billable time. Archiving moves nothing, so there is nothing to warn about.
@@ -195,10 +206,14 @@ Now look at your entries on the home page.
 > still be there and should still name your project, marked as archived. If they went
 > uncategorised, or disappeared, that is a serious finding - stop and write it down.
 
-Archive the **client** too. Check that its projects were *not* archived along with it.
+Now archive the **client** too. Check that its projects were *not* archived along with it —
+they should have left the list, and should still be there, unrestored, under **Show archived
+clients and projects**.
 
-> **What to look for.** Archiving a client must not cascade to its projects. A client can be
-> finished with while work under it continues.
+> **What to look for.** Archiving a client must not archive its projects: a client can be
+> finished with while work under it continues, so the projects must still exist. Ticking
+> **Show archived clients and projects** should bring the client *and* its projects back
+> together. If the projects came back already archived, that is a finding - write it down.
 
 ---
 
@@ -217,13 +232,13 @@ They should not be offered anywhere.
 > failure this change is meant to prevent - work filed under a client you thought you had
 > closed off. Check the new-entry form carefully.
 
-Then find them again: **Settings** has a **Show archived projects** and a **Show archived
-clients** checkbox. Tick one.
+Then find them again: **Settings** has a single **Show archived clients and projects**
+checkbox. Tick it. Archived projects appear inside their client's group, so open the group to
+reach **Restore**.
 
-> **What to look for.** Ticking "Show archived clients" should reveal **only** archived clients.
-> If archived projects appear too, two checkboxes are sharing one setting - write it down.
-> Can you still edit an archived thing? Is there a **Restore** that brings it back, and does
-> it?
+> **What to look for.** One checkbox should bring back both archived clients and archived
+> projects, and unticking it should hide both again. If it only does one, write it down. Can
+> you still edit an archived thing? Is there a **Restore** that brings it back, and does it?
 
 One more thing worth trying: archive a client that has a project, then edit an entry that is
 filed under that project and save it.

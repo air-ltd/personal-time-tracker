@@ -73,13 +73,20 @@ relabelling money already billed would be worse than the inconsistency.
 
 **A2** — Archived projects MUST be hidden from default pickers but MUST remain
 reachable via an explicit "show archived" control, otherwise historical entries
-become uneditable.
+become uneditable. A **single** control MUST cover both archived clients and
+archived projects: showing them is one decision about one idea, and separate
+toggles made the user decide the same thing twice.
 
 **A3** — Archived projects MUST NOT appear in report filters by default.
 
 **A4** — Archiving a client MUST NOT cascade to its projects. A client can be
 archived while its active projects continue, and reports continue to attribute
-those entries to the archived client.
+those entries to the archived client. Archiving changes the client's *record*,
+not its projects': a project under an archived client is still active and still
+restorable. For that same reason a project's **visibility** follows its client's
+— it is hidden while its client is hidden, and returns with it under the
+"show archived" control (A2), so the tree never shows a project whose owner is not
+there.
 
 **A5** — There MUST be a restore action for both.
 
