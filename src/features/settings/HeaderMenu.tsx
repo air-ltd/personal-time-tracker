@@ -67,11 +67,25 @@ export function HeaderMenu({ settingsHref, aboutHref }: HeaderMenuProps) {
     function onPointerDown(event: PointerEvent): void {
       if (container.current?.contains(event.target as Node) !== true) setOpen(false)
     }
+    /*
+     * Close on any route change, however it happened.
+     *
+     * The two links close themselves on click, which covers every route this menu offers —
+     * and nothing else. Browser back and forward, or a URL edited by hand, change the hash
+     * without a click, and the panel survived: an absolutely-positioned overlay sitting on
+     * top of the page the user just went to, swallowing the clicks meant for it. Found by
+     * the browser suite navigating with `page.goto`, which is the programmatic equivalent.
+     */
+    function onHashChange(): void {
+      setOpen(false)
+    }
     document.addEventListener('keydown', onKeyDown)
     document.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('hashchange', onHashChange)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('hashchange', onHashChange)
     }
   }, [open])
 

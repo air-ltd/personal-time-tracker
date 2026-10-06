@@ -6,10 +6,11 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    running timer shows `H:MM:SS`.
 2. [x] Timer accuracy on save screen to the second. Done in `phase-2b`: the form's
    duration preview shows `H:MM:SS` alongside the rounded minutes.
-3. [ ] **stop should just stop and save, not present another screen.** Still open. The
-   timer already stops and saves, but `App.tsx` navigates to a form afterwards; the fix
-   is to save and stay put. Note this interacts with item 5 — the modify-after-the-fact
-   affordance is what makes skipping the screen safe.
+3. [x] **stop should just stop and save, not present another screen.** **Done by item 48.**
+   Stopping writes the entry and stays where you are; the form is offered as a link on the
+   timer panel rather than imposed as a navigation. That is also the affordance this item
+   said the change depended on — the entry is not stranded uncategorised, it is one click
+   away from being described, and the entry list reaches it too. `0001 US2` amended.
 4. [x] **Need ability to categorise by job/client.** Done in `phase-4`, though the branch is
    still uncommitted. A `#/settings` view reachable from the header in one click (two
    interactions to any record, 0005 P1), a project picker on the entry form grouped by
@@ -423,6 +424,9 @@ Per `0014-development-plan.md`. Not started.
    component state, so navigating away discards it and the deletion stands. The entry undo
    bar in `App.tsx` survives navigation because it lives at the app level; moving the
    taxonomy one up would need the receipt held outside `TaxonomySettings`.
+   **Now tag deletion only** — clients and projects are not deletable (item 41), so there is
+   nothing of theirs left to undo. Which means the cost of fixing this dropped a long way:
+   one tag's entries lose it, and it is restorable by retyping.
 5. [ ] Two layout bugs of the same shape are worth remembering because neither is visible
    to jsdom: the rate and colour feedback lines used to appear on blur, which moved the
    button under the pointer mid-click, so **clicking Save straight after typing a rate did
