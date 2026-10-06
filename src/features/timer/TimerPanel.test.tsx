@@ -10,7 +10,7 @@ import {
   listProjects,
   setArchived,
 } from '../../storage/taxonomyRepo'
-import { createManualEntry, softDeleteEntry } from '../../storage/entriesRepo'
+import { createManualEntry, makeEntry, softDeleteEntry } from '../../storage/entriesRepo'
 import type { TimerState } from './useTimer'
 
 /**
@@ -45,8 +45,26 @@ function timerHarness(): TimerState & { started: (string | null | undefined)[] }
   }
 }
 
-function renderPanel(timer = timerHarness(), now = NOW) {
-  render(<TimerPanel timer={timer} onStopped={() => {}} now={now} />)
+/**
+ * Renders the panel, optionally with a client selected.
+ *
+ * `selectedClientId` is what item 61 keys the project list on, so the tests for it need to
+ * be able to select one; the default of null is "all clients", which is every other test.
+ */
+function renderPanel(
+  timer = timerHarness(),
+  now = NOW,
+  selectedClientId: string | null = null,
+) {
+  render(
+    <TimerPanel
+      timer={timer}
+      onStopped={() => {}}
+      now={now}
+      selectedClientId={selectedClientId}
+      onSelectClient={() => {}}
+    />,
+  )
   return timer
 }
 
@@ -287,7 +305,10 @@ describe('the running client (SPECS/todo.md item 42)', () => {
     expect(listRow.querySelector('.timer-client-live')?.textContent).toMatch(/\d+:\d{2}:\d{2}/)
     // And "which client" is still conveyed, for a screen reader and for the highlight.
     expect(listRow.getAttribute('aria-current')).toBe('true')
-    expect(listRow.className).toContain('timer-client-row-active')
+    // The active class is on the row, inside the item that also carries the projects.
+    expect(listRow.querySelector('.timer-client-row')?.className).toContain(
+      'timer-client-row-active',
+    )
   })
 })
 
@@ -375,7 +396,9 @@ describe('attributing a running timer (0005 N2)', () => {
     await waitFor(() => {
       expect(screen.queryByTestId('timer-orphan')).toBeNull()
     })
-    expect(select.closest('li')?.className).toContain('timer-client-row-active')
+    expect(select.closest('li')?.querySelector('.timer-client-row')?.className).toContain(
+      'timer-client-row-active',
+    )
   })
 
   it('still attributes a timer with no project to nobody', async () => {
@@ -574,5 +597,173 @@ describe('time tracked per client (item 16)', () => {
     await waitFor(() => {
       expect(screen.getByTestId(`client-live-${client.id}`)).toHaveTextContent('0m')
     })
+  })
+})
+
+describe('projects under the selected client (item 61)', () => {
+  /** The client's row, located the way the app locates it: by the name button. */
+  async function clientItem(name: string): Promise<HTMLElement> {
+    const item = (await screen.findByText(name, { selector: '.timer-client-name' })).closest(
+      'li',
+    )
+    if (!item) throw new Error(`no client item for "${name}"`)
+    return item
+  }
+
+  it('shows the selected client’s projects, each with a Start button', async () => {
+    const { client, defaultProject } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    const website = await createProject({ name: 'Website', clientId: client.id, now: NOW })
+
+    renderPanel(timerHarness(), NOW, client.id)
+
+    const item = await clientItem('Acme Ltd')
+    // Both the default project and the second one, because the list is the client's projects
+    // rather than "everything but the default".
+    expect(within(item).getByText(defaultProject.name, { selector: '.timer-project-name' }))
+    expect(within(item).getByText('Website', { selector: '.timer-project-name' })).toBeVisible()
+    expect(
+      within(item).getByRole('button', { name: 'Start a timer for Website' }),
+    ).toBeInTheDocument()
+    expect(website.id).not.toBe(defaultProject.id)
+  })
+
+  it('starts a timer for that project, not the client’s default', async () => {
+    const { client } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    const website = await createProject({ name: 'Website', clientId: client.id, now: NOW })
+
+    const timer = renderPanel(timerHarness(), NOW, client.id)
+    await clientItem('Acme Ltd')
+    await user.click(screen.getByRole('button', { name: 'Start a timer for Website' }))
+
+    // The whole point of the per-project buttons: the time is filed against the project that
+    // was pressed, which the client's own Start button could not do.
+    expect(timer.started).toEqual([website.id])
+  })
+
+  it('shows no project list for a client that is not selected', async () => {
+    const { client } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    await createProject({ name: 'Website', clientId: client.id, now: NOW })
+
+    renderPanel(timerHarness(), NOW, null)
+
+    await clientItem('Acme Ltd')
+    // The card is the most-used surface in the app; a project list under every client would
+    // make it a wall. Selection is what narrows it.
+    expect(screen.queryByText('Website', { selector: '.timer-project-name' })).toBeNull()
+  })
+
+  it('hides the list again when the selection is cleared', async () => {
+    const { client } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    await createProject({ name: 'Website', clientId: client.id, now: NOW })
+
+    const view = render(
+      <TimerPanel
+        timer={timerHarness()}
+        onStopped={() => {}}
+        now={NOW}
+        selectedClientId={client.id}
+        onSelectClient={() => {}}
+      />,
+    )
+
+    await screen.findByText('Website', { selector: '.timer-project-name' })
+
+    view.rerender(
+      <TimerPanel
+        timer={timerHarness()}
+        onStopped={() => {}}
+        now={NOW}
+        selectedClientId={null}
+        onSelectClient={() => {}}
+      />,
+    )
+
+    expect(screen.queryByText('Website', { selector: '.timer-project-name' })).toBeNull()
+  })
+
+  it('leaves the client’s own Start button able to start the default project', async () => {
+    // Item 12 is unchanged: the client's Start is the common case, and the per-project
+    // buttons are for every other project under the same client.
+    const { client, defaultProject } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    await createProject({ name: 'Website', clientId: client.id, now: NOW })
+
+    const timer = renderPanel(timerHarness(), NOW, client.id)
+    const item = await clientItem('Acme Ltd')
+    const start = within(item).getByRole('button', { name: 'Start a timer for Acme Ltd' })
+    await waitFor(() => expect(start).toBeEnabled())
+    await user.click(start)
+
+    expect(timer.started).toEqual([defaultProject.id])
+  })
+
+  it('disables every project’s Start while a timer is running', async () => {
+    // One timer at a time (0004 T2), and a control that vanishes cannot be learned.
+    const { client } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    const website = await createProject({ name: 'Website', clientId: client.id, now: NOW })
+
+    const running = timerHarness()
+    running.running = makeEntry({
+      projectId: website.id,
+      source: 'manual',
+      start: NOW,
+      end: new Date(NOW.getTime() + 60_000),
+      now: NOW,
+    })
+    renderPanel(running, NOW, client.id)
+
+    await clientItem('Acme Ltd')
+    expect(screen.getByRole('button', { name: 'Start a timer for Website' })).toBeDisabled()
+  })
+
+  it('does not offer an archived project', async () => {
+    // 0005 X4: archived records are not offered as choices anywhere.
+    const { client, defaultProject } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+    const retired = await createProject({ name: 'Retired', clientId: client.id, now: NOW })
+    await setArchived('project', retired.id, true, NOW)
+
+    renderPanel(timerHarness(), NOW, client.id)
+
+    const item = await clientItem('Acme Ltd')
+    expect(within(item).getByText(defaultProject.name, { selector: '.timer-project-name' }))
+    expect(within(item).queryByText('Retired', { selector: '.timer-project-name' })).toBeNull()
+  })
+
+  it('shows a client with no projects as a row and nothing under it', async () => {
+    // Every client gets a default project, but it is created asynchronously — so there is a
+    // moment where the client has none, and the list must not render an empty shell.
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+
+    renderPanel(timerHarness(), NOW, client.id)
+
+    const item = await clientItem('Acme Ltd')
+    expect(item.querySelector('.timer-project-list')).toBeNull()
   })
 })

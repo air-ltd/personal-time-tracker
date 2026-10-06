@@ -379,30 +379,42 @@ function ClientList({
           {visibleClients.map((client) => {
             const projectId = defaultProjects?.get(client.id) ?? null
             const active = running !== null && client.id === activeClientId
+            /*
+             * This client's projects, for the per-project Start buttons (item 61).
+             *
+             * Archived ones are excluded: 0005 X4 keeps archived records out of every
+             * choice, and a project the user has finished with is not something to start
+             * work against. Sorted by name, the same order the settings tree uses, so the
+             * two lists agree about what is under a client.
+             */
+            const projectsForClient = projectsProp
+              .filter((project) => project.clientId === client.id && !project.archived)
+              .sort((a, b) => a.name.localeCompare(b.name))
             return (
               <li
                 key={client.id}
-                className={`timer-client-row${active ? ' timer-client-row-active' : ''}`}
+                className="timer-client-item"
                 aria-current={active ? 'true' : undefined}
               >
-                {/*
+                <div className={`timer-client-row${active ? ' timer-client-row-active' : ''}`}>
+                  {/*
                   The name is a button because it is the selection (item 25): the client is
                   identified here, by pressing its line, so asking the user to pick the same
                   client again from a dropdown on another card was the same question twice.
                   Toggling it off returns to "all clients", which is why this is a toggle
                   and not a radio.
                 */}
-                <button
-                  type="button"
-                  className="timer-client-name"
-                  aria-pressed={selectedClientId === client.id}
-                  onClick={() =>
-                    onSelectClient(selectedClientId === client.id ? null : client.id)
-                  }
-                  data-testid={`select-client-${client.id}`}
-                >
-                  {client.name}
-                  {/*
+                  <button
+                    type="button"
+                    className="timer-client-name"
+                    aria-pressed={selectedClientId === client.id}
+                    onClick={() =>
+                      onSelectClient(selectedClientId === client.id ? null : client.id)
+                    }
+                    data-testid={`select-client-${client.id}`}
+                  >
+                    {client.name}
+                    {/*
                     No "running" badge (SPECS/todo.md item 42). The ticking elapsed figure on
                     this row already says it, and saying it twice meant the badge was read
                     before the number: the user had to read a word to learn what the digits
@@ -413,78 +425,122 @@ function ClientList({
                     the state is still conveyed to a screen reader and still drives the
                     highlight. Only the visible duplicate word goes.
                   */}
-                </button>
+                  </button>
 
-                {/* The count-up lives on the client's line, not in a separate block. */}
-                <span className="timer-client-live" data-testid={`client-live-${client.id}`}>
-                  {active && elapsedMs !== null
-                    ? formatDuration(elapsedMs, { seconds: true })
-                    : formatDuration(totals.get(client.id) ?? 0)}
-                </span>
+                  {/* The count-up lives on the client's line, not in a separate block. */}
+                  <span className="timer-client-live" data-testid={`client-live-${client.id}`}>
+                    {active && elapsedMs !== null
+                      ? formatDuration(elapsedMs, { seconds: true })
+                      : formatDuration(totals.get(client.id) ?? 0)}
+                  </span>
 
-                <span className="timer-client-actions">
-                  {active ? (
-                    <>
-                      <button
-                        type="button"
-                        className="button button-primary"
-                        onClick={() => void handleStop()}
-                        disabled={stopping}
-                        aria-label={`Stop the timer for ${client.name}`}
-                      >
-                        Stop
-                      </button>
-                      <button
-                        type="button"
-                        className="button"
-                        onClick={discard}
-                        aria-label={`Discard the timer for ${client.name}`}
-                      >
-                        Discard
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="button button-primary"
-                        /*
-                         * Disabled while another client is running rather than hidden: one
-                         * timer at a time (0004 T2), and a control that vanishes is a
-                         * control whose position cannot be learned.
-                         *
-                         * Also disabled until the default projects have been read. This was
-                         * a real bug found by a test that failed once in six runs: the
-                         * lookup is asynchronous, and clicking Start before it resolved
-                         * started the timer with no project at all — so the time was
-                         * recorded uncategorised for a client that *does* have one. Nothing
-                         * said so, and the entry was filed wrongly with no way to tell
-                         * afterwards. Unclickable beats silently wrong.
-                         */
-                        disabled={running !== null || defaultProjects === null}
-                        // A client with genuinely no project still starts a timer: the time
-                        // is recorded uncategorised rather than refused, because refusing
-                        // would lose the work.
-                        onClick={() => {
-                          setJustStopped(null)
-                          start(projectId ?? null)
-                        }}
-                        aria-label={`Start a timer for ${client.name}`}
-                      >
-                        Start
-                      </button>
-                      <button
-                        type="button"
-                        className="button"
-                        onClick={() => onEdit(client.id)}
-                        aria-pressed={editingId === client.id}
-                        aria-label={`Edit client ${client.name}`}
-                      >
-                        Edit
-                      </button>
-                    </>
-                  )}
-                </span>
+                  <span className="timer-client-actions">
+                    {active ? (
+                      <>
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          onClick={() => void handleStop()}
+                          disabled={stopping}
+                          aria-label={`Stop the timer for ${client.name}`}
+                        >
+                          Stop
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={discard}
+                          aria-label={`Discard the timer for ${client.name}`}
+                        >
+                          Discard
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          /*
+                           * Disabled while another client is running rather than hidden: one
+                           * timer at a time (0004 T2), and a control that vanishes is a
+                           * control whose position cannot be learned.
+                           *
+                           * Also disabled until the default projects have been read. This was
+                           * a real bug found by a test that failed once in six runs: the
+                           * lookup is asynchronous, and clicking Start before it resolved
+                           * started the timer with no project at all — so the time was
+                           * recorded uncategorised for a client that *does* have one. Nothing
+                           * said so, and the entry was filed wrongly with no way to tell
+                           * afterwards. Unclickable beats silently wrong.
+                           */
+                          disabled={running !== null || defaultProjects === null}
+                          // A client with genuinely no project still starts a timer: the time
+                          // is recorded uncategorised rather than refused, because refusing
+                          // would lose the work.
+                          onClick={() => {
+                            setJustStopped(null)
+                            start(projectId ?? null)
+                          }}
+                          aria-label={`Start a timer for ${client.name}`}
+                        >
+                          Start
+                        </button>
+                        <button
+                          type="button"
+                          className="button"
+                          onClick={() => onEdit(client.id)}
+                          aria-pressed={editingId === client.id}
+                          aria-label={`Edit client ${client.name}`}
+                        >
+                          Edit
+                        </button>
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                {/*
+                  Item 61: the selected client's projects, each with its own Start button.
+
+                  Shown for the selected client only. The card is the one the user touches
+                  most often, and a project list under every client would make it a wall —
+                  the point of selecting a client is to narrow things down, and the projects
+                  are what that client narrows to.
+
+                  The client's own Start button stays: it starts the default project (item
+                  12), which is the common case, and the per-project buttons are for every
+                  other project under the same client.
+                */}
+                {/*
+                  Not rendered at all when the client has no projects: an empty list would
+                  draw the indent and the dotted edge around nothing.
+                */}
+                {selectedClientId === client.id && projectsForClient.length > 0 && (
+                  <ul className="timer-project-list">
+                    {projectsForClient.map((project) => (
+                      <li key={project.id} className="timer-project-row">
+                        <span className="timer-project-name">{project.name}</span>
+                        <button
+                          type="button"
+                          className="button button-primary timer-project-start"
+                          /*
+                           * One timer at a time (0004 T2), so every project's Start is
+                           * disabled while one runs — rather than hidden, because a control
+                           * that vanishes cannot be learned.
+                           */
+                          disabled={running !== null}
+                          onClick={() => {
+                            setJustStopped(null)
+                            start(project.id)
+                          }}
+                          aria-label={`Start a timer for ${project.name}`}
+                        >
+                          Start
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             )
           })}

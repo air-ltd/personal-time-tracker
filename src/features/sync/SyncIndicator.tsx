@@ -9,8 +9,15 @@ import { useSync, type SyncState } from './syncContext'
  *
  * So the indicator changes shape with the state, rather than being one control that means
  * different things: while disconnected it is the button that connects, because that is
- * the moment the user wants to act. Once connected there is nothing to press, so it
- * becomes a link to the settings page, where the detail lives.
+ * the moment the user wants to act.
+ *
+ * It never navigates to the settings page (item 62). It used to, in three of its four
+ * states, on the reasoning that the detail lives there — so a user who tapped the
+ * indicator to read the sync state was taken off the page they were on. The detail is
+ * still on settings, reachable from the menu, which is where someone who wants it will
+ * look. What the header control does instead is the thing its own state calls for:
+ * connect when disconnected, sync when connected, and nothing at all when there is
+ * nothing it can do.
  *
  * Connecting leaves the page for Dropbox's consent screen. That is why it is a button
  * with the outcome in its label rather than a status light that navigates on click — the
@@ -35,18 +42,25 @@ export function SyncIndicatorView({
   hasKey,
   busy,
   connect,
-}: Pick<SyncState, 'connection' | 'status' | 'hasKey' | 'busy' | 'connect'>) {
+  syncNow,
+}: Pick<SyncState, 'connection' | 'status' | 'hasKey' | 'busy' | 'connect' | 'syncNow'>) {
   if (!hasKey) {
+    /*
+     * Inert, and disabled rather than a link: there is no key, so there is nothing to
+     * connect and nothing to sync. It used to link to settings on the grounds that a key
+     * is added there — which made the one state with no action the one that navigated.
+     */
     return (
-      <a
+      <button
+        type="button"
         className="button sync-indicator sync-indicator-idle"
-        href="#/settings"
         data-testid="sync-indicator"
-        title="Dropbox is not configured. Open settings to add an app key."
+        disabled
+        title="Dropbox is not configured. Add an app key under Settings."
       >
         <span className="sync-indicator-dot" aria-hidden="true" />
         Sync not set up
-      </a>
+      </button>
     )
   }
 
@@ -67,16 +81,18 @@ export function SyncIndicatorView({
   }
 
   if (connection === 'checking') {
+    // A check is already in flight, so there is nothing to press and nowhere to go.
     return (
-      <a
+      <button
+        type="button"
         className="button sync-indicator sync-indicator-idle"
-        href="#/settings"
         data-testid="sync-indicator"
+        disabled
         title="Asking Dropbox whether this device is connected."
       >
         <span className="sync-indicator-dot" aria-hidden="true" />
         Checking sync…
-      </a>
+      </button>
     )
   }
 
@@ -105,25 +121,34 @@ export function SyncIndicatorView({
         ? 'Not synced yet'
         : 'Synced'
 
+  /*
+   * A button that syncs now, rather than a link to the settings page.
+   *
+   * The label stays the status, because that is what a glance reads and what the tests
+   * assert; the action is the one thing a sync control can usefully offer. Disabled while
+   * a cycle is in flight, so a second press cannot queue on top of the first.
+   */
   return (
-    <a
+    <button
+      type="button"
       className={`button sync-indicator sync-indicator-${tone}`}
-      href="#/settings"
       data-testid="sync-indicator"
+      onClick={syncNow}
+      disabled={busy}
       title={
         failed
-          ? (status?.message ?? 'The last sync failed. Open settings for the detail.')
+          ? (status?.message ?? 'The last sync failed. Press to try again.')
           : running
             ? 'Checking with Dropbox.'
             : pending
-              ? 'Changes are waiting to sync.'
+              ? 'Changes are waiting to sync. Press to send them now.'
               : status?.lastSyncAt
-                ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}.`
+                ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}. Press to sync now.`
                 : 'Connected. Waiting for the first sync.'
       }
     >
       <span className="sync-indicator-dot" aria-hidden="true" />
       {label}
-    </a>
+    </button>
   )
 }

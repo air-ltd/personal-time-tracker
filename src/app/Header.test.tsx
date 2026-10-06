@@ -33,6 +33,7 @@ function indicatorWith(state: Partial<Parameters<typeof SyncIndicatorView>[0]>) 
           hasKey
           busy={false}
           connect={() => {}}
+          syncNow={() => {}}
           {...state}
         />
       </li>
@@ -93,7 +94,7 @@ describe('the title link (items 11 and 15)', () => {
 })
 
 describe('the sync indicator (item 10)', () => {
-  it('offers a button that connects when disconnected', async () => {
+  it('does not navigate to settings from the checking state', async () => {
     // The state lives in the provider, so this asserts the wiring rather than reaching
     // into it: without a key configured the indicator says setup is needed, and that is
     // the same "not connected, and here is what to do" shape.
@@ -105,9 +106,14 @@ describe('the sync indicator (item 10)', () => {
     // claiming connected or disconnected before the answer would be a guess.
     expect(indicator).toHaveTextContent(/checking sync/i)
 
-    // Where it goes matters as much as what it says.
+    /*
+     * Inert, and clicking it goes nowhere (item 62). It used to be a link to settings, so
+     * a user who tapped the indicator to read the sync state was taken off the page they
+     * were on. The detail is still there, reached from the menu.
+     */
+    expect(indicator).toBeDisabled()
     await user.click(indicator)
-    expect(window.location.hash).toBe('#/settings')
+    expect(window.location.hash).toBe('')
   })
 
   it('is on every screen, not just settings', () => {
@@ -190,15 +196,19 @@ describe('the indicator by state (item 10)', () => {
     expect(indicator.className).toContain('sync-indicator-error')
   })
 
-  it('does not offer the action while connected', async () => {
+  it('syncs rather than navigating, while connected', async () => {
     const user = userEvent.setup()
     const connect = vi.fn()
-    render(indicatorWith({ connection: 'connected', connect }))
+    const syncNow = vi.fn()
+    render(indicatorWith({ connection: 'connected', connect, syncNow }))
 
+    // Not the connect action: there is nothing to connect.
     expect(screen.queryByRole('button', { name: /connect dropbox/i })).toBeNull()
     await user.click(screen.getByTestId('sync-indicator'))
     expect(connect).not.toHaveBeenCalled()
-    expect(window.location.hash).toBe('#/settings')
+    expect(syncNow).toHaveBeenCalled()
+    // And it stays on the page (item 62).
+    expect(window.location.hash).not.toBe('#/settings')
   })
 })
 

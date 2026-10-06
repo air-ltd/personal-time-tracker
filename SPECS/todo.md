@@ -367,8 +367,10 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 58. [x] settings page: no "new project" button under an archived client.
 59. [x] settings page: no "No client" group when there is no internal work.
 60. [x] settings page: an archived client's name has a strikethrough; the word "archived" does not.
-61. [ ] when selecting a customer on the main page, it should add the list of projects under that customer with buttons to start timer on that project.
-62. [ ] Dropbox sync button is opening the settings page if I click on it. that should not be the case.
+61. [x] when selecting a customer on the main page, it should add the list of projects under that customer with buttons to start timer on that project.
+62. [x] Dropbox sync button is opening the settings page if I click on it. that should not be the case.
+63. [ ] timer card - edit buttons go away, start buttons become right aligned (leave space for the discard and only show it while a timer is running). swap "start" "Stop" words for play & pause icons. the "discard" should be swapped for a red X icon.
+64. [ ] timer card is incorrectly reporting that timers are stored uncategories on stop. it should be impossible to store them uncategorised now.
 
 # Where the branches are
 

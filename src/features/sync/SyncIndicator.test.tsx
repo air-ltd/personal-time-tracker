@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
 import { SyncIndicatorView } from './SyncIndicator'
 import type { SyncStatus } from '../../sync/scheduler'
 
@@ -34,6 +35,7 @@ const connected = {
   hasKey: true,
   busy: false,
   connect: () => undefined,
+  syncNow: () => undefined,
 } as const
 
 function view(props: Partial<Parameters<typeof SyncIndicatorView>[0]> = {}) {
@@ -53,6 +55,51 @@ describe('what the indicator says', () => {
     view({ hasKey: false })
 
     expect(screen.getByTestId('sync-indicator')).toHaveTextContent(/not set up/i)
+  })
+
+  it('is inert when there is no app key, rather than a link to settings', async () => {
+    // Item 62: the indicator used to navigate to settings in this state, so reading the
+    // sync state took the user off the page. There is no key, so there is nothing to do.
+    const user = userEvent.setup()
+    view({ hasKey: false })
+
+    const indicator = screen.getByTestId('sync-indicator')
+    expect(indicator).toBeDisabled()
+    expect(indicator).not.toHaveAttribute('href')
+    await user.click(indicator)
+    expect(window.location.hash).not.toBe('#/settings')
+  })
+
+  it('is inert while checking, with nothing to press', async () => {
+    const user = userEvent.setup()
+    view({ connection: 'checking' })
+
+    const indicator = screen.getByTestId('sync-indicator')
+    expect(indicator).toBeDisabled()
+    expect(indicator).not.toHaveAttribute('href')
+    await user.click(indicator)
+    expect(window.location.hash).not.toBe('#/settings')
+  })
+
+  it('syncs now when connected, instead of opening settings', async () => {
+    // The one state with something useful to do: a manual sync. And it stays on the page.
+    const user = userEvent.setup()
+    const syncNow = vi.fn()
+    view({ status: status('idle'), syncNow })
+
+    const indicator = screen.getByTestId('sync-indicator')
+    expect(indicator).toBeEnabled()
+    expect(indicator).not.toHaveAttribute('href')
+    await user.click(indicator)
+    expect(syncNow).toHaveBeenCalled()
+    expect(window.location.hash).not.toBe('#/settings')
+  })
+
+  it('is disabled while a cycle is in flight', () => {
+    // A second press cannot queue on top of the first.
+    view({ status: status('syncing'), busy: true })
+
+    expect(screen.getByTestId('sync-indicator')).toBeDisabled()
   })
 
   it('says it is asking, rather than claiming success, while the state is unknown', () => {

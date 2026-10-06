@@ -39,11 +39,18 @@ Start at the app's home page and leave it there.
 You should see the app's name at the top left with a small clock icon, a status dot on the
 right, and a menu button. Below that, a **Timer** card and an **Entries** card.
 
+The status dot is this app's Dropbox connection. It says *Sync not set up* until a Dropbox app
+key is added, *Connect Dropbox* while there is nothing to connect to, and then the sync state —
+*Syncing…*, *Not synced yet*, *Synced*, or *Sync failed*. Pressing it does one of those things
+and nothing else: it never takes you off the page. The detail lives on Settings → **Sync**,
+behind the menu.
+
 The Entries card will say something like *"No entries yet. Start the timer above, or add one by
 hand."*
 
 > **What to look for.** Is the empty screen a helpful first impression, or does it look broken?
-> Would you know what to do first? Is anything on it a mystery?
+> Would you know what to do first? Is anything on it a mystery? Does the status dot make sense
+> as something you can press, and does pressing it do what its label says?
 
 ---
 
@@ -84,11 +91,16 @@ Press it.
 
 The button becomes **Stop**, and elapsed time starts counting up in `H:MM:SS`.
 
-Leave it running for a minute or two. Do not stop it yet.
+Your client's **name** is also a button. Press it and the projects under that client appear
+underneath, each with its own **Start** — so you can start the timer against a specific project
+rather than the client's default one. Press the name again and they fold away.
 
 > **What to look for.** Does the number ticking up feel trustworthy? Is it clear *which* client
-> the timer belongs to? Is it obvious how to stop it? If you pressed the client's name instead
-> of Start, what happened — and was that what you expected?
+> the timer belongs to? Is it obvious how to stop it? When you pressed the client's name, did
+> the projects appear under *that* client and not another? Was it clear that a project's
+> **Start** starts the timer for that project?
+
+Leave it running for a minute or two. Do not stop it yet.
 
 ---
 

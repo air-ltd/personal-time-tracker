@@ -884,6 +884,78 @@ async function main() {
       String(await rows.count()),
     )
 
+    /*
+     * Item 61: selecting a client reveals that client's projects, each with a Start button.
+     *
+     * A client name this suite has not used before: the e2e is one long script over a
+     * database that is never reset, so a second "Acme Ltd" would be a second client and the
+     * project would land under the wrong one.
+     *
+     * Checked here rather than only in the unit tests because the behaviour is about what
+     * appears on the card in a real layout: the list indented under the client, and the
+     * buttons reachable.
+     */
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    await page.getByTestId('new-client').click()
+    await page.getByLabel('Client name').fill('Project Co')
+    await page.getByRole('button', { name: 'Add client', exact: true }).click()
+    await openProjectGroup(page, 'Project Co')
+    await page.getByRole('button', { name: 'New project for Project Co' }).click()
+    // A name this suite has not used: the database is never reset between steps, so a
+    // second "Website" would be a different project under a different client.
+    await page.getByLabel('Project name').fill('Alpha Site')
+    await page.getByRole('button', { name: 'Add project', exact: true }).click()
+    await page
+      .locator('.taxonomy-group', { hasText: 'Project Co' })
+      .first()
+      .locator('.taxonomy-row', { hasText: 'Alpha Site' })
+      .first()
+      .waitFor()
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.locator('.timer-client-row').first().waitFor()
+
+    const projectCo = page.locator('.timer-client-item', { hasText: 'Project Co' }).first()
+    check(
+      'a client with no selection shows no project list',
+      (await projectCo.locator('.timer-project-list').count()) === 0,
+    )
+    await projectCo.getByRole('button', { name: 'Project Co' }).first().click()
+    const projectList = projectCo.locator('.timer-project-list')
+    await projectList.waitFor()
+    /*
+     * Two rows, not one: every client is created with a default project (item 12), so the
+     * list holds that and the one added above. What matters is that the added project is
+     * there with its own Start button, beside the default one.
+     */
+    const alphaRow = projectList.locator('.timer-project-row', { hasText: 'Alpha Site' })
+    check(
+      'selecting a client reveals its projects, each with a Start button (item 61)',
+      (await projectList.locator('.timer-project-row').count()) === 2 &&
+        (await alphaRow.count()) === 1 &&
+        (await alphaRow
+          .getByRole('button', { name: 'Start a timer for Alpha Site' })
+          .count()) === 1,
+      `rows=${await projectList.locator('.timer-project-row').count()}`,
+    )
+    /*
+     * And pressing one starts a timer. The running state is read from the active row rather
+     * than a testid: there is no `timer-running` element, the active class is how the card
+     * says a timer is running (item 42).
+     */
+    await projectList.getByRole('button', { name: 'Start a timer for Alpha Site' }).click()
+    await page.locator('.timer-client-row-active').first().waitFor()
+    check('a per-project Start button starts the timer (item 61)', true)
+    /*
+     * Stop it again. One timer at a time (0004 T2), and the rest of this suite starts timers
+     * of its own — a timer left running here disables every later Start button.
+     */
+    await page
+      .locator('.timer-client-row-active')
+      .first()
+      .getByRole('button', { name: /Stop/ })
+      .click()
+    await page.locator('.timer-client-row-active').first().waitFor({ state: 'detached' })
+
     const idleHeights = await page.locator('.timer-client-row').first().boundingBox()
 
     await page
@@ -1187,6 +1259,18 @@ async function main() {
       (await page.getByTestId('sync-indicator').getAttribute('title')) !== null,
     )
 
+    /*
+     * Item 62: the sync indicator must not open the settings page.
+     *
+     * It used to be a link to settings in three of its four states, so a user who tapped
+     * it to read the sync state was taken off the page. Asserted as an absence of the
+     * href, in a browser, because navigation is the thing being checked.
+     */
+    check(
+      'the sync indicator does not link to settings (item 62)',
+      (await page.getByTestId('sync-indicator').getAttribute('href')) === null,
+    )
+
     // The favicon is the header mark, and it is a link to the app's own home (item 23).
     const mark = await page.evaluate(() => {
       const img = document.querySelector('.app-home-icon')
@@ -1391,18 +1475,34 @@ async function main() {
       (await page.locator('.taxonomy-section-heading button svg').count()) === 1,
     )
 
-    // Item 34: the period selector must not move because a client filter appeared.
+    /*
+     * Item 34: the period selector must not move because a client filter appeared.
+     *
+     * Measured against the entries header rather than the viewport. Selecting a client now
+     * also reveals that client's projects (item 61), which grows the timer card and moves
+     * the whole entries card down — so a viewport-absolute measurement fails on a layout
+     * that is doing exactly what was asked. What item 34 is actually about is the filter
+     * note appearing *inside* the header and pushing the selector there, which is a
+     * question about the selector's position within its own card.
+     */
     await page.goto(URL, { waitUntil: 'networkidle' })
     await page.locator('.timer-client-row').first().waitFor()
-    const periodBefore = await page.getByRole('radio', { name: 'Daily' }).boundingBox()
+    const relativeToHeader = async () => {
+      const period = await page.getByRole('radio', { name: 'Daily' }).boundingBox()
+      const header = await page.locator('.entries-header').boundingBox()
+      return {
+        x: (period?.x ?? 0) - (header?.x ?? 0),
+        y: (period?.y ?? 0) - (header?.y ?? 0),
+      }
+    }
+    const before = await relativeToHeader()
     await page.locator('.timer-client-row').first().locator('.timer-client-name').click()
     await page.getByTestId('entries-filter-note').waitFor()
-    const periodAfter = await page.getByRole('radio', { name: 'Daily' }).boundingBox()
+    const after = await relativeToHeader()
     check(
-      'the period selector does not move when a client filter appears (item 34)',
-      Math.abs((periodBefore?.x ?? 0) - (periodAfter?.x ?? 0)) < 1 &&
-        Math.abs((periodBefore?.y ?? 0) - (periodAfter?.y ?? 0)) < 1,
-      `before=${JSON.stringify(periodBefore)} after=${JSON.stringify(periodAfter)}`,
+      'the period selector does not move within the entries card when a filter appears (item 34)',
+      Math.abs(before.x - after.x) < 1 && Math.abs(before.y - after.y) < 1,
+      `before=${JSON.stringify(before)} after=${JSON.stringify(after)}`,
     )
     check(
       'the filter note is in the entries header, not on a line of its own',

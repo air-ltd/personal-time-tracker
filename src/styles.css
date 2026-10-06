@@ -742,6 +742,16 @@ code {
   border-top: 1px dotted var(--border);
 }
 
+/*
+ * One client, and — when it is selected — the projects under it (item 61).
+ *
+ * The separator belongs to the item, not the row: a border on the row would draw a line
+ * between a client and its own projects, which are one thing rather than two.
+ */
+.timer-client-item {
+  border-bottom: 1px dotted var(--border);
+}
+
 /* Item 24: tighter rows. */
 .timer-client-row {
   display: grid;
@@ -750,7 +760,6 @@ code {
   align-items: center;
   gap: 0.4rem;
   padding: 0.15rem 0;
-  border-bottom: 1px dotted var(--border);
 }
 
 /* Item 25: the name is the selection, so it is a button that looks like text until it is
@@ -826,6 +835,43 @@ code {
 
 .timer-client-actions .button:not(.button-primary) {
   min-width: 5rem;
+}
+
+/*
+ * The selected client's projects (item 61).
+ *
+ * Indented under the client with a dotted edge, so they read as belonging to the row above
+ * rather than as clients of their own. No separator of their own: the client's row already
+ * carries the line that separates it from the next client.
+ */
+.timer-project-list {
+  list-style: none;
+  margin: 0.1rem 0 0.3rem;
+  padding: 0 0 0 1.25rem;
+  border-left: 1px dotted var(--border);
+}
+
+.timer-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+}
+
+.timer-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+/* Narrower than the client actions: these sit one per project, so they stack. */
+.timer-project-start {
+  min-width: 4.3rem;
+  flex: none;
 }
 
 /* Currency preferences (items 13–14): chosen first, then the rest. */
