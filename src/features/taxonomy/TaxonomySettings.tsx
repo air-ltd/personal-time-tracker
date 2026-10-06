@@ -81,62 +81,73 @@ export function TaxonomySettings({ now }: { now: Date }) {
   if (loading) return <p className="hint">Loading settings…</p>
 
   return (
-    <section className="panel settings-panel">
-      <div className="panel-header">
-        <h2>Settings</h2>
-      </div>
+    <>
+      <section className="panel settings-panel" aria-labelledby="taxonomy-heading">
+        {/*
+          "Clients and projects", not "Settings". Every other panel on this page is named
+          for what it holds — Appearance, Currencies, Sync, Backup — and a panel called
+          "Settings", inside the settings page, named nothing at all.
+        */}
+        <h2 id="taxonomy-heading">Clients and projects</h2>
+
+        {/*
+          Both sources land in one place, but they are not the same: a failed read is not
+          dismissible, because nothing has loaded to act on, whereas a failed write is
+          something the Dismiss button can honestly clear.
+
+          Here rather than above both panels because a failed *load* of the taxonomy affects
+          clients, projects and tags equally — it is one read — so a single banner covering
+          all three is honest, where one inside the clients panel would look like a
+          client-specific failure.
+        */}
+        {(error ?? loadError) !== null && (
+          <div className="alert alert-error" role="alert" data-testid="settings-error">
+            <p>{error ?? loadError}</p>
+            {error !== null && (
+              <button type="button" className="button" onClick={() => setError(null)}>
+                Dismiss
+              </button>
+            )}
+          </div>
+        )}
+
+        <ClientSection
+          clients={visibleClients}
+          allClients={clients}
+          showArchived={showArchivedClients}
+          onToggleArchived={setShowArchivedClients}
+          now={now}
+          report={report}
+        />
+
+        <ProjectSection
+          projects={visibleProjects}
+          allProjects={projects}
+          clients={clients}
+          defaultCurrency={defaultCurrency}
+          showArchived={showArchivedProjects}
+          onToggleArchived={setShowArchivedProjects}
+          now={now}
+          report={report}
+        />
+      </section>
 
       {/*
-        Both sources land in one place, but they are not the same: a failed read is not
-        dismissible, because nothing has loaded to act on, whereas a failed write is
-        something the Dismiss button can honestly clear.
+        Tags in their own card (SPECS/todo.md item 50).
+
+        They were the third section of a panel headed "Settings", below two lists of records
+        that have nothing to do with them. A tag is not a client or a project, it is not
+        scoped to one, and its delete flow is the only one left with an undo bar — all of
+        which got lost in a shared card. Its confirmation and undo bar moved with it, which
+        also means they no longer appear under a heading about clients and projects.
       */}
-      {(error ?? loadError) !== null && (
-        <div className="alert alert-error" role="alert" data-testid="settings-error">
-          <p>{error ?? loadError}</p>
-          {error !== null && (
-            <button type="button" className="button" onClick={() => setError(null)}>
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
-
-      {/*
-        The app-wide default currency used to live here, under its own heading, while the
-        list of currencies to offer sat in a different panel. It is not a taxonomy record —
-        it is the last link in the resolution chain for *client-less* work, and its hook was
-        already in `features/settings`. Moved to `CurrenciesPanel`, where both currency
-        settings are siblings (0003 CU4).
-      */}
-
-      <ClientSection
-        clients={visibleClients}
-        allClients={clients}
-        showArchived={showArchivedClients}
-        onToggleArchived={setShowArchivedClients}
-
-        now={now}
-        report={report}
-      />
-
-      <ProjectSection
-        projects={visibleProjects}
-        allProjects={projects}
-        clients={clients}
-        defaultCurrency={defaultCurrency}
-        showArchived={showArchivedProjects}
-        onToggleArchived={setShowArchivedProjects}
-
-        now={now}
-        report={report}
-      />
-
-      <TagSection tags={tags} onDelete={tagDeletes.onDelete} now={now} report={report} />
-
-      {tagDeletes.confirmation}
-      {tagDeletes.undoBar}
-    </section>
+      <section className="panel" aria-labelledby="tags-heading">
+        <h2 id="tags-heading">Tags</h2>
+        <TagSection tags={tags} onDelete={tagDeletes.onDelete} now={now} report={report} />
+        {tagDeletes.confirmation}
+        {tagDeletes.undoBar}
+      </section>
+    </>
   )
 }
 
@@ -491,7 +502,6 @@ function TagSection({
 
   return (
     <div className="settings-block">
-      <h3>Tags</h3>
       <p className="hint">
         Tags can also be typed straight into an entry as you record it — anything you add here
         does not have to exist first.

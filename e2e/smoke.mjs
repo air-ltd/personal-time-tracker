@@ -561,7 +561,18 @@ async function main() {
     // asynchronously, a tag typed at the point of capture, and the delete confirmation
     // actually reporting its impact.
     await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
-    await page.getByRole('heading', { name: 'Settings' }).waitFor()
+    // Item 50: tags have their own card, and the taxonomy panel is named for what it holds
+    // rather than for the page it is on.
+    await page.getByRole('heading', { name: 'Clients and projects' }).waitFor()
+    await page.getByRole('heading', { name: 'Tags' }).waitFor()
+    check(
+      'tags are in their own card, not under the clients heading',
+      (await page
+        .locator('section')
+        .filter({ has: page.getByRole('heading', { name: 'Tags' }) })
+        .getByRole('heading', { name: 'Clients and projects' })
+        .count()) === 0,
+    )
 
     // P1: a project is two interactions from anywhere.
     await page.getByTestId('new-client').click()

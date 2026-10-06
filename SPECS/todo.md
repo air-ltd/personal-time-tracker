@@ -347,7 +347,16 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    The notice now sits below the list — a notice about something you just did belongs under
    the thing you just did, and nothing above can shift. The browser suite measures every
    row's `top` across the transition.
-50. [ ] on settings page move tags into it's own card.
+50. [x] on settings page move tags into it's own card — **done.** They were the third
+   section of a panel headed "Settings", below two lists of records they have nothing to do
+   with. A tag is not a client or a project, is not scoped to one, and its delete flow is the
+   only one left with an undo bar — all of which got lost in a shared card. Its confirmation
+   and undo bar moved with it, so they no longer appear under a heading about clients and
+   projects.
+
+   The remaining panel is headed **"Clients and projects"** rather than "Settings", which
+   named nothing at all inside the settings page — every other panel there is named for its
+   contents.
 51. [ ] settings page: projects should be grouped with their clients, client name, when clicked on should show the list of clients. default to collapsed.
 52. [ ] the "Sync Card" on settings page does not need to say "Non Production" in dev version.
 53. [ ] when scrolling on a page, keep the header static (not scrolling)
