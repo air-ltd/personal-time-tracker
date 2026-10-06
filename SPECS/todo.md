@@ -314,10 +314,21 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    `auth` and `scope-missing` are excluded from retrying: waiting fixes neither, and
    re-arming on them would destroy a dead credential once per cycle.
 
-   Two defects found while doing it, both by tests written for the new behaviour:
-   `stop()` did not clear the armed retry, so a torn-down scheduler kept syncing; and
+   Three defects found while doing it, all by tests written for the new behaviour:
+   `stop()` did not clear the armed retry, so a torn-down scheduler kept syncing;
    `syncNow()` did not check `stopped` at all, so a manual sync after teardown started a
-   cycle nobody held.
+   cycle nobody held; and `hasUsableToken()` reported "not connected" purely because the
+   *access* token had expired, which is consulted *before* any refresh can run — so the
+   first three commits changed nothing a user would ever see. Now specified as C6.1–C6.3.
+
+   **On "how long should the connection last": there is no time limit.** Nothing here expires
+   a credential on a schedule. It lasts until Dropbox refuses the refresh token, or the user
+   removes the app or disconnects — which is indefinite from the app's side, and a five-day
+   requirement is met by an unbounded one. The thing that had to be fixed to get there was
+   not the lifetime but the discarding: a 5xx or a dropped connection during a refresh was
+   being treated as a rejected token, and the scheduler's answer to `auth` is to destroy the
+   credential and ask the user to sign in again. So one network flicker cost someone their
+   connection. Only an explicit refusal now retires it (C6.3).
 48. [x] on timer stop, do not go to edit screen automatically — **done.** Stopping writes
    the entry and stays put. The offer to classify it is a line on the timer panel with a link
    to the form, which is what US2's routing actually bought, and it expires when the next

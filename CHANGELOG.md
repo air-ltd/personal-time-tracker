@@ -148,10 +148,15 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
 
 ### Fixed
 
-- **Sync no longer asks you to reconnect every few hours.** An expired access token is now
-  exchanged for a new one silently, using the refresh token Dropbox was already sending and
-  this app was discarding. The failure it removes was routine enough to train you to ignore
-  the one sync message that matters.
+- **Your Dropbox connection no longer lapses.** An expired access token is exchanged for a
+  new one silently, using the refresh token Dropbox was already sending and this app was
+  discarding — so the header no longer says "not connected" every few hours and you are not
+  asked to sign in again. There is no time limit: the connection lasts until you remove the
+  app or disconnect, not for a fixed period.
+- **A dropped connection no longer signs you out.** If Dropbox's token endpoint was briefly
+  unreachable, the app treated it as a rejected token and threw away a perfectly good
+  connection. Only Dropbox actually refusing the token ends it now; a network problem is
+  waited out.
 - A cycle that fails because the network dropped is retried a few times, backing off, rather
   than waiting for you to reopen the tab. A stopped scheduler no longer keeps syncing.
 - **Stopping a timer no longer takes the screen away.** It used to jump straight to the

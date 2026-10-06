@@ -186,6 +186,96 @@ describe('an expired access token', () => {
     expect(sent.get('code_verifier')).toBeNull()
   })
 
+  /**
+   * The connection the user sees must match the one the app can actually use.
+   *
+   * These two failed together at first and that is the whole point: `hasUsableToken` was
+   * consulted *before* the refresh could run, so a four-hour-old token reported "not
+   * connected", the engine skipped the cycle, and the scheduler discarded a credential
+   * that a single token exchange would have rescued. The user was asked to sign in again
+   * every four hours no matter what the refresh path could do.
+   */
+  it('still reports connected after the access token expires, if it can be refreshed', async () => {
+    withRefreshToken()
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    // `expiresAt` is in the past — `withRefreshToken` sets that — but this is not a
+    // disconnected app, and the indicator must not say it is.
+    expect(await provider.hasUsableToken()).toBe(true)
+    expect((await provider.status()).authenticated).toBe(true)
+  })
+
+  it('reports disconnected once there is nothing left to refresh with', async () => {
+    store.tokens = { accessToken: 'old-tok', expiresAt: Date.now() - 1 }
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    expect(await provider.hasUsableToken()).toBe(false)
+    expect((await provider.status()).authenticated).toBe(false)
+  })
+
+  it('refreshes at the start of a cycle rather than failing it', async () => {
+    // The check that happens before any request, so the refresh is not competing with a
+    // 401 it will never see.
+    withRefreshToken()
+    fetchMock
+      .mockResolvedValueOnce(response({ status: 200, json: { access_token: 'fresh-tok' } }))
+      .mockResolvedValueOnce(response({ status: 200, body: '{"x":1}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.ensureAuth()).resolves.toBeUndefined()
+    await provider.pull('/data.json')
+
+    // One exchange, then the request on the new credential. No 401 in between.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(requestUrl(fetchMock, 0)).toBe(DROPBOX.tokenUrl)
+    expect(requestHeader(fetchMock, 1, 'Authorization')).toBe('Bearer fresh-tok')
+  })
+
+  it('reports the credential as spent when the proactive refresh fails', async () => {
+    // Once here, the scheduler discards the token and offers Connect — which is correct,
+    // and only correct because this throws rather than returning quietly.
+    withRefreshToken()
+    fetchMock.mockResolvedValue(response({ status: 400, body: '{"error":"invalid_grant"}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.ensureAuth()).rejects.toThrow(/not connected/i)
+  })
+
+  it('never issues a data request once the credential is known to be spent', async () => {
+    // In the order the engine actually runs: `ensureAuth` refreshes, and only a request
+    // that gets past it touches the data plane. So a failed proactive refresh must mean
+    // *zero* download attempts — not a download that fails and is then classified.
+    //
+    // Returning quietly from `ensureAuth` here would instead let the cycle run on a dead
+    // token and fail with an auth error the scheduler cannot distinguish from a revoked
+    // one: right by accident, and only while the network stayed down.
+    withRefreshToken()
+    fetchMock.mockResolvedValue(response({ status: 400, body: '{"error":"invalid_grant"}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await expect(provider.ensureAuth()).rejects.toThrow()
+
+    const dataCalls = fetchMock.mock.calls.filter((call) => call[0] !== DROPBOX.tokenUrl)
+    expect(dataCalls).toHaveLength(0)
+  })
+
+  it('does not refresh when the access token is still current', async () => {
+    // Spending a token exchange on a credential that has not expired would be a request
+    // per cycle for no reason.
+    store.tokens = {
+      accessToken: 'good-tok',
+      expiresAt: Date.now() + 3_600_000,
+      refreshToken: 'refresh-1',
+    }
+    fetchMock.mockResolvedValue(response({ status: 200, body: '{"x":1}' }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    await provider.ensureAuth()
+    await provider.pull('/data.json')
+
+    expect(requestUrl(fetchMock, 0)).not.toBe(DROPBOX.tokenUrl)
+  })
+
   it('does not refresh when there is no refresh token', async () => {
     store.tokens = { accessToken: 'old-tok', expiresAt: Date.now() - 1 }
     fetchMock.mockResolvedValue(unauthorized())
@@ -274,16 +364,77 @@ describe('an expired access token', () => {
     await expect(provider.push('/data.json', '{}', null)).resolves.toEqual({ rev: 'rev-9' })
   })
 
-  it('leaves the original failure visible when the refresh itself errors', async () => {
+  /*
+   * A refresh that could not be *asked* is not a rejected credential.
+   *
+   * These two used to be the same event, and that cost people their connection: a 502 from
+   * the token endpoint produced an `auth` error, the scheduler's response to `auth` is to
+   * discard the stored token and offer Connect, and the user had to sign in again because
+   * their network flickered. The distinction is the whole reason `RefreshResult` exists.
+   */
+  describe('when the token endpoint cannot be reached', () => {
+    it('reports a network failure, so the credential is kept', async () => {
+      withRefreshToken()
+      fetchMock
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(response({ status: 503, body: 'upstream down' }))
+      const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+      // `network`, not `auth`. The scheduler discards on `auth` and retries on `network`.
+      await expect(provider.pull('/data.json')).rejects.toThrow(/Could not reach Dropbox/i)
+    })
+
+    it('treats a 429 as unreachable too, since it says nothing about the token', async () => {
+      withRefreshToken()
+      fetchMock
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(response({ status: 429, body: 'slow down' }))
+      const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+      await expect(provider.pull('/data.json')).rejects.toThrow(/Could not reach Dropbox/i)
+    })
+
+    it('leaves the stored credential intact, so a later attempt can still use it', async () => {
+      withRefreshToken()
+      fetchMock
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(response({ status: 503, body: 'upstream down' }))
+      const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+      await expect(provider.pull('/data.json')).rejects.toThrow()
+
+      // The refresh token is the whole connection. Losing it over a 503 is the bug.
+      expect(readTokens(store)).toMatchObject({ refreshToken: 'refresh-1' })
+    })
+
+    it('recovers on a later attempt once the endpoint is back', async () => {
+      withRefreshToken()
+      fetchMock
+        .mockResolvedValueOnce(unauthorized())
+        .mockResolvedValueOnce(response({ status: 503, body: 'upstream down' }))
+      const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+      await expect(provider.pull('/data.json')).rejects.toThrow()
+
+      // Not latched to "rejected": a blip must not use up the session's willingness to try.
+      fetchMock.mockReset()
+      fetchMock
+        .mockResolvedValueOnce(response({ status: 200, json: { access_token: 'fresh-tok' } }))
+        .mockResolvedValueOnce(response({ status: 200, body: '{"x":1}' }))
+
+      await expect(provider.pull('/data.json')).resolves.toBeTruthy()
+    })
+  })
+
+  it('treats a 4xx from the token endpoint as a real rejection', async () => {
+    // The other side of the line: Dropbox saying no is a dead credential, and pretending
+    // otherwise would leave a Connect button that never helps.
     withRefreshToken()
     fetchMock
       .mockResolvedValueOnce(unauthorized())
-      .mockResolvedValueOnce(response({ status: 503, body: 'upstream down' }))
+      .mockResolvedValueOnce(response({ status: 400, body: '{"error":"invalid_grant"}' }))
     const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
 
-    // The user should be asked to reconnect, not shown a token-endpoint error they cannot
-    // act on.
-    await expect(provider.pull('/data.json')).rejects.toThrow(/invalid_access_token/)
+    await expect(provider.pull('/data.json')).rejects.toThrow(/not connected/i)
   })
 })
 
