@@ -21,13 +21,16 @@ import type { TokenStore } from '../../storage/secretsRepo'
  *
  * Only what the app actually uses.
  *
- * **Revised.** This used to say a refresh token was deliberately absent, on the reasoning
- * that Dropbox issues one to confidential clients and this is a public PKCE client with no
- * secret. The second half was wrong: Dropbox does issue a refresh token to a PKCE client
- * when `token_access_type` is offline, which is the default for an app that is going to
- * keep using the credential — and the token *response* was already parsed and the field
- * thrown away. So the app was discarding the means of recovering from expiry, and paying
- * for it with a consent-screen round trip every few hours. Item 47 keeps it.
+ * **Revised twice.** This used to say a refresh token was deliberately absent, on the
+ * reasoning that Dropbox issues one to confidential clients and this is a public PKCE client
+ * with no secret. Wrong: Dropbox issues one to a PKCE client, and the token response was
+ * already being parsed with the field thrown away.
+ *
+ * Correcting that was still not enough. Dropbox requires `token_access_type=offline` on the
+ * *authorisation URL* before it will return a refresh token at all, and the URL did not send
+ * it — so the field being parsed was never present. Both halves had to be right, and only
+ * the first was found by reading the code; the second needed the provider's documentation.
+ * A test that asserts the parameter is on the URL is what keeps it there.
  *
  * `displayName` went for the same reason in the other direction: reading an account name
  * needs the `account_info.read` scope, and requesting a third permission purely to show a
@@ -206,6 +209,23 @@ export class DropboxProvider implements SyncProvider {
     url.searchParams.set('code_challenge_method', 'S256')
     url.searchParams.set('code_challenge', base64Url(await sha256(verifier)))
     url.searchParams.set('state', state)
+    /*
+     * `token_access_type=offline`, and it has to be here explicitly.
+     *
+     * Dropbox documents it as a requirement, not a default: without this parameter no
+     * `refresh_token` is returned in the token payload, whatever else is asked for. This
+     * URL did not send it, on the reasoning recorded below — that offline was the default
+     * for an app intending to keep the credential — which is wrong. Without it the whole of
+     * the refresh path was dead in production: no refresh token stored, `expires_in` absent
+     * so the 4h fallback applied, and the user was asked to reconnect every four hours
+     * exactly as before. The alternative to sending this is setting "Access token expiration"
+     * to Short-lived in the app console, which is a toggle that can be changed by anyone and
+     * is not visible from here.
+     *
+     * It is safe to send now that the scopes are granted: with it, Dropbox grants exactly
+     * what the Permissions tab lists.
+     */
+    url.searchParams.set('token_access_type', 'offline')
     // Deliberately no `scope` parameter. Dropbox documents that omitting it requests
     // exactly the scopes selected on the app's Permissions tab, which makes the
     // console the single source of truth for what the app may access.

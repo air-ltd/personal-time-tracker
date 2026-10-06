@@ -628,6 +628,40 @@ describe('PKCE authorisation (0012 AU1–AU2)', () => {
    * sending the user back through Dropbox's consent screen, so the most common sync failure
    * was a scheduled inconvenience.
    */
+  /**
+   * The authorisation URL must ask for offline access, explicitly.
+   *
+   * Dropbox documents this as a requirement rather than a default: without
+   * `token_access_type=offline` on the *authorisation URL*, no `refresh_token` comes back in
+   * the token payload. The URL did not send it, on a stated (and wrong) belief that offline
+   * was implied — so the refresh path was dead in production and no test noticed, because
+   * every test injected a refresh token directly and so proved nothing about where one comes
+   * from.
+   *
+   * The alternative is setting "Access token expiration" to Short-lived in the app console,
+   * which this cannot see and anyone can change.
+   */
+  it('asks for offline access, so a refresh token is returned at all', async () => {
+    fetchMock.mockResolvedValue(response({ status: 200, json: { access_token: 'tok-1' } }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    const { url } = await provider.beginAuth('state-offline')
+
+    expect(new URL(url).searchParams.get('token_access_type')).toBe('offline')
+  })
+
+  it('still sends no scope parameter, so the console stays the source of truth', async () => {
+    // The two are independent and easy to conflate. Omitting `scope` means the console
+    // decides what the app may access; sending `token_access_type` only asks for a
+    // long-lived refresh token so those permissions can be exercised later.
+    fetchMock.mockResolvedValue(response({ status: 200, json: { access_token: 'tok-1' } }))
+    const provider = makeProvider(store, fetchMock as unknown as typeof fetch)
+
+    const { url } = await provider.beginAuth('state-scope')
+
+    expect(new URL(url).searchParams.get('scope')).toBeNull()
+  })
+
   it('keeps a refresh token when one is issued', async () => {
     fetchMock.mockResolvedValue(
       response({

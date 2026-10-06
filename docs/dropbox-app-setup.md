@@ -85,17 +85,32 @@ of this kind and every symptom looks the same from inside the app.
 | --- | --- | --- |
 | Redirect URI `https://air-ltd.github.io/personal-time-tracker/` | registered | **not registered** |
 | Redirect URI `http://localhost:5173/personal-time-tracker/` | **not registered** | registered |
-| `files.content.read` / `files.content.write` ticked | **no** | **no** |
+| `files.content.read` / `files.content.write` ticked | yes | yes |
 | Authorisation with no `scope` parameter | reaches consent | reaches consent |
-| Authorisation requesting content scopes | `scope_not_granted` | `scope_not_granted` |
+| Authorisation requesting content scopes | reaches consent | reaches consent |
 
-So both apps need:
+**Re-verified 5 October 2026**, after the scopes were granted in the console. Both apps now
+return the consent screen for each content scope where previously both answered
+`scope_not_granted`. The testing app still answers `invalid_redirect_uri` for the
+*production* redirect URI — that is correct and expected, since it has only the localhost
+one registered; it reaches consent when asked with its own.
 
-1. Both content scopes ticked on the **Permissions** tab.
-2. **Both** redirect URIs registered, if you want to be able to authorise either
-   app from either place. Each currently has only the one that suits its purpose,
-   which is a sensible default but means a local test against the production app
-   will fail with `invalid_redirect_uri`, and vice versa.
+One thing in the console is worth checking while you are there, though the app
+now does not depend on it: **Settings → Access token expiration**. If it is set to
+*Long-lived*, Dropbox returns a legacy long-lived access token and **no refresh
+token**, and the app would ask you to reconnect every four hours exactly as it did
+before item 47. The app now sends `token_access_type=offline` on the authorisation
+URL, which is the documented requirement and does not depend on this setting — but
+the two are consistent with each other and *Short-lived* is what this app expects.
+
+So nothing further is needed here for the sync path to work. What is still outstanding is
+the *first* real sync against production and the two-device scenario in
+`docs/UAT.md` section 15 — neither has been run, and no test can substitute for either.
+
+For convenience, if you do want to authorise either app from either place, register
+**both** redirect URIs on both apps. Each currently has only the one that suits its
+purpose, which means a local test against the production app fails with
+`invalid_redirect_uri`, and vice versa.
 
 ### Why the app does not send a `scope` parameter
 
