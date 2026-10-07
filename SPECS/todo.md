@@ -436,17 +436,21 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
 ## Outstanding on `phase-2b` and `phase-3`
 
-1. [ ] **Push the branches.** `phase-2b` and `phase-5` are local only. `phase-4` is pushed.
-   Write access works over SSH, so this is no longer blocked on a token — it just needs
-   doing, and 30-odd commits of `phase-4` did sit on one machine until the release.
-2. [ ] **Sync has never run against real Dropbox.** The scopes are now granted — re-verified
+1. [x] **Push the branches.** `phase-4` was pushed; `phase-5` now is, as PR #5. Write access
+   worked over SSH all along — it was never blocked on a token, only undone — and 30-odd
+   commits of `phase-4` did sit on one machine until the release, so the cost of leaving it
+   was measured and paid.
+2. [ ] **`phase-2b` is still local only.** It reached `main` via `phase-4`, so nothing is
+   lost by leaving it, but it is the one branch in this list with no remote copy at all.
+3. [ ] **Partly verified against real Dropbox.** The scopes are granted — re-verified
    5 October 2026 against the live authorize endpoint, where both apps now reach consent for
    both content scopes and previously answered `scope_not_granted`. Recorded in
-   `docs/dropbox-app-setup.md`.
+   `docs/dropbox-app-setup.md`. **A first sync against production has been done and is
+   working as expected**, which retires the longest-standing entry in this list.
    *Still outstanding, and none of it is a code change:*
-   - [ ] a first sync against **production**, confirming the panel reports a time rather than
-         "waiting"
-   - [ ] `docs/UAT.md` section 15 — two devices, both offline, converge with nothing lost
+   - [ ] `docs/UAT.md` section 15 — two devices, both offline, converge with nothing lost.
+         Untested against the rewritten sync path (items 47 and the offline-token work), so
+         it is now the most valuable single check outstanding anywhere in this repository.
    - [ ] **Settings → Access token expiration** set to *Short-lived* on both apps. The app now
          sends `token_access_type=offline`, so it does not depend on this — but the two are
          consistent and this is what the app expects.
@@ -455,10 +459,14 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    working". That was wrong, and contradicted the setup doc beside it. Corrected here
    rather than left to be found during a release.
 
-   **This gates the 0.1.0 merge.** The app is fully usable without sync (0007 AU8), so
-   this is not a data-loss risk — but shipping a Connect button that leads to a failed
-   consent flow is worse than not having one, so the merge waits on: both scopes granted,
-   a first sync completed against production, and the two-device test in UAT section 15.
+   **This gated the 0.1.0 merge, and is now reduced to one item.** The app is fully usable
+   without sync (0007 AU8), so none of this is a data-loss risk — but shipping a Connect
+   button that leads to a failed consent flow is worse than not having one, so the merge
+   waited on three things: both scopes granted, a first sync completed against production,
+   and the two-device test in UAT section 15. The first two are done. The third is now the
+   only one left, and it is the reason this is worth doing before 0.2.0 rather than after:
+   the sync path has been rewritten since 0.1.0 (items 47 and the offline-token work) and
+   none of that has been exercised by two real devices.
 
 # What is next
 
