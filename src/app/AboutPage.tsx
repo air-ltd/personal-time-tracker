@@ -93,6 +93,51 @@ export function AboutPage() {
           </li>
         </ul>
 
+        {/*
+          The host, stated plainly (item 65).
+
+          Everything above is about the app. Somebody asking whether their data is private
+          also has to know who is serving them the page, and the honest answer is that it is
+          not this project: it is a static site on GitHub Pages. The app adds nothing — no
+          beacon, no third-party request — but the host processes ordinary web server logs
+          whatever the app does, and a privacy policy that stops at the app's own code is
+          answering half the question.
+
+          No log contents or retention periods are spelled out here because this project
+          cannot verify them and would only be guessing; GitHub's own privacy statement is
+          the authority, and it is linked rather than paraphrased.
+        */}
+        <h3>Who serves this page</h3>
+        <ul>
+          <li>
+            This is a <strong>static site served by GitHub Pages</strong> from a public{' '}
+            <a href={REPOSITORY_URL}>GitHub repository</a>. There is no application server: the
+            page you are reading is files, and nothing you type reaches one.
+          </li>
+          <li>
+            <strong>GitHub serves the traffic</strong>, so GitHub processes the ordinary web
+            server logs any web host does — the address the request came from, the browser and
+            version, the time, and the path asked for — and runs its own security monitoring.
+            None of that is the app&rsquo;s doing, and none of it can be turned off from inside
+            the page. What GitHub collects and why is set out in{' '}
+            <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">
+              GitHub&rsquo;s privacy statement
+            </a>
+            , which is the authority here rather than a summary of it.
+          </li>
+          <li>
+            <strong>The app itself still sends nothing.</strong> The list above is unchanged: no
+            analytics, no telemetry, no third-party requests. Serving the files is the only
+            thing GitHub does on this page&rsquo;s behalf, and it does it the same way for every
+            site it hosts.
+          </li>
+          <li>
+            <strong>The source is public.</strong> It is an open repository, so anyone can read
+            the code that claims all of the above — including this page. If you are checking
+            whether the claim is true, you do not have to take the word of whoever wrote it.
+          </li>
+        </ul>
+
         <h3>Where your data lives</h3>
         <ul>
           <li>

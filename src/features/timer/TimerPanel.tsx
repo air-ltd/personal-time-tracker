@@ -8,6 +8,7 @@ import { useEntries } from '../entries/useEntries'
 import type { TimerState } from '../timer/useTimer'
 import type { Client, Project } from '../../domain/taxonomy/types'
 import { AddToHeading } from '../../app/AddToHeading'
+import { PlayIcon, StopIcon, TrashIcon } from '../../app/Icons'
 
 /**
  * Timer panel: the one thing a user touches most often.
@@ -315,7 +316,23 @@ function ClientList({
    * changing under them is the opposite of staying in control. So the offer to classify is
    * made here instead, where they are, and it expires when the next timer starts.
    */
-  const [justStopped, setJustStopped] = useState<string | null>(null)
+  /*
+   * The entry just created by stopping, and whether it was uncategorised (item 64).
+   *
+   * Both, because the notice is only true for some of what this button produces. It said
+   * "Saved as uncategorised" unconditionally, so a timer started against a client's default
+   * project — which is every timer started from this card (item 12) — was told it had been
+   * filed under nothing, while the entry sat against that project and the entries list
+   * named it. A notice about the past must not misdescribe it: an entry that is
+   * categorised and one that is not want different things said about them.
+   *
+   * So the project is read from the running timer *before* it is cleared. The stop writes
+   * the entry; reading it back afterwards would be a second read for a fact the panel
+   * already had.
+   */
+  const [justStopped, setJustStopped] = useState<{ id: string; uncategorised: boolean } | null>(
+    null,
+  )
 
   async function handleStop(): Promise<void> {
     // Two clicks in one render pass both reach here, and two `stopTimer` calls race: the
@@ -341,7 +358,7 @@ function ClientList({
       setStopping(false)
     }
     try {
-      setJustStopped(running.id)
+      setJustStopped({ id: running.id, uncategorised: running.projectId === null })
       await onStopped(running.id)
     } catch (problem) {
       // The entry *was* written here; only the navigation failed. Say so rather than
@@ -434,6 +451,20 @@ function ClientList({
                       : formatDuration(totals.get(client.id) ?? 0)}
                   </span>
 
+                  {/*
+                  One control per row, not two (item 63).
+
+                  The Edit button is gone from this card: it put a second, quieter action on
+                  the card the user touches most often, and editing a client is something
+                  they go to Settings to do. Removing it is what lets the action slot hold a
+                  single right-aligned button.
+
+                  Every button here is an icon with an `aria-label`, never an icon alone. Play
+                  and pause are the marks for start and stop, and a cross for discard — the
+                  words are gone from the card but not from the accessible name, so each
+                  control is still reachable by name rather than by guessing which shape is
+                  which. That is the rule item 20 set for the entry pencil.
+                */}
                   <span className="timer-client-actions">
                     {active ? (
                       <>
@@ -443,16 +474,28 @@ function ClientList({
                           onClick={() => void handleStop()}
                           disabled={stopping}
                           aria-label={`Stop the timer for ${client.name}`}
+                          // A tooltip on every icon-only control, because the shape is a
+                          // convention rather than a word (item 63). `title` is what a pointer
+                          // user gets; the `aria-label` above is what a screen reader gets.
+                          // The two say the same thing on purpose.
+                          title={`Stop the timer for ${client.name}`}
                         >
-                          Stop
+                          <StopIcon />
                         </button>
+                        {/*
+                        Reserved space rather than shown only while running (item 63). The
+                        cross occupies a slot whether or not it is there, so starting and
+                        stopping does not resize the row — the defect item 35 was written for,
+                        which a discard that appears and vanishes would bring straight back.
+                      */}
                         <button
                           type="button"
-                          className="button"
+                          className="button timer-discard"
                           onClick={discard}
                           aria-label={`Discard the timer for ${client.name}`}
+                          title={`Discard the timer for ${client.name}`}
                         >
-                          Discard
+                          <TrashIcon />
                         </button>
                       </>
                     ) : (
@@ -482,18 +525,17 @@ function ClientList({
                             start(projectId ?? null)
                           }}
                           aria-label={`Start a timer for ${client.name}`}
+                          title={`Start a timer for ${client.name}`}
                         >
-                          Start
+                          <PlayIcon />
                         </button>
-                        <button
-                          type="button"
-                          className="button"
-                          onClick={() => onEdit(client.id)}
-                          aria-pressed={editingId === client.id}
-                          aria-label={`Edit client ${client.name}`}
-                        >
-                          Edit
-                        </button>
+                        {/*
+                        The discard slot, held open while idle. An `aria-hidden` span rather
+                        than a disabled button: a disabled control is still in the tab order
+                        and still announced as something available to press, and there is
+                        nothing to discard while nothing is running.
+                      */}
+                        <span className="timer-action-slot" aria-hidden="true" />
                       </>
                     )}
                   </span>
@@ -517,28 +559,100 @@ function ClientList({
                 */}
                 {selectedClientId === client.id && projectsForClient.length > 0 && (
                   <ul className="timer-project-list">
-                    {projectsForClient.map((project) => (
-                      <li key={project.id} className="timer-project-row">
-                        <span className="timer-project-name">{project.name}</span>
-                        <button
-                          type="button"
-                          className="button button-primary timer-project-start"
-                          /*
-                           * One timer at a time (0004 T2), so every project's Start is
-                           * disabled while one runs — rather than hidden, because a control
-                           * that vanishes cannot be learned.
-                           */
-                          disabled={running !== null}
-                          onClick={() => {
-                            setJustStopped(null)
-                            start(project.id)
-                          }}
-                          aria-label={`Start a timer for ${project.name}`}
+                    {projectsForClient.map((project) => {
+                      /*
+                       * This project's row behaves like a client row (items 61 and 63).
+                       *
+                       * It started as a plain Start button with nowhere to stop from: a timer
+                       * begun against a project could only be stopped by finding the client
+                       * row above it. The project is now a first-class place to run a timer,
+                       * so it carries the same running state — its own count-up, Stop, and
+                       * discard — rather than deferring to the client's line.
+                       *
+                       * `activeClientId` cannot answer this. It is the *client* that owns the
+                       * running project, so every project under that client would claim to be
+                       * running. The running timer's own project id is the answer.
+                       */
+                      const projectIsActive =
+                        running !== null && running.projectId === project.id
+                      return (
+                        <li
+                          key={project.id}
+                          className={`timer-project-row${
+                            projectIsActive ? ' timer-project-row-active' : ''
+                          }`}
+                          aria-current={projectIsActive ? 'true' : undefined}
                         >
-                          Start
-                        </button>
-                      </li>
-                    ))}
+                          <span className="timer-project-name">{project.name}</span>
+                          {/*
+                            The count-up while running, and nothing while idle — unlike a
+                            client row, which shows a lifetime total when it is not running.
+                            There is no per-project total to show here, and showing a zero
+                            would be the number for a client rather than for this project.
+                          */}
+                          <span
+                            className="timer-project-live"
+                            data-testid={`project-live-${project.id}`}
+                          >
+                            {projectIsActive && elapsedMs !== null
+                              ? formatDuration(elapsedMs, { seconds: true })
+                              : ''}
+                          </span>
+
+                          <span className="timer-project-actions">
+                            {projectIsActive ? (
+                              <>
+                                <button
+                                  type="button"
+                                  className="button button-primary"
+                                  onClick={() => void handleStop()}
+                                  disabled={stopping}
+                                  aria-label={`Stop the timer for ${project.name}`}
+                                  title={`Stop the timer for ${project.name}`}
+                                >
+                                  <StopIcon />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button timer-discard"
+                                  onClick={discard}
+                                  aria-label={`Discard the timer for ${project.name}`}
+                                  title={`Discard the timer for ${project.name}`}
+                                >
+                                  <TrashIcon />
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  className="button button-primary"
+                                  /*
+                                   * Disabled while any timer runs, rather than hidden: one
+                                   * timer at a time (0004 T2), and a control that vanishes
+                                   * cannot be learned.
+                                   */
+                                  disabled={running !== null}
+                                  onClick={() => {
+                                    setJustStopped(null)
+                                    start(project.id)
+                                  }}
+                                  aria-label={`Start a timer for ${project.name}`}
+                                  title={`Start a timer for ${project.name}`}
+                                >
+                                  <PlayIcon />
+                                </button>
+                                {/*
+                                  The discard slot, held open so starting and stopping does
+                                  not resize the row — the defect item 35 was written for.
+                                */}
+                                <span className="timer-action-slot" aria-hidden="true" />
+                              </>
+                            )}
+                          </span>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </li>
@@ -558,17 +672,30 @@ function ClientList({
             <span className="visually-hidden">Elapsed </span>
             {elapsedMs !== null ? formatDuration(elapsedMs, { seconds: true }) : ''}
           </span>
+          {/*
+            Icons here too (item 63), and named rather than bare. These two have no client to
+            put in a name, so they are named for what they do — "Stop the timer" and
+            "Discard the timer" — which is the same rule the client rows follow.
+          */}
           <span className="button-row">
             <button
               type="button"
               className="button button-primary"
               onClick={() => void handleStop()}
               disabled={stopping}
+              aria-label="Stop the timer"
+              title="Stop the timer"
             >
-              Stop
+              <StopIcon />
             </button>
-            <button type="button" className="button" onClick={discard}>
-              Discard
+            <button
+              type="button"
+              className="button timer-discard"
+              onClick={discard}
+              aria-label="Discard the timer"
+              title="Discard the timer"
+            >
+              <TrashIcon />
             </button>
           </span>
           {/* The reminder belongs with the controls whoever is watching them, whichever
@@ -590,8 +717,17 @@ function ClientList({
       */}
       {justStopped !== null && (
         <p className="hint" data-testid="just-stopped">
-          Saved as uncategorised.{' '}
-          <a href={`#/entries/${justStopped}`}>Add a project, tags or a note</a> if you want to.
+          {justStopped.uncategorised ? (
+            <>
+              Saved as uncategorised.{' '}
+              <a href={`#/entries/${justStopped.id}`}>Add a project, tags or a note</a> if you
+              want to.
+            </>
+          ) : (
+            // Categorised, so there is nothing to fix and the notice would be an
+            // instruction to do a job that is already done.
+            <>Saved.</>
+          )}
         </p>
       )}
 

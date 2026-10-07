@@ -42,6 +42,18 @@ function view(props: Partial<Parameters<typeof SyncIndicatorView>[0]> = {}) {
   return render(<SyncIndicatorView {...connected} status={null} {...props} />)
 }
 
+/**
+ * What the indicator currently says.
+ *
+ * Read from the accessible name rather than the visible text (item 65): the header shows an
+ * icon, and the state is carried by `aria-label` and the tooltip. Every assertion below was
+ * written against visible words, so they read the same words from where they now live — the
+ * invariant they protect is unchanged, only the field it is read from.
+ */
+function indicatorSays(): string {
+  return screen.getByTestId('sync-indicator').getAttribute('aria-label') ?? ''
+}
+
 describe('what the indicator says', () => {
   it('offers to connect when disconnected', () => {
     // The one branch its own comment says is worth testing: disconnected is the state in
@@ -54,7 +66,7 @@ describe('what the indicator says', () => {
   it('says nothing is configured when there is no app key', () => {
     view({ hasKey: false })
 
-    expect(screen.getByTestId('sync-indicator')).toHaveTextContent(/not set up/i)
+    expect(indicatorSays()).toMatch(/not set up/i)
   })
 
   it('is inert when there is no app key, rather than a link to settings', async () => {
@@ -77,6 +89,7 @@ describe('what the indicator says', () => {
     const indicator = screen.getByTestId('sync-indicator')
     expect(indicator).toBeDisabled()
     expect(indicator).not.toHaveAttribute('href')
+    expect(indicator).toHaveAttribute('title')
     await user.click(indicator)
     expect(window.location.hash).not.toBe('#/settings')
   })
@@ -90,6 +103,8 @@ describe('what the indicator says', () => {
     const indicator = screen.getByTestId('sync-indicator')
     expect(indicator).toBeEnabled()
     expect(indicator).not.toHaveAttribute('href')
+    // The tooltip carries the sentence, since the visible text is gone (item 65).
+    expect(indicator.getAttribute('title')).toMatch(/Synced/)
     await user.click(indicator)
     expect(syncNow).toHaveBeenCalled()
     expect(window.location.hash).not.toBe('#/settings')
@@ -106,14 +121,14 @@ describe('what the indicator says', () => {
     // Before the first answer arrives, "Synced" would be a claim the app has not earned.
     view({ connection: 'checking' })
 
-    expect(screen.getByTestId('sync-indicator')).toHaveTextContent(/checking/i)
+    expect(indicatorSays()).toMatch(/checking/i)
   })
 
   it('says Synced only after a cycle has succeeded', () => {
     view({ status: status('idle') })
 
     const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).toHaveTextContent(/synced/i)
+    expect(indicatorSays()).toMatch(/^Synced$/i)
     expect(indicator.className).toContain('sync-indicator-ok')
   })
 
@@ -121,16 +136,16 @@ describe('what the indicator says', () => {
     view({ status: status('error', { message: 'Push rejected.' }) })
 
     const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).toHaveTextContent(/failed/i)
+    expect(indicatorSays()).toMatch(/failed/i)
     expect(indicator.className).toContain('sync-indicator-error')
-    expect(indicator).not.toHaveTextContent(/synced/i)
+    expect(indicatorSays()).not.toMatch(/^Synced$/i)
   })
 
   it('does not claim success when work is waiting to go out', () => {
     view({ status: status('idle', { pending: true }) })
 
     const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).not.toHaveTextContent(/^synced/i)
+    expect(indicatorSays()).not.toMatch(/^Synced$/i)
     expect(indicator.className).toContain('sync-indicator-warn')
   })
 
@@ -140,7 +155,7 @@ describe('what the indicator says', () => {
     view({ status: status('error', { message: 'Push rejected.', pending: true }) })
 
     const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).toHaveTextContent(/failed/i)
+    expect(indicatorSays()).toMatch(/failed/i)
     expect(indicator.className).toContain('sync-indicator-error')
   })
 
@@ -150,15 +165,14 @@ describe('what the indicator says', () => {
     // one size down — a claim about the other device made before the app had asked it.
     view({ status: status('syncing') })
 
-    const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).toHaveTextContent(/syncing/i)
-    expect(indicator).not.toHaveTextContent(/synced/i)
+    expect(indicatorSays()).toMatch(/syncing/i)
+    expect(indicatorSays()).not.toMatch(/^Synced$/i)
   })
 
   it('never renders the success class for a state that has not succeeded', () => {
     // The bug, stated as an invariant rather than as one case. Any state that is not a
     // successful idle cycle must not produce `sync-indicator-ok`, because that class is
-    // what the dot's colour comes from, and it is the class a glance reads.
+    // what the icon's colour comes from, and it is the class a glance reads (item 65).
     for (const state of ['syncing', 'error'] as const) {
       const { unmount } = view({ status: status(state) })
       expect(screen.getByTestId('sync-indicator').className).not.toContain('sync-indicator-ok')
@@ -178,7 +192,7 @@ describe('what the indicator says', () => {
     for (const state of states) {
       for (const pending of [false, true]) {
         const { unmount } = view({ status: status(state, { pending }) })
-        const label = (screen.getByTestId('sync-indicator').textContent ?? '').trim()
+        const label = indicatorSays()
         const succeeded = state === 'idle' && !pending
         expect(label === 'Synced', `${state} pending=${pending} said "${label}"`).toBe(
           succeeded,

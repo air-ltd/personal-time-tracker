@@ -812,29 +812,74 @@ code {
   padding-top: 0.4rem;
 }
 
+/*
+ * The action slot, right-aligned, with fixed-size icon buttons (SPECS/todo.md items 63, 35).
+ *
+ * Every control here is a lone icon now, so the widths are pinned rather than measured: a
+ * play triangle and a pair of pause bars are drawn in the same box, and the discard slot is
+ * held open whether or not a timer is running. Starting and stopping therefore changes what
+ * is *in* the buttons and nothing about the row's geometry — which is what item 35 was for,
+ * back when the words were "Start"/"Stop" and "Edit"/"Discard" and the buttons resized under
+ * the pointer as they were pressed.
+ *
+ * `margin-left: auto` on the actions is what right-aligns them: the name takes the `1fr`
+ * column and everything after it is pushed to the end of the row.
+ */
 .timer-client-actions {
   display: flex;
   gap: 0.3rem;
+  margin-left: auto;
+}
+
+.timer-client-actions .button {
+  /* A square tap target. Sized to the icon plus the button's own padding rather than to a
+     word, because there is no word here to be wider than. */
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0.45rem 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /*
- * Each button's width is pinned to the widest word that ever occupies its slot, so
- * pressing Start moves nothing (SPECS/todo.md item 35).
+ * The gap the discard button occupies while nothing is running.
  *
- * The two states swap four words for four others: Start/Stop in the first slot and
- * Edit/Discard in the second. `Start` is wider than `Stop` and `Edit` is narrower than
- * `Discard`, so without this the first button shrank and the second grew under the
- * pointer — the control you are about to press changing shape as you press it.
- *
- * Sized in `rem` rather than `ch` because the buttons have horizontal padding that `ch`
- * would not account for, and the words differ in more than their character count.
+ * An `aria-hidden` span rather than a disabled button: a disabled control is still in the
+ * tab order and still announced as something available to press, and there is nothing to
+ * discard while nothing is running.
  */
-.timer-client-actions .button-primary {
-  min-width: 4.3rem;
+.timer-action-slot {
+  width: 2.35rem;
+  min-width: 2.35rem;
 }
 
-.timer-client-actions .button:not(.button-primary) {
-  min-width: 5rem;
+/* The discard cross, in the one colour that says "this throws the work away". */
+/*
+ * The discard cross, in the colour that says "this throws the work away".
+ *
+ * Extends `.button-danger`, which already carries that colour for text buttons, rather than
+ * restating the token: the hover wash is the part that had to be spelled out, because the
+ * base rule has no hover of its own.
+ */
+.timer-discard {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.timer-discard:hover {
+  background: var(--danger);
+  color: var(--surface);
+}
+
+/* The orphan row's controls, icon-sized for the same reason the client rows' are. */
+.timer-orphan .button-row .button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0.45rem 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /*
@@ -851,10 +896,18 @@ code {
   border-left: 1px dotted var(--border);
 }
 
+/*
+ * A project row inside the selected client, laid out like a client row (items 61, 63).
+ *
+ * Grid rather than the flex it started as, so the name, the count-up and the actions sit in
+ * the same columns as the client line above. That is what makes the two read as the same
+ * kind of control: a project row that started a timer now shows its own Stop and discard
+ * exactly where a client's would be, so nothing has to be learned twice.
+ */
 .timer-project-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
   align-items: center;
-  justify-content: space-between;
   gap: 0.4rem;
   padding: 0.1rem 0;
 }
@@ -868,10 +921,32 @@ code {
   font-size: 0.9rem;
 }
 
-/* Narrower than the client actions: these sit one per project, so they stack. */
-.timer-project-start {
-  min-width: 4.3rem;
-  flex: none;
+/* The count-up while this project's timer runs, matching the client row's treatment. */
+.timer-project-live {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.timer-project-row-active .timer-project-live {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Right-aligned, with the same fixed-size icon buttons the client rows use. */
+.timer-project-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.timer-project-actions .button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0.45rem 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Currency preferences (items 13–14): chosen first, then the rest. */
@@ -905,35 +980,48 @@ code {
   padding: 0.1rem 0;
 }
 
-/* The header sync indicator (item 10). */
+/*
+ * The header sync indicator (items 10, 65).
+ *
+ * Icon-only, so there is no gap to declare and no dot: the mark carries the state and the
+ * colour carries the tone, and both come from the one element.
+ *
+ * The horizontal padding is tighter than `.button`'s because there is no word inside it
+ * any more. The icon is drawn larger to make up the width the text used to take, which keeps
+ * the control the same size on screen as the word button it replaced — a smaller mark in the
+ * old padding would have left a header control that looks like a mistake.
+ */
 .sync-indicator {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
 
-.sync-indicator-dot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
-  flex: none;
-  box-shadow: 0 0 0 1px var(--fg);
+.sync-indicator-icon {
+  padding: 0.45rem 0.5rem;
 }
 
-.sync-indicator-ok .sync-indicator-dot {
-  background: var(--sync-ok);
+/*
+ * The tone, on the icon. `currentColor` is what the shared `Svg` wrapper strokes with, so
+ * this is the whole rule — the mark is coloured without the icon knowing anything about it.
+ *
+ * The three values already clear 3:1 against both themes (see the tokens' own comment), so
+ * this carries no new contrast risk; `colour.test.ts` still guards them.
+ */
+.sync-indicator-ok {
+  color: var(--sync-ok);
 }
 
-.sync-indicator-warn .sync-indicator-dot {
-  background: var(--sync-warn);
+.sync-indicator-warn {
+  color: var(--sync-warn);
 }
 
-.sync-indicator-error .sync-indicator-dot {
-  background: var(--sync-error);
+.sync-indicator-error {
+  color: var(--sync-error);
 }
 
-.sync-indicator-idle .sync-indicator-dot {
-  background: var(--fg-muted);
+.sync-indicator-idle {
+  color: var(--fg-muted);
 }
 
 /*

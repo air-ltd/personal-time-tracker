@@ -77,6 +77,72 @@ export function CloudIcon({ size = 16, weight }: IconProps) {
 }
 
 /**
+ * The header's Dropbox mark, carrying the sync state inside it (item 65).
+ *
+ * One cloud with the state drawn within it, rather than a bare cloud per state or a cloud
+ * beside a separate badge: the header then says what the icon *is* at a glance — this is
+ * sync — and the mark inside says how it is going. A tick, a bang and a clock all fit in
+ * the cloud's belly; anything larger would not survive 16px.
+ *
+ * The cloud is redrawn here rather than reused from `CloudIcon`, whose arrow breaks through
+ * the top edge and leaves no room inside for a state. `state` picks the mark; anything else
+ * falls back to the check, so a new state cannot render as a blank cloud by accident.
+ */
+export function CloudStateIcon({
+  size = 16,
+  weight = 2,
+  state,
+}: IconProps & {
+  /** `synced`, `failed`, `pending`, `syncing`, `offline` or `setup`. */
+  state: 'synced' | 'failed' | 'pending' | 'syncing' | 'offline' | 'setup'
+}) {
+  return (
+    <Svg size={size} weight={weight}>
+      {/*
+        The cloud, closed at the bottom and open enough at the top to read as a cloud at
+        16px. Kept low so the mark inside has room without the two touching.
+      */}
+      <path d="M6.6 18.5a4.2 4.2 0 0 1-.4-8.37 5.7 5.7 0 0 1 11 .1 3.7 3.7 0 0 1-.2 8.27Z" />
+      {state === 'synced' && (
+        // A tick, the one mark that means "this finished and it worked".
+        <path d="m9.4 13.6 2 2 3.4-3.9" />
+      )}
+      {state === 'failed' && (
+        // A bang. Its stem stops short of the dot, so the two do not merge into a blob.
+        <>
+          <path d="M12 10.4v3.1" />
+          <path d="M12 15.6h.01" strokeWidth={weight + 0.6} />
+        </>
+      )}
+      {state === 'pending' && (
+        // A clock: work is waiting to go out.
+        <>
+          <path d="M12 10v2.3l1.6 1" />
+          <circle cx="12" cy="12.6" r="3.5" />
+        </>
+      )}
+      {state === 'syncing' && (
+        // Two arrows chasing each other, so the state reads as movement rather than a wait.
+        <>
+          <path d="M9.3 11.6a2.8 2.8 0 0 1 4.9-.5" />
+          <path d="M14.2 9.4v2.2h-2.2" />
+          <path d="M14.7 13.6a2.8 2.8 0 0 1-4.9.5" />
+          <path d="M9.8 15.8v-2.2H12" />
+        </>
+      )}
+      {state === 'offline' && (
+        // A slash: the connection is not there.
+        <path d="m9.6 10.4 4.8 4.8M14.4 10.4l-4.8 4.8" />
+      )}
+      {state === 'setup' && (
+        // A plus: there is no app key yet, and this is the "add one" affordance's twin.
+        <path d="M12 10.7v3.8M10.1 12.6h3.8" />
+      )}
+    </Svg>
+  )
+}
+
+/**
  * A pencil on its side — the per-entry edit control (item 20).
  *
  * Drawn with the tip as a filled triangle rather than an outlined one: at 16px an outlined
@@ -184,6 +250,65 @@ export function ChevronIcon({ size = 16, weight }: IconProps) {
   return (
     <Svg size={size} weight={weight}>
       <path d="m7 10 5 5 5-5" />
+    </Svg>
+  )
+}
+
+/**
+ * A play triangle, for starting a timer (item 63).
+ *
+ * Filled, and drawn as its own filled shape rather than a stroked triangle: the shared `Svg`
+ * wrapper is `fill="none"` and strokes, which turns a play mark into an outline that reads
+ * as hollow next to a solid pause bar. A filled triangle is the one mark that cannot be
+ * mistaken for anything else, so it overrides the wrapper's `fill`.
+ */
+export function PlayIcon({ size = 16, weight = 2 }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      <path d="M8 5.5v13l11-6.5z" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/**
+ * A filled square, for stopping (item 63).
+ *
+ * A square rather than two bars. A pause mark says *hold this here*, which is not what
+ * Stop does to a timer: stopping writes the entry and ends it. The square beside a play
+ * triangle is the stop/record convention people already read without thinking, and it sits
+ * against the triangle without the bars' ambiguity about whether anything is still running.
+ *
+ * Filled, overriding the wrapper's `fill="none"`, for the same reason the triangle is.
+ */
+export function StopIcon({ size = 16, weight = 2 }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      <rect x="6.5" y="6.5" width="11" height="11" rx="1" fill="currentColor" stroke="none" />
+    </Svg>
+  )
+}
+
+/**
+ * A wastebasket, for discarding a timer (item 63).
+ *
+ * Drawn rather than borrowed, for the reason item 17 records for the cloud: a specific
+ * third-party icon set would carry its own licence and attribution terms, and a guess at
+ * what a bin should look like is worse than something plainly ours.
+ *
+ * Two strokes for the rim and three for the body, so it holds together at 16px — a bin drawn
+ * with more detail than that reads as a smudge at this size. Inherits `currentColor`, so
+ * the red comes from the button it sits in rather than being baked into the mark.
+ */
+export function TrashIcon({ size = 16, weight = 1.9 }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      {/* The lid, and its handle. */}
+      <path d="M4.5 6.5h15" />
+      <path d="M9.5 6.5V5a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 14.5 5v1.5" />
+      {/* The body, tapering to the base. */}
+      <path d="M6.5 6.5 7.4 19a1.5 1.5 0 0 0 1.5 1.4h6.2a1.5 1.5 0 0 0 1.5-1.4l.9-12.5" />
+      {/* Two ribs, which is what makes it read as a bin rather than a bucket. */}
+      <path d="M10.5 10v7M13.5 10v7" />
     </Svg>
   )
 }

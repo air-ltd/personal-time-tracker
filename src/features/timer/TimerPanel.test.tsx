@@ -12,6 +12,7 @@ import {
 } from '../../storage/taxonomyRepo'
 import { createManualEntry, makeEntry, softDeleteEntry } from '../../storage/entriesRepo'
 import type { TimerState } from './useTimer'
+import type { Client, Project } from '../../domain/taxonomy/types'
 
 /**
  * The timer panel's client list (items 12 and 16 of `SPECS/todo.md`).
@@ -134,24 +135,29 @@ describe('starting a timer per client (item 12)', () => {
     expect(await screen.findByText('New Co', { selector: '.timer-client-name' })).toBeVisible()
   })
 
-  it('edits a client from the timer panel', async () => {
-    const { client } = await createClientWithDefaultProject({
-      name: 'Acme Ltd',
-      currency: 'GBP',
-      now: NOW,
-    })
+  it('offers no Edit button on a client row (item 63)', async () => {
+    // Editing a client moved to Settings. The card the user touches most often was carrying
+    // a second, quieter action on every row, and removing it is what lets the action slot
+    // hold one right-aligned control.
+    await createClientWithDefaultProject({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
     renderPanel()
 
-    await user.click(await screen.findByRole('button', { name: 'Edit client Acme Ltd' }))
+    await screen.findByText('Acme Ltd', { selector: '.timer-client-name' })
+    expect(screen.queryByRole('button', { name: /Edit client/ })).toBeNull()
+  })
+
+  it('still creates a client from the timer panel', async () => {
+    // The heading's add button is untouched by item 63 — only the per-row Edit went.
+    renderPanel()
+
+    await user.click(screen.getByTestId('timer-new-client'))
     const field = screen.getByLabelText('Client name')
-    await user.clear(field)
-    await user.type(field, 'Renamed Ltd')
+    await user.type(field, 'Fresh Co')
     await user.click(screen.getByTestId('client-form-submit'))
 
     expect(
-      await screen.findByText('Renamed Ltd', { selector: '.timer-client-name' }),
+      await screen.findByText('Fresh Co', { selector: '.timer-client-name' }),
     ).toBeVisible()
-    expect(client.name).toBe('Acme Ltd')
   })
 
   it('reports a rejected client rather than closing the form', async () => {
@@ -483,10 +489,16 @@ describe('layout (item 16)', () => {
     renderPanel()
 
     const row = await clientRow('Acme Ltd')
-    expect(
-      within(row).getByRole('button', { name: 'Start a timer for Acme Ltd' }),
-    ).toBeVisible()
-    expect(within(row).getByRole('button', { name: 'Edit client Acme Ltd' })).toBeVisible()
+    const start = within(row).getByRole('button', { name: 'Start a timer for Acme Ltd' })
+    expect(start).toBeVisible()
+    // Exactly one control in the action slot (item 63): the Start button, plus the reserved
+    // discard space. The client's *name* is also a button — it is the entries filter (item
+    // 25) — so the count is of the action slot rather than of the row.
+    const actions = row.querySelector('.timer-client-actions')
+    expect(within(actions as HTMLElement).getAllByRole('button')).toHaveLength(1)
+    // Right-aligned by the slot's `margin-left: auto`, which is asserted in the browser
+    // because jsdom has no layout.
+    expect(row.querySelector('.timer-action-slot')).not.toBeNull()
     expect(row.querySelector('.timer-client-live')).not.toBeNull()
   })
 })
@@ -716,27 +728,33 @@ describe('projects under the selected client (item 61)', () => {
     expect(timer.started).toEqual([defaultProject.id])
   })
 
-  it('disables every project’s Start while a timer is running', async () => {
-    // One timer at a time (0004 T2), and a control that vanishes cannot be learned.
-    const { client } = await createClientWithDefaultProject({
+  it('disables every other project’s Start while a timer is running', async () => {
+    // One timer at a time (0004 T2), and a control that vanishes cannot be learned. Since
+    // a project row's own controls the *running* project shows Stop rather than a disabled
+    // Start, so this checks
+    // a sibling — which is where a second Start button would otherwise sit.
+    const { client, defaultProject } = await createClientWithDefaultProject({
       name: 'Acme Ltd',
       currency: 'GBP',
       now: NOW,
     })
     const website = await createProject({ name: 'Website', clientId: client.id, now: NOW })
+    await createProject({ name: 'Intranet', clientId: client.id, now: NOW })
+    expect(defaultProject.name).toBe('General')
 
     const running = timerHarness()
     running.running = makeEntry({
       projectId: website.id,
-      source: 'manual',
+      source: 'timer',
       start: NOW,
-      end: new Date(NOW.getTime() + 60_000),
+      end: null,
       now: NOW,
     })
     renderPanel(running, NOW, client.id)
 
     await clientItem('Acme Ltd')
-    expect(screen.getByRole('button', { name: 'Start a timer for Website' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start a timer for Intranet' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Start a timer for General' })).toBeDisabled()
   })
 
   it('does not offer an archived project', async () => {
@@ -765,5 +783,326 @@ describe('projects under the selected client (item 61)', () => {
 
     const item = await clientItem('Acme Ltd')
     expect(item.querySelector('.timer-project-list')).toBeNull()
+  })
+})
+
+describe('what the stop notice says (item 64)', () => {
+  it('does not claim a categorised entry was saved uncategorised', async () => {
+    /*
+     * The bug: stopping said "Saved as uncategorised" unconditionally. Every timer started
+     * from this card goes against the client's default project (item 12), so the notice was
+     * wrong for essentially all of them — it told the user to classify an entry that the
+     * entries list was already naming a client and project for.
+     */
+    const { client, defaultProject } = await createClientWithDefaultProject({
+      name: 'Acme Ltd',
+      currency: 'GBP',
+      now: NOW,
+    })
+
+    const timer = timerHarness()
+    timer.running = makeEntry({
+      projectId: defaultProject.id,
+      source: 'timer',
+      start: NOW,
+      end: null,
+      now: NOW,
+    })
+    renderPanel(timer)
+
+    // Waited on, because the taxonomy loads asynchronously and the Stop button only appears
+    // once the running timer has been resolved to the client that owns its project.
+    const stop = await screen.findByRole('button', { name: /Stop the timer for Acme Ltd/ })
+    await user.click(stop)
+
+    const notice = await screen.findByTestId('just-stopped')
+    expect(notice).not.toHaveTextContent(/uncategorised/i)
+    // And it does not ask for work that is already done: no link to a form that has
+    // nothing left to fill in.
+    expect(within(notice).queryByRole('link')).toBeNull()
+    expect(notice).toHaveTextContent(/^Saved\./)
+    expect(client.id).toBeTruthy()
+  })
+
+  it('still says uncategorised when the timer really had no project', async () => {
+    // The other half: uncategorised is a legitimate state (0005 U1) and the offer to
+    // classify it is exactly right for one.
+    const timer = timerHarness()
+    timer.running = makeEntry({
+      projectId: null,
+      source: 'timer',
+      start: NOW,
+      end: null,
+      now: NOW,
+    })
+    renderPanel(timer)
+
+    // No client owns this timer, so the Stop button is on the orphan row.
+    await user.click(await screen.findByRole('button', { name: 'Stop the timer' }))
+
+    const notice = await screen.findByTestId('just-stopped')
+    expect(notice).toHaveTextContent(/uncategorised/i)
+    expect(within(notice).getByRole('link').getAttribute('href')).toMatch(/^#\/entries\//)
+  })
+})
+
+describe('the timer row controls (item 63)', () => {
+  async function row(name: string): Promise<HTMLElement> {
+    const button = await screen.findByRole('button', { name: `Start a timer for ${name}` })
+    const found = button.closest('li')
+    if (!found) throw new Error(`no row for "${name}"`)
+    return found
+  }
+
+  /** Renders the panel with a timer already running against `projectName`. */
+  async function renderRunning(clientName: string, projectName: string): Promise<() => void> {
+    const client = await createClient({ name: clientName, currency: 'GBP', now: NOW })
+    const project = await createProject({ name: projectName, clientId: client.id, now: NOW })
+    const timer = timerHarness()
+    timer.running = makeEntry({
+      projectId: project.id,
+      source: 'timer',
+      start: NOW,
+      end: null,
+      now: NOW,
+    })
+    // `renderPanel` returns the harness, not the view, so the view is kept for the unmount.
+    const view = render(<TimerPanel timer={timer} onStopped={() => {}} now={NOW} />)
+    await screen.findByRole('button', { name: `Stop the timer for ${clientName}` })
+    return () => view.unmount()
+  }
+
+  it('shows a play mark for starting and a square for stopping', async () => {
+    // A square rather than two bars: pause says "hold this here", and stopping a timer ends
+    // it — the entry is written and the clock does not continue.
+    await createClientWithDefaultProject({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+    const view = render(<TimerPanel timer={timerHarness()} onStopped={() => {}} now={NOW} />)
+    const start = await screen.findByRole('button', { name: 'Start a timer for Acme Ltd' })
+    expect(start.querySelector('svg')).not.toBeNull()
+    view.unmount()
+
+    const done = await renderRunning('Other Co', 'Work')
+    expect(
+      screen.getByRole('button', { name: 'Stop the timer for Other Co' }).querySelector('svg'),
+    ).not.toBeNull()
+    done()
+  })
+
+  it('gives every icon button a tooltip as well as an accessible name', async () => {
+    /*
+     * The shape is a convention rather than a word, so a pointer user has nothing to hover
+     * for unless the control says what it is. `title` is the tooltip; `aria-label` is what
+     * a screen reader announces, and the two say the same thing on purpose.
+     */
+    await createClientWithDefaultProject({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+    const idle = render(<TimerPanel timer={timerHarness()} onStopped={() => {}} now={NOW} />)
+    const start = await screen.findByRole('button', { name: 'Start a timer for Acme Ltd' })
+    expect(start).toHaveAttribute('title', 'Start a timer for Acme Ltd')
+    idle.unmount()
+
+    const cleanup = await renderRunning('Other Co', 'Work')
+    for (const name of ['Stop the timer for Other Co', 'Discard the timer for Other Co']) {
+      expect(screen.getByRole('button', { name })).toHaveAttribute('title', name)
+    }
+    cleanup()
+  })
+
+  it('uses a wastebasket rather than a cross for discard', async () => {
+    // A cross reads as "close this". Discard throws recorded work away, and the bin says so.
+    const cleanup = await renderRunning('Acme Ltd', 'Work')
+
+    const discard = screen.getByRole('button', { name: 'Discard the timer for Acme Ltd' })
+    expect(discard.className).toContain('timer-discard')
+    expect(discard.querySelector('svg')).not.toBeNull()
+    cleanup()
+  })
+
+  it('holds the discard slot open while idle, so starting does not resize the row', async () => {
+    // A discard that appears and vanishes brings back the defect item 35 was written for.
+    await createClientWithDefaultProject({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+    const idle = render(<TimerPanel timer={timerHarness()} onStopped={() => {}} now={NOW} />)
+
+    const slot = (await row('Acme Ltd')).querySelector('.timer-action-slot')
+    expect(slot).not.toBeNull()
+    // Hidden from assistive tech: there is nothing to discard while nothing is running, and
+    // a disabled control would still be announced as something to press.
+    expect(slot?.getAttribute('aria-hidden')).toBe('true')
+    idle.unmount()
+
+    const cleanup = await renderRunning('Other Co', 'Work')
+    /*
+     * Scoped to the running client's own row. "Acme Ltd" is still on the page and still
+     * idle, so it still holds a slot — which is the point: the row that is running swaps its
+     * placeholder for a real button, and the rows that are not are left alone.
+     */
+    const runningRow = (
+      await screen.findByRole('button', { name: 'Stop the timer for Other Co' })
+    ).closest('li')
+    expect(runningRow?.querySelector('.timer-action-slot')).toBeNull()
+    expect(
+      within(runningRow as HTMLElement).getByRole('button', {
+        name: 'Discard the timer for Other Co',
+      }),
+    ).toBeInTheDocument()
+    cleanup()
+  })
+})
+
+describe('a project row runs its own timer (items 61 and 63)', () => {
+  /**
+   * A client with three projects, one of them already running.
+   *
+   * The running timer is a prop, so the harness is given a stop spy rather than a real stop:
+   * a harness whose `stop` is a no-op leaves `running` set, and the row would keep showing
+   * Stop forever, which says nothing about whether pressing it reached the right button.
+   */
+  async function withRunningProject(runningName: string): Promise<{
+    client: Client
+    project: Project
+    stopped: () => number
+    discarded: () => number
+    cleanup: () => void
+  }> {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+    const project = await createProject({ name: runningName, clientId: client.id, now: NOW })
+    await createProject({ name: 'Other Work', clientId: client.id, now: NOW })
+    const timer = timerHarness()
+    timer.running = makeEntry({
+      projectId: project.id,
+      source: 'timer',
+      start: NOW,
+      end: null,
+      now: NOW,
+    })
+    // An elapsed value, so the count-up has something to print; the harness has no clock.
+    Object.defineProperty(timer, 'elapsedMs', { value: 90_000, configurable: true })
+    let stops = 0
+    let discards = 0
+    // Not `async`: nothing is awaited, and a promise-returning stub here would make the
+    // stop path look exercised when it has not been.
+    timer.stop = () => {
+      stops += 1
+      return Promise.resolve()
+    }
+    timer.discard = () => {
+      discards += 1
+    }
+    const view = render(
+      <TimerPanel
+        timer={timer}
+        onStopped={() => {}}
+        now={NOW}
+        selectedClientId={client.id}
+        onSelectClient={() => {}}
+      />,
+    )
+    await screen.findByRole('button', { name: `Stop the timer for ${runningName}` })
+    return {
+      client,
+      project,
+      stopped: () => stops,
+      discarded: () => discards,
+      cleanup: () => view.unmount(),
+    }
+  }
+
+  it('gives the running project its own Stop and discard', async () => {
+    /*
+     * The bug this fixes: a timer started against a project could only be stopped from the
+     * client row above it, so the project you were working on had no control of its own and
+     * the timer looked like it belonged to the client rather than to the project.
+     */
+    const { cleanup } = await withRunningProject('Website')
+
+    // Stop and discard live on the project's row, not only on the client's.
+    const projectRow = screen
+      .getByRole('button', { name: 'Stop the timer for Website' })
+      .closest('li')
+    expect(projectRow?.className).toContain('timer-project-row-active')
+    expect(
+      within(projectRow as HTMLElement).getByRole('button', {
+        name: 'Discard the timer for Website',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      within(projectRow as HTMLElement).queryByRole('button', { name: /Start a timer/ }),
+    ).toBeNull()
+    cleanup()
+  })
+
+  it('shows the count-up on the project’s own row', async () => {
+    // A project row is not a client row: it has no lifetime total, so while idle it shows
+    // nothing rather than a zero that would be the client's figure.
+    const { project, cleanup } = await withRunningProject('Website')
+
+    const live = screen.getByTestId(`project-live-${project.id}`)
+    expect(live).toHaveTextContent(/\d/)
+    cleanup()
+  })
+
+  it('shows nothing on an idle project row, rather than a zero', async () => {
+    const client = await createClient({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
+    const idle = await createProject({ name: 'Later', clientId: client.id, now: NOW })
+    render(
+      <TimerPanel
+        timer={timerHarness()}
+        onStopped={() => {}}
+        now={NOW}
+        selectedClientId={client.id}
+        onSelectClient={() => {}}
+      />,
+    )
+
+    expect(await screen.findByTestId(`project-live-${idle.id}`)).toHaveTextContent('')
+  })
+
+  it('marks only the running project, not every project under that client', async () => {
+    // `activeClientId` is the client that owns the running project, so using it here would
+    // light up the whole client's project list.
+    const { cleanup } = await withRunningProject('Website')
+
+    const active = document.querySelectorAll('.timer-project-row-active')
+    expect(active).toHaveLength(1)
+    expect(within(active[0] as HTMLElement).getByText('Website')).toBeInTheDocument()
+    cleanup()
+  })
+
+  it('stops the timer from the project row', async () => {
+    const { stopped, cleanup } = await withRunningProject('Website')
+
+    await user.click(screen.getByRole('button', { name: 'Stop the timer for Website' }))
+
+    // The press reached stop, and the notice appears — the same round trip the client row
+    // makes, which is the point of a project row having its own controls.
+    await waitFor(() => expect(stopped()).toBe(1))
+    await screen.findByTestId('just-stopped')
+    cleanup()
+  })
+
+  it('discards the timer from the project row', async () => {
+    const { discarded, cleanup } = await withRunningProject('Website')
+
+    await user.click(screen.getByRole('button', { name: 'Discard the timer for Website' }))
+
+    await waitFor(() => expect(discarded()).toBe(1))
+    // Discarding writes nothing, so there is no notice — and none should appear.
+    expect(screen.queryByTestId('just-stopped')).toBeNull()
+    cleanup()
+  })
+
+  it('puts the icons and tooltips on the project row too', async () => {
+    const { cleanup } = await withRunningProject('Website')
+
+    for (const name of [
+      'Stop the timer for Website',
+      'Discard the timer for Website',
+      'Start a timer for Other Work',
+    ]) {
+      const button = screen.getByRole('button', { name })
+      expect(button.querySelector('svg')).not.toBeNull()
+      // The tooltip says the same thing as the accessible name, for the same reason.
+      expect(button).toHaveAttribute('title', name)
+    }
+    cleanup()
   })
 })

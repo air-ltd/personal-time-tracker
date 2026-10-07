@@ -104,7 +104,7 @@ describe('the sync indicator (item 10)', () => {
     const indicator = screen.getByTestId('sync-indicator')
     // "Checking sync…" is the honest first paint: it has asked Dropbox nothing yet, and
     // claiming connected or disconnected before the answer would be a guess.
-    expect(indicator).toHaveTextContent(/checking sync/i)
+    expect(indicator.getAttribute('aria-label')).toMatch(/checking sync/i)
 
     /*
      * Inert, and clicking it goes nowhere (item 62). It used to be a link to settings, so
@@ -156,7 +156,11 @@ describe('the indicator by state (item 10)', () => {
     it(`says "${state.label}" when ${state.connection}`, () => {
       render(indicatorWith({ connection: state.connection }))
       const indicator = screen.getByTestId('sync-indicator')
-      expect(indicator).toHaveTextContent(new RegExp(state.label, 'i'))
+      // The words are the accessible name now (item 65); the mark is the visible part.
+      expect(indicator.getAttribute('aria-label')).toMatch(
+        new RegExp(state.label.replace('…', ''), 'i'),
+      )
+      expect(indicator.querySelector('svg')).not.toBeNull()
       expect(indicator.className).toContain(`sync-indicator-${state.tone}`)
     })
   }
@@ -173,7 +177,10 @@ describe('the indicator by state (item 10)', () => {
 
   it('says so when no Dropbox key is configured at all', () => {
     render(indicatorWith({ hasKey: false }))
-    expect(screen.getByTestId('sync-indicator')).toHaveTextContent(/sync not set up/i)
+    expect(screen.getByTestId('sync-indicator')).toHaveAttribute(
+      'aria-label',
+      expect.stringMatching(/sync not set up/i),
+    )
   })
 
   it('flags a failed sync rather than reporting success', () => {
@@ -192,8 +199,10 @@ describe('the indicator by state (item 10)', () => {
       }),
     )
     const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).toHaveTextContent(/sync failed/i)
+    expect(indicator.getAttribute('aria-label')).toMatch(/sync failed/i)
     expect(indicator.className).toContain('sync-indicator-error')
+    // The sentence moves to the tooltip, since the visible word is gone (item 65).
+    expect(indicator.getAttribute('title')).toMatch(/nope/)
   })
 
   it('syncs rather than navigating, while connected', async () => {

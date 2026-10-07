@@ -1,4 +1,5 @@
 import { useSync, type SyncState } from './syncContext'
+import { CloudStateIcon } from '../../app/Icons'
 
 /**
  * Sync state in the header (item 10 of `SPECS/todo.md`).
@@ -18,6 +19,13 @@ import { useSync, type SyncState } from './syncContext'
  * look. What the header control does instead is the thing its own state calls for:
  * connect when disconnected, sync when connected, and nothing at all when there is
  * nothing it can do.
+ *
+ * The words are gone from the card itself (item 65): the mark is now the state, one cloud
+ * carrying a tick, a bang, a clock or arrows. What 0012 C8 asks for — that the status be
+ * visible — is met by the mark, its colour, the tooltip and the accessible name rather
+ * than by a word that made the header the widest thing on every screen. The full sentence
+ * ("Last synced 14:02:11, press to sync now") is in the tooltip, and the Sync panel on
+ * settings spells the state out in text for anyone who wants to read it.
  *
  * Connecting leaves the page for Dropbox's consent screen. That is why it is a button
  * with the outcome in its label rather than a status light that navigates on click — the
@@ -53,13 +61,13 @@ export function SyncIndicatorView({
     return (
       <button
         type="button"
-        className="button sync-indicator sync-indicator-idle"
+        className="button sync-indicator sync-indicator-icon sync-indicator-idle"
         data-testid="sync-indicator"
         disabled
+        aria-label="Sync not set up"
         title="Dropbox is not configured. Add an app key under Settings."
       >
-        <span className="sync-indicator-dot" aria-hidden="true" />
-        Sync not set up
+        <CloudStateIcon state="setup" size={20} />
       </button>
     )
   }
@@ -68,14 +76,14 @@ export function SyncIndicatorView({
     return (
       <button
         type="button"
-        className="button sync-indicator sync-indicator-warn"
+        className="button sync-indicator sync-indicator-icon sync-indicator-warn"
         data-testid="sync-indicator"
         onClick={connect}
         disabled={busy}
+        aria-label="Connect Dropbox"
         title="Entries are saved in this browser only. Connect Dropbox to use them on another device."
       >
-        <span className="sync-indicator-dot" aria-hidden="true" />
-        Connect Dropbox
+        <CloudStateIcon state="offline" size={20} />
       </button>
     )
   }
@@ -85,13 +93,13 @@ export function SyncIndicatorView({
     return (
       <button
         type="button"
-        className="button sync-indicator sync-indicator-idle"
+        className="button sync-indicator sync-indicator-icon sync-indicator-idle"
         data-testid="sync-indicator"
         disabled
+        aria-label="Checking sync"
         title="Asking Dropbox whether this device is connected."
       >
-        <span className="sync-indicator-dot" aria-hidden="true" />
-        Checking sync…
+        <CloudStateIcon state="syncing" size={20} />
       </button>
     )
   }
@@ -113,13 +121,34 @@ export function SyncIndicatorView({
   const running = !failed && status?.state === 'syncing'
   const pending = !failed && !running && status?.pending === true
   const tone = failed ? 'error' : running ? 'idle' : pending ? 'warn' : 'ok'
+  /*
+   * Two strings, not one (item 65).
+   *
+   * `label` is the bare state, which is what a screen reader is told and what the tests read
+   * — "Synced" or "Sync failed" and nothing else, because a status readout is not a place
+   * for a timestamp or an instruction. `detail` is the sentence for the tooltip, where
+   * there is room for when it last ran and what pressing will do.
+   *
+   * They were one string before, which meant every hover tooltip read "Last synced
+   * 14:02:11." and no tooltip said the state at all — the state being the thing the icon is
+   * now for.
+   */
   const label = failed
     ? 'Sync failed'
     : running
-      ? 'Syncing…'
+      ? 'Syncing'
       : pending
         ? 'Not synced yet'
         : 'Synced'
+  const detail = failed
+    ? (status?.message ?? 'The last sync failed. Press to try again.')
+    : running
+      ? 'Checking with Dropbox.'
+      : pending
+        ? 'Changes are waiting to sync. Press to send them now.'
+        : status?.lastSyncAt
+          ? `Synced. Last synced ${new Date(status.lastSyncAt).toLocaleString()}.`
+          : 'Connected. Waiting for the first sync.'
 
   /*
    * A button that syncs now, rather than a link to the settings page.
@@ -131,24 +160,16 @@ export function SyncIndicatorView({
   return (
     <button
       type="button"
-      className={`button sync-indicator sync-indicator-${tone}`}
+      className={`button sync-indicator sync-indicator-icon sync-indicator-${tone}`}
       data-testid="sync-indicator"
       onClick={syncNow}
       disabled={busy}
-      title={
-        failed
-          ? (status?.message ?? 'The last sync failed. Press to try again.')
-          : running
-            ? 'Checking with Dropbox.'
-            : pending
-              ? 'Changes are waiting to sync. Press to send them now.'
-              : status?.lastSyncAt
-                ? `Last synced ${new Date(status.lastSyncAt).toLocaleString()}. Press to sync now.`
-                : 'Connected. Waiting for the first sync.'
-      }
+      aria-label={label}
+      title={detail}
     >
-      <span className="sync-indicator-dot" aria-hidden="true" />
-      {label}
+      <CloudStateIcon
+        state={failed ? 'failed' : running ? 'syncing' : pending ? 'pending' : 'synced'}
+      />
     </button>
   )
 }

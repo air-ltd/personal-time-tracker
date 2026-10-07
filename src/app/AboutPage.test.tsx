@@ -95,12 +95,39 @@ describe('About', () => {
 describe('the privacy policy', () => {
   it('claims no analytics, telemetry or crash reporting', () => {
     render(<AboutPage />)
-    expect(screen.getByText(/No analytics, no telemetry/i)).toBeInTheDocument()
+    // `getAllByText` because the host section repeats the claim: GitHub serves the page, and
+    // the wording has to say the app still adds nothing rather than leave the reader to
+    // wonder whether the earlier promise survived being qualified.
+    expect(screen.getAllByText(/No analytics, no telemetry/i).length).toBeGreaterThan(0)
     // The *behaviour* behind this claim is not asserted here and cannot be: it needs a real
     // browser watching every request the app makes, which is the e2e suite's job
     // (0011 P6, and the check that no request goes to an unexpected origin). Asserting the
     // wording here and the behaviour there is the honest split — a source scan for the word
     // "analytics" would pass while a differently-named beacon shipped.
+  })
+
+  it('names the host, and says the app still sends nothing (item 65)', () => {
+    render(<AboutPage />)
+    // A privacy policy that stops at the app's own code answers half the question: somebody
+    // asking whether their data is private also needs to know who serves the page. Asserted
+    // as a claim, like the rest, so it cannot quietly fall out of date.
+    expect(screen.getByText(/served by GitHub Pages/i)).toBeInTheDocument()
+    // The host's own processing is stated rather than glossed over.
+    expect(screen.getByText(/GitHub serves the traffic/i)).toBeInTheDocument()
+    expect(screen.getByText(/web server logs/i)).toBeInTheDocument()
+    // And pointed at the authority rather than paraphrased, because this project cannot
+    // verify GitHub's retention periods and would only be guessing at them.
+    expect(screen.getByRole('link', { name: /GitHub.s privacy statement/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('github.com'),
+    )
+  })
+
+  it('says the source is public, so the claims can be checked', () => {
+    // The strongest thing a privacy policy can offer is a reader who does not have to take
+    // it on trust.
+    render(<AboutPage />)
+    expect(screen.getByText(/source is public/i)).toBeInTheDocument()
   })
 
   it('claims no cookies and no third-party assets', () => {
