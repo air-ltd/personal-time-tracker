@@ -380,6 +380,35 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     on the project's own line, not only on the client's.
 67. [x] tooltips on the "new client", Dropbox and discard buttons, each saying what the press
     will do rather than repeating the label.
+68. [x] **cover the path from the released 0.1.0 to this build** — three suites, because the
+    three things it touches were each individually tested and jointly untested.
+
+    - `src/storage/db.migration.test.ts` — a database seeded at **v3** through a throwaway
+      `Dexie` subclass declaring the old stores verbatim, then opened against the current
+      schema. This is the *only* thing that runs `db.ts`'s `.upgrade()`: every other test
+      opens a fresh database at the current version, so the one callback in this codebase
+      that moves a row was dead code as far as the suite was concerned. It asserts the three
+      preferences survive, that `lastRev`/`lastSyncAt` are **not** carried across, that
+      tombstones survive, that it is safe to run twice, and that a device which never set
+      the preferences gets none invented.
+    - `src/export/legacyFile.test.ts` — a hand-written envelope in the exact shape 0.1.0
+      wrote (schema 3, **no `settings` key**). Asserts that absent is dropped rather than
+      defaulted to `[]`, and that restoring such a file leaves this device's own preferences
+      alone. A file saying nothing about your settings is not a statement that you have none.
+    - `src/sync/engine.legacy.test.ts` — that file through the whole engine, asserting the
+      cycle succeeds, every record arrives, a project deleted on 0.1.0 stays deleted, this
+      device's settings are untouched, both devices' work merges, and what is published is
+      still readable by an 0.1.0 build.
+
+    Each was checked against a deliberately broken version: a typo in the carried key list,
+    `.default([])` instead of `.optional()`, refusing an older schema, and filtering
+    tombstones out of the merge. All four failed the tests that were supposed to catch them.
+
+    **Why this was worth doing.** 0.1.0 shipped at `SCHEMA_VERSION = 3`, so this is not a
+    hypothetical: it is the first load on every existing device, and the failure mode is
+    silent either way. A broken upgrade resets a billing currency and an entry period with
+    the app still looking healthy; a tombstone dropped by the merge resurrects a project the
+    user deleted three versions ago and republishes it.
 
 # Where the branches are
 
