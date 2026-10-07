@@ -106,21 +106,29 @@ describe('the privacy policy', () => {
     // "analytics" would pass while a differently-named beacon shipped.
   })
 
-  it('names the host, and says the app still sends nothing (item 65)', () => {
+  it('names the host and points at GitHub&rsquo;s own policy (item 65)', () => {
     render(<AboutPage />)
-    // A privacy policy that stops at the app's own code answers half the question: somebody
-    // asking whether their data is private also needs to know who serves the page. Asserted
-    // as a claim, like the rest, so it cannot quietly fall out of date.
+    // A privacy policy that stops at the app's own code answers half the question:
+    // somebody asking whether their data is private also needs to know who serves the page.
     expect(screen.getByText(/served by GitHub Pages/i)).toBeInTheDocument()
-    // The host's own processing is stated rather than glossed over.
-    expect(screen.getByText(/GitHub serves the traffic/i)).toBeInTheDocument()
-    expect(screen.getByText(/web server logs/i)).toBeInTheDocument()
-    // And pointed at the authority rather than paraphrased, because this project cannot
-    // verify GitHub's retention periods and would only be guessing at them.
-    expect(screen.getByRole('link', { name: /GitHub.s privacy statement/i })).toHaveAttribute(
+    /*
+     * What GitHub collects is pointed at, not asserted. That policy changes, it lives in
+     * several places, and this project cannot keep a summary of another company&rsquo;s data
+     * practices true — so a paraphrase here would be a claim that goes stale quietly. The
+     * links are the answer.
+     */
+    expect(screen.getByRole('link', { name: /^privacy statement$/i })).toHaveAttribute(
       'href',
       expect.stringContaining('github.com'),
     )
+    expect(screen.getByRole('link', { name: /GitHub Pages section/i })).toHaveAttribute(
+      'href',
+      expect.stringContaining('github.com'),
+    )
+    // And the one claim that still needs qualifying is qualified, rather than stated flat.
+    expect(screen.getByText('At the time of writing')).toBeInTheDocument()
+    // The app&rsquo;s own position is unchanged and is what remains knowable from here.
+    expect(screen.getByText(/What this app does is still knowable/i)).toBeInTheDocument()
   })
 
   it('says the source is public, so the claims can be checked', () => {

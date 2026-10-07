@@ -139,6 +139,10 @@ export function TimerPanel({
         headingId="timer-heading"
         heading="Timer"
         addLabel="New client"
+        // A sentence rather than the bare word: this is the only control in the header, so
+        // there is no heading beside it to say what a client is for.
+        addTitle="Add a client to work for. It gets a default project, and a button here to start a timer against it."
+
         onAdd={() => setEditingId('')}
         className="panel-header"
         testId="timer-new-client"
@@ -231,9 +235,24 @@ function ClientList({
   onEdit: (next: string | null | undefined) => void
 }) {
   const { running, elapsedMs, start, stop, discard } = timer
-  const [defaultProjects, setDefaultProjects] = useState<Map<string, string | null> | null>(
-    null,
-  )
+  /*
+   * Each client's default project, and the set of project ids that map was read from.
+   *
+   * Kept together rather than as a bare map because "read, and still current" are two
+   * different questions. A client's default is its oldest project (item 12), so adding or
+   * archiving one changes no client id — the map is stale the moment it lands, and every
+   * Start button is filing against a project the taxonomy no longer agrees with. Holding the
+   * signature alongside lets the panel say so, and disable Start until it has asked again.
+   *
+   * Without it this was a real race rather than a test artefact: create a project, press
+   * Start immediately, and the time went to the *old* default. It showed up as a test
+   * failing about one run in four, which the repo's own notes call out as usually being a
+   * genuine ordering bug — and it was one.
+   */
+  const [defaults, setDefaults] = useState<{
+    forProjects: string
+    byClient: Map<string, string | null>
+  } | null>(null)
   // A stop is in flight, so the button cannot be pressed a second time.
   const [stopping, setStopping] = useState(false)
   /**
@@ -256,7 +275,7 @@ function ClientList({
         return [client.id, project?.id ?? null] as const
       }),
     ).then((pairs) => {
-      if (!cancelled) setDefaultProjects(new Map(pairs))
+      if (!cancelled) setDefaults({ forProjects: projectIds, byClient: new Map(pairs) })
     })
     return () => {
       cancelled = true
@@ -265,6 +284,14 @@ function ClientList({
     // whenever anything in the taxonomy changes, and re-reading every project on any
     // change would be a storage read per keystroke elsewhere on the page.
   }, [ids, projectIds]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /*
+   * True until the default-project read has caught up with the projects on screen.
+   *
+   * Stated once and used by every Start button on the card, because a client row and its
+   * projects all file against the same map — a stale answer for one is stale for all of them.
+   */
+  const defaultsStale = defaults === null || defaults.forProjects !== projectIds
 
   /**
    * Which client's line the running timer belongs to.
@@ -394,7 +421,7 @@ function ClientList({
       ) : (
         <ul className="timer-client-list">
           {visibleClients.map((client) => {
-            const projectId = defaultProjects?.get(client.id) ?? null
+            const projectId = defaults?.byClient.get(client.id) ?? null
             const active = running !== null && client.id === activeClientId
             /*
              * This client's projects, for the per-project Start buttons (item 61).
@@ -493,7 +520,7 @@ function ClientList({
                           className="button timer-discard"
                           onClick={discard}
                           aria-label={`Discard the timer for ${client.name}`}
-                          title={`Discard the timer for ${client.name}`}
+                          title={`Discard the timer for ${client.name}. The time recorded so far is thrown away and nothing is saved.`}
                         >
                           <TrashIcon />
                         </button>
@@ -508,15 +535,16 @@ function ClientList({
                            * timer at a time (0004 T2), and a control that vanishes is a
                            * control whose position cannot be learned.
                            *
-                           * Also disabled until the default projects have been read. This was
-                           * a real bug found by a test that failed once in six runs: the
-                           * lookup is asynchronous, and clicking Start before it resolved
-                           * started the timer with no project at all — so the time was
-                           * recorded uncategorised for a client that *does* have one. Nothing
-                           * said so, and the entry was filed wrongly with no way to tell
-                           * afterwards. Unclickable beats silently wrong.
+                           * Also disabled until the default projects have been read, and
+                           * again whenever a project has landed that the read has not caught
+                           * up with. Both were real bugs found by tests that failed once in
+                           * six runs and once in four: the lookup is asynchronous, so pressing
+                           * Start before it resolved filed the time against no project, or
+                           * against the project that *used* to be the default. Nothing said so
+                           * and there was no way to tell afterwards. Unclickable beats silently
+                           * wrong.
                            */
-                          disabled={running !== null || defaultProjects === null}
+                          disabled={running !== null || defaultsStale}
                           // A client with genuinely no project still starts a timer: the time
                           // is recorded uncategorised rather than refused, because refusing
                           // would lose the work.
@@ -617,7 +645,7 @@ function ClientList({
                                   className="button timer-discard"
                                   onClick={discard}
                                   aria-label={`Discard the timer for ${project.name}`}
-                                  title={`Discard the timer for ${project.name}`}
+                                  title={`Discard the timer for ${project.name}. The time recorded so far is thrown away and nothing is saved.`}
                                 >
                                   <TrashIcon />
                                 </button>
@@ -693,7 +721,7 @@ function ClientList({
               className="button timer-discard"
               onClick={discard}
               aria-label="Discard the timer"
-              title="Discard the timer"
+              title="Discard the timer. The time recorded so far is thrown away and nothing is saved."
             >
               <TrashIcon />
             </button>

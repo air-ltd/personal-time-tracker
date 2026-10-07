@@ -67,7 +67,7 @@ export function SyncIndicatorView({
         aria-label="Sync not set up"
         title="Dropbox is not configured. Add an app key under Settings."
       >
-        <CloudStateIcon state="setup" size={20} />
+        <CloudStateIcon state="setup" size={24} weight={2.6} />
       </button>
     )
   }
@@ -83,7 +83,7 @@ export function SyncIndicatorView({
         aria-label="Connect Dropbox"
         title="Entries are saved in this browser only. Connect Dropbox to use them on another device."
       >
-        <CloudStateIcon state="offline" size={20} />
+        <CloudStateIcon state="offline" size={24} weight={2.6} />
       </button>
     )
   }
@@ -99,7 +99,7 @@ export function SyncIndicatorView({
         aria-label="Checking sync"
         title="Asking Dropbox whether this device is connected."
       >
-        <CloudStateIcon state="syncing" size={20} />
+        <CloudStateIcon state="syncing" size={24} weight={2.6} />
       </button>
     )
   }

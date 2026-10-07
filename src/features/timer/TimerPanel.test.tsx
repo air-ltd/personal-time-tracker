@@ -527,11 +527,27 @@ describe('a client default project changing under the panel', () => {
       clientId: client.id,
       now: new Date('2026-10-01T09:00:00.000Z'),
     })
-    await waitFor(() => expect(timer.started).toHaveLength(1))
 
-    await user.click(screen.getByRole('button', { name: 'Start a timer for Acme Ltd' }))
-    await waitFor(() => expect(timer.started).toHaveLength(2))
-    expect(timer.started[1]).not.toBe(first.id)
+    /*
+     * Driven by the outcome, not by the click.
+     *
+     * Two separate races hid here, both of which the old version lost roughly one run in
+     * four. Waiting on `started` still having one entry was waiting on a condition already
+     * true, so it guarded nothing. And waiting on the button being enabled was not enough
+     * either: the taxonomy reads asynchronously, so a project can land *between* that check
+     * and the click, leaving the button disabled — and a click on a disabled button is
+     * silently dropped, so the test failed on a length rather than on a value.
+     *
+     * So the click is retried until a Start is recorded against something other than the
+     * project that used to be the default. That is the claim the item makes, and it is the
+     * only assertion here that cannot pass by accident: a panel still holding the old
+     * default records `first.id` forever, however many times it is pressed.
+     */
+    await waitFor(async () => {
+      await user.click(screen.getByRole('button', { name: 'Start a timer for Acme Ltd' }))
+      expect(timer.started.some((id) => id !== first.id)).toBe(true)
+    })
+    expect(timer.started).toContain(first.id)
   })
 })
 
@@ -897,12 +913,17 @@ describe('the timer row controls (item 63)', () => {
     await createClientWithDefaultProject({ name: 'Acme Ltd', currency: 'GBP', now: NOW })
     const idle = render(<TimerPanel timer={timerHarness()} onStopped={() => {}} now={NOW} />)
     const start = await screen.findByRole('button', { name: 'Start a timer for Acme Ltd' })
-    expect(start).toHaveAttribute('title', 'Start a timer for Acme Ltd')
+    expect(start.getAttribute('title')).toMatch(/^Start a timer for Acme Ltd/)
     idle.unmount()
 
     const cleanup = await renderRunning('Other Co', 'Work')
     for (const name of ['Stop the timer for Other Co', 'Discard the timer for Other Co']) {
-      expect(screen.getByRole('button', { name })).toHaveAttribute('title', name)
+      // Matched as a prefix rather than for equality: the tooltip may add a sentence to the
+      // accessible name, which is the point of it, but it must never name a *different*
+      // control — so the two have to start with the same words.
+      expect(screen.getByRole('button', { name }).getAttribute('title')).toMatch(
+        new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
+      )
     }
     cleanup()
   })
@@ -1100,8 +1121,9 @@ describe('a project row runs its own timer (items 61 and 63)', () => {
     ]) {
       const button = screen.getByRole('button', { name })
       expect(button.querySelector('svg')).not.toBeNull()
-      // The tooltip says the same thing as the accessible name, for the same reason.
-      expect(button).toHaveAttribute('title', name)
+      // The tooltip opens with the accessible name, for the same reason: a shape with a
+      // tooltip that describes something else is worse than no tooltip.
+      expect(button.getAttribute('title')).toMatch(new RegExp(`^${name}`))
     }
     cleanup()
   })

@@ -1271,6 +1271,30 @@ async function main() {
       (await page.getByTestId('sync-indicator').getAttribute('href')) === null,
     )
 
+    /*
+     * The Dropbox mark has to be readable at a glance (item 65). Measured rather than
+     * asserted from a class, because "big enough" is a question only a real browser can
+     * answer: the icon's own box, its stroke width, and the button it sits in.
+     */
+    check(
+      'the Dropbox mark is large and thick enough to read (item 65)',
+      await page.evaluate(() => {
+        const button = document.querySelector('[data-testid="sync-indicator"]')
+        const icon = button?.querySelector('svg')
+        if (!button || !icon) return false
+        const box = icon.getBoundingClientRect()
+        const stroke = parseFloat(getComputedStyle(icon).strokeWidth) || 0
+        // A 24px mark drawn with a 2.6 stroke: big enough to see, heavy enough that the
+        // cloud outline does not thin away to a hairline at this size.
+        return box.width >= 22 && stroke >= 2.4
+      }),
+    )
+    check(
+      'the sync indicator has a tooltip saying the state in words (item 65)',
+      (await page.getByTestId('sync-indicator').getAttribute('title')) !== null &&
+        (await page.getByTestId('sync-indicator').getAttribute('aria-label')) !== null,
+    )
+
     // The favicon is the header mark, and it is a link to the app's own home (item 23).
     const mark = await page.evaluate(() => {
       const img = document.querySelector('.app-home-icon')

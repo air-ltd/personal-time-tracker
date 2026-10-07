@@ -17,6 +17,7 @@ export function AddToHeading({
   headingId,
   heading,
   addLabel,
+  addTitle,
   onAdd,
   className,
   testId,
@@ -25,8 +26,17 @@ export function AddToHeading({
   /** Ties the heading to the section that labels it. */
   headingId: string
   heading: string
-  /** The button's accessible name, also its tooltip. */
+  /** The button's accessible name. */
   addLabel: string
+  /**
+   * The tooltip, where it should say more than the name does.
+   *
+   * Optional because most of these buttons are icon-only next to a heading that already
+   * names the thing ("Clients and projects" beside "+ Client"), where repeating the name
+   * adds nothing. Where the button stands alone — the timer card's "+", which is the only
+   * control in its header — a sentence is worth having.
+   */
+  addTitle?: string | undefined
   onAdd: () => void
   className: string
   testId: string
@@ -47,7 +57,8 @@ export function AddToHeading({
         className="button heading-add-button"
         onClick={onAdd}
         aria-label={addLabel}
-        title={addLabel}
+        // Falls back to the name, so no button is left without a tooltip.
+        title={addTitle ?? addLabel}
         data-testid={testId}
       >
         <PlusIcon />

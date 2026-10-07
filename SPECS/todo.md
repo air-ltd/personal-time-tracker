@@ -378,6 +378,8 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     own privacy statement for what the *host* processes.
 66. [x] a project row runs its own timer (items 61 and 63) — play/stop, discard and a count-up
     on the project's own line, not only on the client's.
+67. [x] tooltips on the "new client", Dropbox and discard buttons, each saying what the press
+    will do rather than repeating the label.
 
 # Where the branches are
 
@@ -481,17 +483,33 @@ Per `0014-development-plan.md`. Not started.
    gets a default project" had forced — every client now has a project called `General`.
 7. [ ] **Weeks start on Monday, and Sunday is the trap.** Mapping Sunday to 0 rather than 7
    makes every Sunday land eight days early and every week one day too long.
-8. [ ] **State seeded in `useState` from something that arrives later stays stale.** A new
+8. [x] **State seeded in `useState` from something that arrives later stays stale.** A new
    client's currency was seeded once from the app default, which had not been read yet, so
    it kept the fallback and item 31 did nothing. It is now derived —
    `picked ?? appDefault ?? FALLBACK` — so a late read has something to update. Worth
    remembering whenever an initial value comes from storage.
-9. [ ] **A clickable control that depends on an async read must not be clickable yet.**
+9. [x] **A clickable control that depends on an async read must not be clickable yet.**
    Start was live while the client's default project was still being read, so a quick click
    started a timer with no project and the time was recorded *uncategorised* for a client
    that had one — silently, and with no way to tell afterwards. Found by a test that failed
    once in six runs, which is worth remembering: a rare failure is usually a real ordering
    bug rather than a flaky test, and re-running until it passes hides it.
+
+   **It came back, in the same shape, and it was this note being right.** A test that added a
+   project and pressed Start expecting the new default failed about one run in four. The cause
+   was here: the panel held the default-project map and re-read it keyed on the project ids,
+   so between the project landing and the read finishing, every Start on the card was filing
+   against the project that *used* to be the default. The map now carries the id list it was
+   read from, and Start is disabled while the two disagree.
+
+   The test had two races stacked, and fixing only the first is what made it look fixed for a
+   while. It waited on a condition that was already true, so it guarded nothing; and waiting on
+   the button being *enabled* was still not enough, because a project could land between that
+   check and the click — and a click on a disabled button is silently dropped, so the failure
+   showed up as a length rather than a value. It now retries the click until a Start is
+   recorded against something other than the old default. That is the only form of the
+   assertion that cannot pass by accident: a panel still holding the stale map records the old
+   id however many times it is pressed.
 10. [ ] **A Dexie transaction fails if it touches a store it did not declare**, and says
    `NotFoundError: ... an object store did not exist` rather than mentioning the
    transaction. `createClientWithDefaultProject` hit this by wrapping two helpers that each

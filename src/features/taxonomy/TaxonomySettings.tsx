@@ -323,6 +323,10 @@ function TaxonomySection({
               return true
             })
           }}
+          // Tooltips on the two add buttons say what each one creates, because on this card
+          // they sit on one line and "New client" / "New project" are the only thing
+          // distinguishing them at a glance.
+          title="Add a client to work for. It gets a default project of its own."
         >
           <PlusIcon />
           <span>New client</span>
@@ -589,6 +593,10 @@ function TaxonomyGroup({
               // leave a screen reader user several identical controls and no way to tell
               // which client each one serves.
               aria-label={`New project for ${group.name}`}
+              // Says what it will be filed under, which is the one thing a bare "New
+              // project" cannot: the button sits inside the group, so the client is a
+              // glance away but not a certainty until you read it.
+              title={`Add a project under ${group.name}. The client is already filled in.`}
               onClick={onAddProject}
             >
               <PlusIcon />

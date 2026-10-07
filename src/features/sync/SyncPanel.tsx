@@ -84,15 +84,27 @@ export function SyncPanel() {
       <div className="button-row">
         {connection === 'connected' ? (
           <>
+            {/*
+              Tooltips on all three actions. The words on the buttons say what they are
+              called; these say what will happen, which is the part that matters before
+              pressing "Disconnect" — it is the one here that takes the work off this device.
+            */}
             <button
               type="button"
               className="button button-primary"
               onClick={syncNow}
               disabled={busy}
+              title="Send anything waiting to Dropbox and pull down what the other device has recorded."
             >
               Sync now
             </button>
-            <button type="button" className="button" onClick={disconnect} disabled={busy}>
+            <button
+              type="button"
+              className="button"
+              onClick={disconnect}
+              disabled={busy}
+              title="Sign this device out of Dropbox. Your entries stay in this browser; they stop syncing."
+            >
               Disconnect
             </button>
           </>
@@ -102,6 +114,7 @@ export function SyncPanel() {
             className="button button-primary button-with-icon"
             onClick={connect}
             disabled={busy}
+            title="Sign in to Dropbox so this device can sync with your others. Takes you to Dropbox to approve."
           >
             {/* Item 17 asked for a cloud here and the icon had been drawn but never
                 placed. Decorative: the button text is the name, so announcing the SVG as

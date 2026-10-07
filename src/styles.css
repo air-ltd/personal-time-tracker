@@ -997,8 +997,23 @@ code {
   gap: 0.4rem;
 }
 
+/*
+ * Padded to keep the button the same size it was as a word button, while the mark inside is
+ * drawn larger to fill it. Less padding than `.button`'s because there is no word to clear —
+ * the icon is the whole content, so the horizontal padding is only there to stop the mark
+ * touching the border.
+ */
 .sync-indicator-icon {
-  padding: 0.45rem 0.5rem;
+  padding: 0.4rem 0.45rem;
+}
+
+/*
+ * The "at the time of writing" qualifier used where this page points at somebody else's
+ * policy (item 65). It reads as a caveat on the sentence rather than as part of it, which is
+ * what it is — a note that the link may say something different by the time you follow it.
+ */
+.privacy-at-the-time {
+  font-style: italic;
 }
 
 /*
