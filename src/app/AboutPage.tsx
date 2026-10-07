@@ -244,7 +244,12 @@ export function AboutPage() {
  * renders, and more surface for something to go subtly wrong.
  */
 function Changelog({ source }: { source: string }): ReactNode {
-  const blocks: ReactNode[] = []
+  /*
+   * Blocks carry a `kind` as well as the node, because a heading with no body under it has
+   * to be dropped and that cannot be told from the rendered node alone — `ReactNode` is a
+   * union of types, none of which is "heading".
+   */
+  const blocks: { kind: 'heading' | 'body'; node: ReactNode }[] = []
   let list: string[] = []
   /**
    * Prose being accumulated, flushed when a heading, a bullet or a blank line interrupts.
@@ -258,20 +263,23 @@ function Changelog({ source }: { source: string }): ReactNode {
 
   function flushParagraph(): void {
     if (paragraph === null) return
-    blocks.push(<p key={`p-${blocks.length}`}>{inline(paragraph)}</p>)
+    blocks.push({ kind: 'body', node: <p key={`p-${blocks.length}`}>{inline(paragraph)}</p> })
     paragraph = null
   }
 
   function flushList(): void {
     if (list.length === 0) return
     const items = list
-    blocks.push(
-      <ul key={`ul-${blocks.length}`}>
-        {items.map((item, index) => (
-          <li key={index}>{inline(item)}</li>
-        ))}
-      </ul>,
-    )
+    blocks.push({
+      kind: 'body',
+      node: (
+        <ul key={`ul-${blocks.length}`}>
+          {items.map((item, index) => (
+            <li key={index}>{inline(item)}</li>
+          ))}
+        </ul>
+      ),
+    })
     list = []
   }
 
@@ -291,17 +299,32 @@ function Changelog({ source }: { source: string }): ReactNode {
       flushParagraph()
       flushList()
       const level = (heading[1] ?? '').length
-      // Keep a Changelog writes versions as `[Unreleased]` / `[0.1.0]`. The brackets are
-      // link syntax for GitHub, and they read as leftover syntax in a rendered heading.
-      const text = (heading[2] ?? '').replace(/^\[(.*)\]$/, '$1')
+      /*
+       * Keep a Changelog writes versions as `[Unreleased]` and `[0.2.0] - 2026-10-13`. The
+       * brackets are link syntax for GitHub and read as leftover syntax in a rendered
+       * heading.
+       *
+       * Stripped from the front only, and not anchored to the end: the pattern used to
+       * require the closing bracket to be the last character, so it matched `[Unreleased]`
+       * and silently left every dated version as `[0.2.0] - 2026-10-13`. The in-app
+       * changelog has been showing brackets on every released version since 0.1.0, and no
+       * test caught it because the assertion was written against the *file*, not the page.
+       *
+       * Nothing is trimmed after the brackets: eating the following space turned the heading
+       * into "0.2.0- 2026-10-13".
+       */
+      const text = (heading[2] ?? '').replace(/^\[([^\]]*)\]/, '$1')
       // The file's own title is dropped: the card already has a heading, and two h1s on one
       // page is a document outline problem, not a style preference.
       if (level === 1) continue
-      blocks.push(
-        <Fragment key={`h-${blocks.length}`}>
-          {level === 2 ? <h3>{inline(text)}</h3> : <h4>{inline(text)}</h4>}
-        </Fragment>,
-      )
+      blocks.push({
+        kind: 'heading',
+        node: (
+          <Fragment key={`h-${blocks.length}`}>
+            {level === 2 ? <h3>{inline(text)}</h3> : <h4>{inline(text)}</h4>}
+          </Fragment>
+        ),
+      })
       continue
     }
 
@@ -335,7 +358,26 @@ function Changelog({ source }: { source: string }): ReactNode {
   flushParagraph()
   flushList()
 
-  return <div className="changelog">{blocks}</div>
+  /*
+   * Drop a heading with nothing under it.
+   *
+   * `## [Unreleased]` is kept in the changelog by convention and is empty at every release
+   * cut, so without this the About page opened "What's new" with a bare "Unreleased" heading
+   * and nothing under it — the first thing on the page being a section with no content in it.
+   * The file was right and the renderer was wrong: an empty heading in a document is a
+   * convention, and a heading on a page is a promise that something follows it.
+   *
+   * Done as one pass rather than by looking ahead while parsing, so the decision is made on
+   * the finished set of blocks and a section whose body arrives later is not mistaken for an
+   * empty one.
+   */
+  const kept = blocks.filter((block, index) => {
+    if (block.kind !== 'heading') return true
+    const next = blocks[index + 1]
+    return next !== undefined && next.kind === 'body'
+  })
+
+  return <div className="changelog">{kept.map((block) => block.node)}</div>
 }
 
 /** `**bold**` and `` `code` ``, as React nodes. Nothing is ever injected as markup. */

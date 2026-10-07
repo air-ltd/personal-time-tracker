@@ -32,9 +32,10 @@ describe('About', () => {
   it('renders the changelog headings', () => {
     render(<AboutPage />)
 
-    // "Unreleased" without Keep a Changelog's brackets, which read as leftover syntax in a
-    // rendered heading.
-    expect(screen.getByRole('heading', { name: 'Unreleased' })).toBeInTheDocument()
+    // Without Keep a Changelog's brackets, which read as leftover syntax in a heading.
+    // `Unreleased` is the one that is *absent*: it is empty at every release cut, and a
+    // heading with nothing under it is dropped rather than rendered.
+    expect(screen.queryByRole('heading', { name: 'Unreleased' })).toBeNull()
     expect(screen.getByRole('heading', { name: 'Versioning' })).toBeInTheDocument()
     // The file's own title is dropped: the card already has a heading, and two h1s on one
     // page is an outline problem.
@@ -135,7 +136,10 @@ describe('the privacy policy', () => {
     // The strongest thing a privacy policy can offer is a reader who does not have to take
     // it on trust.
     render(<AboutPage />)
-    expect(screen.getByText(/source is public/i)).toBeInTheDocument()
+    // Scoped to the privacy section: the bundled changelog now also says the source is
+    // public, and two matches for one sentence is not a failure of either.
+    const privacy = document.getElementById('privacy-heading')?.closest('section')
+    expect(privacy?.textContent).toMatch(/source is public/i)
   })
 
   it('claims no cookies and no third-party assets', () => {
@@ -243,14 +247,89 @@ describe('the changelog parser and wrapped prose', () => {
     expect(new Set(texts).size).toBe(texts.length)
   })
 
-  it('renders every heading in the file', () => {
+  it('renders every heading that has content under it', () => {
     render(<AboutPage />)
+    /*
+     * Read from the file, so a heading added to the changelog without a test here still gets
+     * checked. The one exception is a heading with no body under it, which is deliberately
+     * not rendered — `## [Unreleased]` is empty at every release cut, so excluding it by
+     * assertion rather than by remembering is what keeps this honest as versions are added.
+     */
     const headings = [...real.matchAll(/^##\s+(.*)$/gm)].map((match) =>
-      (match[1] ?? '').replace(/^\[(.*)\]$/, '$1'),
+      // Matches the parser's own rule — strip a leading bracketed label, date and all.
+      (match[1] ?? '').replace(/^\[([^\]]*)\]/, '$1'),
+    )
+    const rendered = new Set(
+      [...document.querySelectorAll('.changelog h3')].map((h) => h.textContent ?? ''),
     )
 
     for (const heading of headings) {
-      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument()
+      if (heading === 'Unreleased') {
+        expect(rendered.has(heading)).toBe(false)
+        continue
+      }
+      expect(rendered.has(heading), `rendered "${heading}"`).toBe(true)
     }
+  })
+})
+
+describe('the bundled changelog', () => {
+  it('does not show a heading with nothing under it', () => {
+    // `## [Unreleased]` is empty at every release cut, so a parser that renders headings
+    // literally opens the page with a bare "Unreleased" and nothing after it — the first
+    // thing a reader meets being a section with no content. An empty heading is a document
+    // convention; on a page it is a promise that something follows.
+    render(<AboutPage />)
+
+    const headings = [...document.querySelectorAll('.changelog h3')].map((h) => h.textContent)
+    for (const heading of headings) {
+      const node = [...document.querySelectorAll('.changelog h3')].find(
+        (h) => h.textContent === heading,
+      )
+      const hasBody =
+        node?.nextElementSibling !== null && node?.nextElementSibling?.tagName !== 'H3'
+      expect(hasBody, `"${heading}" has content under it`).toBe(true)
+    }
+  })
+
+  /**
+   * The rendered version headings, with their dates stripped.
+   *
+   * Stripped because the file writes `[0.2.0] - 2026-10-13` and the date is part of the
+   * heading. The dates are asserted separately rather than folded into these.
+   */
+  function versionHeadings(): string[] {
+    return [...document.querySelectorAll('.changelog h3')].map((h) =>
+      (h.textContent ?? '').replace(/\s+-\s+\d{4}-\d{2}-\d{2}$/, ''),
+    )
+  }
+
+  it('renders released versions, and not an empty Unreleased', () => {
+    render(<AboutPage />)
+    const headings = versionHeadings()
+
+    expect(headings).toContain('0.2.0')
+    expect(headings).toContain('0.1.0')
+    // Read from the headings rather than the whole text: the changelog's own versioning prose
+    // contains the word in backticks, so a text search would match a sentence *about*
+    // Unreleased rather than a heading for it.
+    expect(headings).not.toContain('Unreleased')
+  })
+
+  it('dates each release heading', () => {
+    render(<AboutPage />)
+    const dated = [...document.querySelectorAll('.changelog h3')].map(
+      (h) => h.textContent ?? '',
+    )
+    // How a reader tells a shipped version from an unreleased heading at a glance.
+    expect(dated.filter((h) => /^\d+\.\d+\.\d+/.test(h)).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('puts the newest release above the older one', () => {
+    render(<AboutPage />)
+    const headings = versionHeadings()
+
+    expect(headings.indexOf('0.2.0')).toBeGreaterThanOrEqual(0)
+    expect(headings.indexOf('0.2.0')).toBeLessThan(headings.indexOf('0.1.0'))
   })
 })

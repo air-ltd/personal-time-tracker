@@ -1577,9 +1577,27 @@ async function main() {
       (await changelog.locator('script').count()) === 0 &&
         !(await changelog.innerHTML()).includes('<script'),
     )
+    /*
+     * No heading carries Keep a Changelog's `[0.2.0]` brackets. Previously this asserted that
+     * an `Unreleased` heading existed, which only ever checked the one heading that had no
+     * brackets left in it — every *dated* version heading still showed them, on the page,
+     * since 0.1.0. Asserting over the whole set is the shape that would have caught it.
+     */
+    const bracketHeadings = await page.evaluate(() =>
+      [...document.querySelectorAll('.changelog h3, .changelog h4')]
+        .map((h) => h.textContent ?? '')
+        .filter((text) => /^\[.*\]/.test(text.trim())),
+    )
     check(
-      'the changelog headings dropped Keep a Changelog’s brackets',
-      (await page.getByRole('heading', { name: 'Unreleased', exact: true }).count()) === 1,
+      'no changelog heading shows Keep a Changelog’s brackets',
+      bracketHeadings.length === 0,
+      bracketHeadings.join(' | '),
+    )
+    check(
+      'an empty changelog section shows no heading at all',
+      // `## [Unreleased]` is empty at every release cut; a bare heading over nothing is the
+      // first thing a reader would meet on this page.
+      (await page.getByRole('heading', { name: 'Unreleased', exact: true }).count()) === 0,
     )
 
     // Item 40: the suite runs against a local preview, which is a non-production origin, so

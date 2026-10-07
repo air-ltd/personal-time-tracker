@@ -266,9 +266,22 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    word was read first and the number read as decoration. Only the visible word went: the
    row keeps `aria-current` and its active class, so *which* client is still conveyed to a
    screen reader and still drives the highlight.
-43. [ ] About page needs work.
-44. [ ] settings page needs work.
-45. [ ] what shows by default needs some work.
+43. [ ] **About page needs work.** Partly addressed: it now says who serves the page and
+    points at GitHub's own privacy statement rather than paraphrasing it (item 65), and the
+    bundled changelog no longer shows literal `[0.2.0]` brackets on every version heading —
+    a defect that has been on the page since 0.1.0 and was never caught, because the assertion
+    was written against the file rather than the rendered output. **Still open**, because the
+    item says what feels wrong without saying what should be there instead, and guessing at
+    that has been the wrong move twice now.
+44. [x] **settings page needs work** — **addressed by items 50 and 54 to 60**, though the item
+    was never as specific as the work it asked for. Clients and projects are one list, a
+    project is added from the list it joins, the archive control is one checkbox, an
+    archived client's projects hide with it, and tags have their own card. What remains is
+    whatever is still not right *now*, which this line cannot describe.
+45. [ ] **what shows by default needs some work.** Untouched. Genuinely unclear which default
+    is meant — the entries period, the summary, the archived toggles, or the projects list
+    all have a default, and they were each argued about individually and settled. Needs a
+    specific complaint before it can be acted on.
 46. [x] **all settings should remain across the page in dropbox storage** — **done.**
    The three settings that describe how you work — default currency, visible currencies,
    entries period — now live in their own `settings` table and travel in the sync payload
