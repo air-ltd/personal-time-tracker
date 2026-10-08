@@ -22,7 +22,12 @@ concurrency:
 jobs:
   verify:
     name: Verify
-    runs-on: ubuntu-latest
+    # All three jobs pin ubuntu-26.04 explicitly rather than tracking
+    # ubuntu-latest. `ubuntu-latest` is migrating to 26.04 on its own between
+    # 19 Oct and 19 Nov 2026 (actions/runner-images#14748); pinning means the
+    # move happens on a commit we chose and can see the result, instead of
+    # arriving mid-release. Revert to ubuntu-24.04 to hold at the old image.
+    runs-on: ubuntu-26.04
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,7 +72,7 @@ jobs:
 
   smoke:
     name: Browser smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Non-blocking on purpose. A real browser catches failures jsdom cannot, notably
     # a wrong base path producing a blank page behind a green build — which is
     # exactly how Phase 1 failed. Kept non-blocking so a browser download or flake
@@ -100,7 +105,7 @@ jobs:
     # 0009 CI2: deploy only from the default branch, and only after verify passes.
     needs: verify
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       pages: write
       id-token: write
