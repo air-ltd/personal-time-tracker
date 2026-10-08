@@ -1008,6 +1008,57 @@ code {
 }
 
 /*
+ * A version of the changelog, folded away by default (item 69).
+ *
+ * The heading is the control, so it is a button rather than a heading element — pressing it is
+ * how you see this version, and a heading that is also a control is not a thing a screen
+ * reader can be told about. `aria-expanded` carries the state and `aria-controls` ties it to
+ * the body it reveals.
+ *
+ * The chevron is drawn pointing down, which is the open state, so it rotates shut when the
+ * version is collapsed. Decorative: the state is on the button, and the shared icon wrapper
+ * hides unlabelled SVGs from the accessibility tree.
+ */
+.changelog-version {
+  border-top: 1px dotted var(--border);
+}
+
+.changelog-version-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: start;
+  cursor: pointer;
+}
+
+.changelog-version-toggle:hover {
+  color: var(--accent);
+}
+
+.changelog-version-toggle svg {
+  flex: none;
+  transform: rotate(-90deg);
+  transition: transform 120ms ease;
+}
+
+.changelog-version-toggle[aria-expanded='true'] svg {
+  transform: rotate(0deg);
+}
+
+/* Indented under its toggle, so a version's body reads as belonging to the line above it. */
+.changelog-version-body {
+  padding-bottom: 0.75rem;
+}
+
+/*
  * The "at the time of writing" qualifier used where this page points at somebody else's
  * policy (item 65). It reads as a caveat on the sentence rather than as part of it, which is
  * what it is — a note that the link may say something different by the time you follow it.

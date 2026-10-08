@@ -1,4 +1,5 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
+import { ChevronIcon } from './Icons'
 import changelog from '../../CHANGELOG.md?raw'
 import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 
@@ -245,11 +246,41 @@ export function AboutPage() {
  */
 function Changelog({ source }: { source: string }): ReactNode {
   /*
-   * Blocks carry a `kind` as well as the node, because a heading with no body under it has
-   * to be dropped and that cannot be told from the rendered node alone — `ReactNode` is a
-   * union of types, none of which is "heading".
+   * Which version sections are open (item 69).
+   *
+   * A `Set` of indices rather than one flag, because the changelog holds several versions and
+   * a reader who opens 0.2.0 did not ask for 0.1.0 as well.
+   *
+   * Default is *nothing* open. The newest release is the one a reader came for, and it is
+   * also the longest — a page that opened with every version expanded put the oldest notes
+   * at the bottom of a wall, and the "What's new" card is the first thing under the header.
    */
-  const blocks: { kind: 'heading' | 'body'; node: ReactNode }[] = []
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>())
+
+  /*
+   * One entry per `##` section, built as the file is read.
+   *
+   * Sections are cut on the **top-level** headings only. Cutting on every heading looked
+   * equivalent and was not: a release is written as `## [0.2.0]` followed by several
+   * `### Changed — …` subsections, so splitting on all of them made each version's body stop
+   * at its first subsection — the introduction and nothing else — while the subsections became
+   * sections in their own right. A `###` belongs to the release above it.
+   */
+  const sections: { heading: string | null; level: number; body: ReactNode[] }[] = []
+  let current: { heading: string | null; level: number; body: ReactNode[] } | null = null
+
+  /** The section being filled, opening an untitled one if content arrives before any heading. */
+  function target(): { heading: string | null; level: number; body: ReactNode[] } {
+    if (current === null) {
+      current = { heading: null, level: 0, body: [] }
+      sections.push(current)
+    }
+    return current
+  }
+
+  function addBody(node: ReactNode): void {
+    target().body.push(node)
+  }
   let list: string[] = []
   /**
    * Prose being accumulated, flushed when a heading, a bullet or a blank line interrupts.
@@ -263,23 +294,22 @@ function Changelog({ source }: { source: string }): ReactNode {
 
   function flushParagraph(): void {
     if (paragraph === null) return
-    blocks.push({ kind: 'body', node: <p key={`p-${blocks.length}`}>{inline(paragraph)}</p> })
+    addBody(
+      <p key={`p-${sections.length}-${current?.body.length ?? 0}`}>{inline(paragraph)}</p>,
+    )
     paragraph = null
   }
 
   function flushList(): void {
     if (list.length === 0) return
     const items = list
-    blocks.push({
-      kind: 'body',
-      node: (
-        <ul key={`ul-${blocks.length}`}>
-          {items.map((item, index) => (
-            <li key={index}>{inline(item)}</li>
-          ))}
-        </ul>
-      ),
-    })
+    addBody(
+      <ul key={`ul-${sections.length}-${current?.body.length ?? 0}`}>
+        {items.map((item, index) => (
+          <li key={index}>{inline(item)}</li>
+        ))}
+      </ul>,
+    )
     list = []
   }
 
@@ -317,14 +347,17 @@ function Changelog({ source }: { source: string }): ReactNode {
       // The file's own title is dropped: the card already has a heading, and two h1s on one
       // page is a document outline problem, not a style preference.
       if (level === 1) continue
-      blocks.push({
-        kind: 'heading',
-        node: (
-          <Fragment key={`h-${blocks.length}`}>
-            {level === 2 ? <h3>{inline(text)}</h3> : <h4>{inline(text)}</h4>}
-          </Fragment>
-        ),
-      })
+      if (level === 2) {
+        // A new top-level section, and therefore a new disclosure.
+        current = { heading: text, level, body: [] }
+        sections.push(current)
+      } else {
+        // A subsection of the section above it, so it goes into that section's body rather
+        // than starting one of its own.
+        addBody(
+          <h4 key={`h-${sections.length}-${current?.body.length ?? 0}`}>{inline(text)}</h4>,
+        )
+      }
       continue
     }
 
@@ -359,25 +392,79 @@ function Changelog({ source }: { source: string }): ReactNode {
   flushList()
 
   /*
-   * Drop a heading with nothing under it.
+   * Drop a section with nothing in it.
    *
    * `## [Unreleased]` is kept in the changelog by convention and is empty at every release
    * cut, so without this the About page opened "What's new" with a bare "Unreleased" heading
    * and nothing under it — the first thing on the page being a section with no content in it.
    * The file was right and the renderer was wrong: an empty heading in a document is a
    * convention, and a heading on a page is a promise that something follows it.
-   *
-   * Done as one pass rather than by looking ahead while parsing, so the decision is made on
-   * the finished set of blocks and a section whose body arrives later is not mistaken for an
-   * empty one.
    */
-  const kept = blocks.filter((block, index) => {
-    if (block.kind !== 'heading') return true
-    const next = blocks[index + 1]
-    return next !== undefined && next.kind === 'body'
-  })
+  const kept = sections.filter((section) => section.heading === null || section.body.length > 0)
 
-  return <div className="changelog">{kept.map((block) => block.node)}</div>
+  return (
+    <div className="changelog">
+      {kept.map((section, index) => {
+        if (section.heading === null) {
+          return <Fragment key={index}>{section.body}</Fragment>
+        }
+        const key = section.heading
+
+        /*
+         * A version heading starts with a digit; "Versioning" does not. That is the whole
+         * distinction, and it is why the prose section above the releases stays put while the
+         * releases themselves fold away.
+         */
+        if (!/^\d/.test(section.heading)) {
+          return (
+            <Fragment key={index}>
+              {section.level === 2 ? (
+                <h3>{inline(section.heading)}</h3>
+              ) : (
+                <h4>{inline(section.heading)}</h4>
+              )}
+              {section.body}
+            </Fragment>
+          )
+        }
+
+        /*
+         * The id is derived from the version too, so `aria-controls` names something that
+         * belongs to this release rather than to a position in a list.
+         */
+        const bodyId = `changelog-version-${key.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
+        const isOpen = expanded.has(key)
+        return (
+          <div key={key} className="changelog-version">
+            {/*
+              A button rather than a heading, because the heading is now the control: pressing
+              it is how you see this version. `aria-expanded` carries the state for anything
+              that cannot see the disclosure, and `aria-controls` ties it to what it reveals.
+            */}
+            <button
+              type="button"
+              className="changelog-version-toggle"
+              aria-expanded={isOpen}
+              aria-controls={bodyId}
+              onClick={() => {
+                setExpanded((previous) => {
+                  const next = new Set(previous)
+                  if (!next.delete(key)) next.add(key)
+                  return next
+                })
+              }}
+            >
+              <ChevronIcon />
+              <span>{inline(section.heading)}</span>
+            </button>
+            <div className="changelog-version-body" id={bodyId} hidden={!isOpen}>
+              {section.body}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 /** `**bold**` and `` `code` ``, as React nodes. Nothing is ever injected as markup. */

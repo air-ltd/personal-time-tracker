@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { AboutPage } from './AboutPage'
 import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
@@ -259,7 +260,18 @@ describe('the changelog parser and wrapped prose', () => {
       // Matches the parser's own rule — strip a leading bracketed label, date and all.
       (match[1] ?? '').replace(/^\[([^\]]*)\]/, '$1'),
     )
+    /*
+     * Read from the version toggles rather than from `h3` elements, because a version heading
+     * is now a button — pressing it is how you see that version, and a heading that is also a
+     * control is not something a screen reader can be told about. The prose sections above
+     * the releases ("Versioning") are still headings, so both are checked.
+     */
     const rendered = new Set(
+      [...document.querySelectorAll('.changelog-version-toggle')].map(
+        (button) => button.textContent ?? '',
+      ),
+    )
+    const prose = new Set(
       [...document.querySelectorAll('.changelog h3')].map((h) => h.textContent ?? ''),
     )
 
@@ -268,7 +280,8 @@ describe('the changelog parser and wrapped prose', () => {
         expect(rendered.has(heading)).toBe(false)
         continue
       }
-      expect(rendered.has(heading), `rendered "${heading}"`).toBe(true)
+      const target = /^\d/.test(heading) ? rendered : prose
+      expect(target.has(heading), `rendered "${heading}"`).toBe(true)
     }
   })
 })
@@ -298,9 +311,10 @@ describe('the bundled changelog', () => {
    * Stripped because the file writes `[0.2.0] - 2026-10-13` and the date is part of the
    * heading. The dates are asserted separately rather than folded into these.
    */
+  /** The version headings, with their dates stripped. */
   function versionHeadings(): string[] {
-    return [...document.querySelectorAll('.changelog h3')].map((h) =>
-      (h.textContent ?? '').replace(/\s+-\s+\d{4}-\d{2}-\d{2}$/, ''),
+    return [...document.querySelectorAll('.changelog-version-toggle')].map((button) =>
+      (button.textContent ?? '').replace(/\s+-\s+\d{4}-\d{2}-\d{2}$/, ''),
     )
   }
 
@@ -318,11 +332,13 @@ describe('the bundled changelog', () => {
 
   it('dates each release heading', () => {
     render(<AboutPage />)
-    const dated = [...document.querySelectorAll('.changelog h3')].map(
-      (h) => h.textContent ?? '',
+    // Queried on the toggles rather than on `h3`: a version heading is now a button, and
+    // the only `h3`s left are the prose sections above the releases.
+    const dated = [...document.querySelectorAll('.changelog-version-toggle')].map(
+      (button) => button.textContent ?? '',
     )
     // How a reader tells a shipped version from an unreleased heading at a glance.
-    expect(dated.filter((h) => /^\d+\.\d+\.\d+/.test(h)).length).toBeGreaterThanOrEqual(2)
+    expect(dated.filter((h) => /\d{4}-\d{2}-\d{2}/.test(h)).length).toBeGreaterThanOrEqual(2)
   })
 
   it('puts the newest release above the older one', () => {
@@ -331,5 +347,127 @@ describe('the bundled changelog', () => {
 
     expect(headings.indexOf('0.2.0')).toBeGreaterThanOrEqual(0)
     expect(headings.indexOf('0.2.0')).toBeLessThan(headings.indexOf('0.1.0'))
+  })
+})
+
+describe('collapsible versions under "What’s new" (item 69)', () => {
+  /** The version toggles, newest first. */
+  function toggles(): HTMLElement[] {
+    return [...document.querySelectorAll<HTMLElement>('.changelog-version-toggle')]
+  }
+
+  /** The body a toggle reveals. */
+  function bodyFor(toggle: HTMLElement): HTMLElement {
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+    if (!body) throw new Error('the toggle points at nothing')
+    return body
+  }
+
+  it('starts every version closed', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+
+    // The point of the request: a page whose first card is a wall of every release since
+    // the beginning. The newest release is what a reader came for, and it is behind a click.
+    expect(toggles().length).toBeGreaterThanOrEqual(2)
+    for (const toggle of toggles()) {
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      expect(bodyFor(toggle)).not.toBeVisible()
+    }
+    await user.click(toggles()[0] as HTMLElement)
+  })
+
+  it('opens and closes a version when its heading is pressed', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+    const first = toggles()[0] as HTMLElement
+
+    await user.click(first)
+    expect(first).toHaveAttribute('aria-expanded', 'true')
+    expect(bodyFor(first)).toBeVisible()
+
+    // And closes again, so it is a toggle rather than a one-way reveal.
+    await user.click(first)
+    expect(first).toHaveAttribute('aria-expanded', 'false')
+    expect(bodyFor(first)).not.toBeVisible()
+  })
+
+  it('opens one version without opening the others', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+
+    await user.click(toggles()[0] as HTMLElement)
+
+    // Opening one is not opening all: a reader checking what changed in 0.2.0 did not ask
+    // to scroll through 0.1.0 as well.
+    expect(toggles()[0]).toHaveAttribute('aria-expanded', 'true')
+    for (const other of toggles().slice(1)) {
+      expect(other).toHaveAttribute('aria-expanded', 'false')
+    }
+  })
+
+  it('still hides the body from the accessibility tree when closed', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+    const first = toggles()[0] as HTMLElement
+
+    /*
+     * The `hidden` attribute rather than a height or opacity: a closed version's notes are
+     * genuinely off the page, so they are unreachable by screen reader and by find-in-page.
+     *
+     * Asserted through `toBeVisible`, which is the honest question. `queryByText` would not
+     * do: it matches hidden nodes too, so it finds the notes in a *closed* section and would
+     * report the opposite of what a reader experiences.
+     */
+    const notes = /Clients and their projects are one list/
+    expect(bodyFor(first).hidden).toBe(true)
+    expect(screen.getByText(notes)).not.toBeVisible()
+
+    await user.click(first)
+    expect(bodyFor(first).hidden).toBe(false)
+    expect(screen.getByText(notes)).toBeVisible()
+  })
+
+  it('leaves the prose sections flat', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+
+    // "Versioning" is a `##` heading like a release, but it is not a version — folding it
+    // away would hide the explanation of how the numbers work for no gain, and it is short.
+    expect(screen.getByRole('heading', { name: 'Versioning' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Versioning/ })).toBeNull()
+
+    // And it is not swept up into a disclosure by the grouping.
+    await user.click(toggles()[0] as HTMLElement)
+    expect(screen.getByRole('heading', { name: 'Versioning' })).toBeInTheDocument()
+    expect(screen.getByText(/Versions are cut at/)).toBeVisible()
+  })
+
+  it('ties each toggle to the body it controls', () => {
+    render(<AboutPage />)
+
+    // Each `aria-controls` has to resolve to a real element, and to that version's *own*
+    // body — an id pointing nowhere, or at another version's body, is a relationship that
+    // does not exist, and the disclosure would then reveal the wrong release.
+    const bodies = toggles().map(bodyFor)
+    for (const body of bodies) {
+      expect(body.className).toContain('changelog-version-body')
+      expect(body.textContent?.trim()).not.toBe('')
+    }
+    // Distinct bodies, each holding that version's own notes.
+    expect(bodies[0]?.textContent).toContain('Clients and their projects are one list')
+    expect(bodies[1]?.textContent).toContain('First release')
+    expect(bodies[0]?.textContent).not.toBe(bodies[1]?.textContent)
+  })
+
+  it('gives the toggles a chevron and keeps the version text beside it', () => {
+    render(<AboutPage />)
+
+    for (const toggle of toggles()) {
+      expect(toggle.querySelector('svg')).not.toBeNull()
+      // The chevron is decorative — the state is on the button, and the shared icon wrapper
+      // hides unlabelled SVGs — so the name is the text.
+      expect(toggle).toHaveAccessibleName(/\d+\.\d+\.\d+/)
+    }
   })
 })
