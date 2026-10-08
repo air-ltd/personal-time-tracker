@@ -18,5 +18,10 @@ review
 # is a run that was killed hard enough to miss its own cleanup.
 .check-silent.lock
 
+# Session handover notes. Scratch, not source: it describes one conversation and
+# goes stale the moment work continues. Add it to .prettierignore too, or
+# `npm run verify` fails on a file nothing builds.
+context.md
+
 # Local logs
 *.log

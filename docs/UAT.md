@@ -39,11 +39,26 @@ Start at the app's home page and leave it there.
 You should see the app's name at the top left with a small clock icon, a status dot on the
 right, and a menu button. Below that, a **Timer** card and an **Entries** card.
 
+Top right is this app's Dropbox connection: a cloud with a mark inside it. A tick means
+synced, a bang means the last sync failed, a clock means changes are still waiting, and
+chasing arrows mean a sync is running. Before a Dropbox app key is added it shows a plus,
+and while there is nothing to connect to it shows a slash.
+
+Hover over it to read the state in words — the mark alone is a shape, and the tooltip is what
+turns it into an answer. Pressing it does the one thing its state calls for (connect, or
+sync now) and never takes you off the page. The detail lives on Settings → **Sync**, behind
+the menu, where it is written out in full.
+
+> **What to look for.** Does the colour of the cloud tell you something before you read the
+> tooltip? Could you tell "synced" from "still waiting" without hovering? Is there anything
+> you expected the header to show that you have to go to Settings for?
+
 The Entries card will say something like *"No entries yet. Start the timer above, or add one by
 hand."*
 
 > **What to look for.** Is the empty screen a helpful first impression, or does it look broken?
-> Would you know what to do first? Is anything on it a mystery?
+> Would you know what to do first? Is anything on it a mystery? Does the status dot make sense
+> as something you can press, and does pressing it do what its label says?
 
 ---
 
@@ -51,10 +66,20 @@ hand."*
 
 Go to **Settings** from the menu at the top right.
 
-Scroll to **Clients** and press the **+** next to the heading. Fill in a name — use a real one,
-like a client you work for. If you have a rate for them, add it. Press **Add client**.
+Press **New client**. Fill in a name — use a real one, like a client you work for. If you have
+a rate for them, add it. Press **Add client**.
 
-Do the same for a **Project** under your client. Give it a colour.
+Your new client is one row in **Clients and projects**. Its projects live underneath it, and
+the group starts closed, so the list does not grow every time you add a project. Click the
+client's name to open it, and again to fold it away.
+
+Open your client, then press **New project** underneath its projects. Give the project a
+colour. Notice the client is already filled in for you — you did not have to pick it.
+
+> **What to look for.** Is it obvious that the projects are there and merely folded up, rather
+> than gone? Was the client name obviously the thing to click, without hunting for a caret or
+> an arrow? Does it stay obvious which client each project belongs to once opened? Was it
+> clear that **New project** adds to *that* client?
 
 > **What to look for.** The colour picker should show you how the colour will read against the
 > page before you commit to it. Did each new thing you created get a *different* colour from
@@ -74,11 +99,18 @@ Press it.
 
 The button becomes **Stop**, and elapsed time starts counting up in `H:MM:SS`.
 
-Leave it running for a minute or two. Do not stop it yet.
+Your client's **name** is also a button. Press it and the projects under that client appear
+underneath, each with its own play button — so you can start the timer against a specific
+project rather than the client's default one. Once a project's timer is running, that project
+line carries its own ticking count-up and a square to stop, so you can stop and discard from
+there too. Press the name again and they fold away.
 
 > **What to look for.** Does the number ticking up feel trustworthy? Is it clear *which* client
-> the timer belongs to? Is it obvious how to stop it? If you pressed the client's name instead
-> of Start, what happened — and was that what you expected?
+> the timer belongs to? Is it obvious how to stop it? When you pressed the client's name, did
+> the projects appear under *that* client and not another? Was it clear that a project's
+> **Start** starts the timer for that project?
+
+Leave it running for a minute or two. Do not stop it yet.
 
 ---
 
@@ -182,29 +214,60 @@ Do it again, but this time let the bar time out.
 
 ---
 
-## 11. Delete a project — and see what happens to your entries
+## 11. Archive a project - and check your entries survive
 
-Go to **Settings → Projects**, press **Edit** then **Delete** on your project. Confirm.
+Go to **Settings -> Clients and projects**, click your client's name to open its projects,
+and press **Archive** on your project.
+
+Notice what did *not* happen: no confirmation, no count of affected entries, no second
+confirmation about billable time. Archiving moves nothing, so there is nothing to warn about.
 
 Now look at your entries on the home page.
 
 > **What to look for.** This is the most important check in this section. Your entries should
-> still be there, but with no project. Confirm you can still undo the delete. If your entries
-> disappeared with the project, that is a serious finding — stop and write it down.
+> still be there and should still name your project, marked as archived. If they went
+> uncategorised, or disappeared, that is a serious finding - stop and write it down.
 
-Do the same with a **client**. Note what happens to the projects that belonged to them.
+Now archive the **client** too. Check that its projects were *not* archived along with it —
+they should have left the list, and should still be there, unrestored, under **Show archived
+clients and projects**.
+
+> **What to look for.** Archiving a client must not archive its projects: a client can be
+> finished with while work under it continues, so the projects must still exist. Ticking
+> **Show archived clients and projects** should bring the client *and* its projects back
+> together. If the projects came back already archived, that is a finding - write it down.
 
 ---
 
-## 12. Archive, and find it again
+## 12. Check that archived things are gone from everywhere you choose
 
-Archive a project and a client from Settings. They should disappear from the list.
+With a project and a client archived, look for them in the places you would normally pick
+one:
 
-There is a **Show archived projects** and a **Show archived clients** checkbox. Tick one.
+- the **client list on the Timer card**
+- the **project dropdown on a new entry**
+- the **client filter** above the entries
 
-> **What to look for.** Ticking "Show archived clients" should reveal **only** archived clients.
-> If archived projects appear too, two checkboxes are sharing one setting — write it down.
-> Can you still find and edit an archived thing? Can you un-archive it?
+They should not be offered anywhere.
+
+> **What to look for.** Anything still offering an archived project or client is the whole
+> failure this change is meant to prevent - work filed under a client you thought you had
+> closed off. Check the new-entry form carefully.
+
+Then find them again: **Settings** has a single **Show archived clients and projects**
+checkbox. Tick it. Archived projects appear inside their client's group, so open the group to
+reach **Restore**.
+
+> **What to look for.** One checkbox should bring back both archived clients and archived
+> projects, and unticking it should hide both again. If it only does one, write it down. Can
+> you still edit an archived thing? Is there a **Restore** that brings it back, and does it?
+
+One more thing worth trying: archive a client that has a project, then edit an entry that is
+filed under that project and save it.
+
+> **What to look for.** The project must still be selected, and the client must still be named
+> as its group. If the entry came back uncategorised, the app silently re-filed work you had
+> already recorded - which is worse than showing nothing.
 
 ---
 

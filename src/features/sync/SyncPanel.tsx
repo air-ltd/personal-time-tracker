@@ -45,31 +45,66 @@ export function SyncPanel() {
     <section className="panel" aria-labelledby="sync-heading">
       <h2 id="sync-heading">
         Sync{' '}
-        <span
-          className={`badge badge-${keyInfo.environment}`}
-          data-testid="sync-environment"
-          title={
-            keyInfo.source === 'environment'
-              ? 'Using the key from the build configuration'
-              : `Using the key built in for the ${keyInfo.environment} environment`
-          }
-        >
-          {keyInfo.environment === 'production' ? 'production' : 'non-production'}
-        </span>
+        {/*
+          Only ever "production" (item 52). A "non-production" badge told the user something
+          they could already see: a development build says so in its title and is marked dev
+          in the header, so on the sync card it was the same fact a third time. What is worth
+          saying is the opposite — that this *is* the real Dropbox app, because that decides
+          where a user's work goes.
+        */}
+        {keyInfo.environment === 'production' && (
+          <span
+            className="badge badge-production"
+            data-testid="sync-environment"
+            title={
+              keyInfo.source === 'environment'
+                ? 'Using the key from the build configuration'
+                : 'Using the key built in for the production environment'
+            }
+          >
+            production
+          </span>
+        )}
       </h2>
+
+      {/*
+        0011 AR2: the app MUST document this in the settings screen rather than leaving the
+        user to assume encryption they do not have. It was a MUST, it was not implemented, and
+        the About page now carries the same statement — so the disclosure lives where the
+        decision to sync is made, not only where someone went looking for the policy.
+      */}
+      <p className="hint">
+        Your entries are written to Dropbox as one JSON file, in plain readable text. This app
+        does not encrypt it — there is no passphrase. Dropbox protects it at rest and controls
+        access to your account; anyone who can read that file can read your work history. Use a
+        strong unique password and two-factor authentication, and treat the file itself as
+        sensitive if you ever share or export it.
+      </p>
 
       <div className="button-row">
         {connection === 'connected' ? (
           <>
+            {/*
+              Tooltips on all three actions. The words on the buttons say what they are
+              called; these say what will happen, which is the part that matters before
+              pressing "Disconnect" — it is the one here that takes the work off this device.
+            */}
             <button
               type="button"
               className="button button-primary"
               onClick={syncNow}
               disabled={busy}
+              title="Send anything waiting to Dropbox and pull down what the other device has recorded."
             >
               Sync now
             </button>
-            <button type="button" className="button" onClick={disconnect} disabled={busy}>
+            <button
+              type="button"
+              className="button"
+              onClick={disconnect}
+              disabled={busy}
+              title="Sign this device out of Dropbox. Your entries stay in this browser; they stop syncing."
+            >
               Disconnect
             </button>
           </>
@@ -79,6 +114,7 @@ export function SyncPanel() {
             className="button button-primary button-with-icon"
             onClick={connect}
             disabled={busy}
+            title="Sign in to Dropbox so this device can sync with your others. Takes you to Dropbox to approve."
           >
             {/* Item 17 asked for a cloud here and the icon had been drawn but never
                 placed. Decorative: the button text is the name, so announcing the SVG as

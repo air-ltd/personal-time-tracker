@@ -1,10 +1,11 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useTaxonomy } from './useTaxonomy'
-import { useTaxonomyDeletes } from './useTaxonomyDeletes'
-import { CurrencySelect } from './CurrencySelect'
+import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
+import { useTagDeletes } from './useTagDeletes'
 import { ClientForm } from './ClientForm'
 import { ProjectForm } from './ProjectForm'
-import { AddToHeading } from '../../app/AddToHeading'
+import { ChevronIcon, PlusIcon } from '../../app/Icons'
 import {
   createOrFindTag,
   createProject,
@@ -13,8 +14,6 @@ import {
   updateProject,
   updateTag,
 } from '../../storage/taxonomyRepo'
-import { writeDefaultCurrency } from '../../storage/settingsRepo'
-import { useAppDefaultCurrency } from '../settings/useAppDefaultCurrency'
 import { FALLBACK_CURRENCY, resolveCurrency } from '../../domain/taxonomy/money'
 import { currencyLabel, formatMinor } from '../../domain/taxonomy/currencies'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
@@ -42,6 +41,9 @@ function counted(count: number, singular: string, plural: string): string {
   return `${count} ${count === 1 ? singular : plural}`
 }
 
+/** Group key for projects with no client; cannot be an id, so `domId` carries that. */
+const UNGROUPED = '\u0000ungrouped'
+
 export function TaxonomySettings({ now }: { now: Date }) {
   const { projects, clients, tags, loading, error: loadError } = useTaxonomy()
   /*
@@ -52,18 +54,38 @@ export function TaxonomySettings({ now }: { now: Date }) {
    * checkbox then reported the other's state. Split per section: the label says which
    * records it shows, and it shows exactly those.
    */
-  const [showArchivedClients, setShowArchivedClients] = useState(false)
-  const [showArchivedProjects, setShowArchivedProjects] = useState(false)
+  /*
+   * One flag for archived clients and projects alike (0005 A2). Two flags meant two
+   * checkboxes under one heading, asking the user to treat "see archived clients" and "see
+   * archived projects" as separate decisions when they are one.
+   */
+  const [showArchived, setShowArchived] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // The app-wide default, from `meta` rather than a taxonomy table — which is why it is
-  // its own hook instead of another field on `useTaxonomy`, whose name would then be a
-  // lie. It also feeds the project forms below, so the resolution that used to be
-  // reimplemented there with a hardcoded `GBP` is now the domain chain.
+  /*
+   * The app-wide default currency, for *resolving* rates — not for editing.
+   *
+   * The control moved to `CurrenciesPanel`, because it is a preference rather than a
+   * taxonomy record. The value still has to be read here: every project's rate on this
+   * page is shown in whatever currency it resolves to, and that chain ends at this default.
+   */
   const defaultCurrency = useAppDefaultCurrency()
 
-  const visibleProjects = showArchivedProjects ? projects : projects.filter((p) => !p.archived)
-  const visibleClients = showArchivedClients ? clients : clients.filter((c) => !c.archived)
+  /*
+   * A project's visibility follows its client's (item 57).
+   *
+   * Work filed under a client you have finished with is not something you are working on,
+   * and leaving those projects on the page under a client that is no longer listed left the
+   * tree with rows whose owner was missing. The project is NOT archived by this — 0005 A4
+   * still holds, and it comes back whole, with its client, when archived records are shown.
+   */
+  const archivedClientIds = new Set(clients.filter((c) => c.archived).map((c) => c.id))
+  const visibleProjects = showArchived
+    ? projects
+    : projects.filter(
+        (p) => !p.archived && (p.clientId === null || !archivedClientIds.has(p.clientId)),
+      )
+  const visibleClients = showArchived ? clients : clients.filter((c) => !c.archived)
 
   const report = useCallback((problem: unknown) => {
     setError(problem instanceof Error ? problem.message : String(problem))
@@ -71,87 +93,73 @@ export function TaxonomySettings({ now }: { now: Date }) {
 
   // --- delete flow -------------------------------------------------------------
   //
-  // Extracted to a hook: it was ~140 lines of state machine with no JSX in it, wedged
-  // between the component's own state and its render, and it needed state declared after
-  // the code that set it.
+  // Extracted to a hook, and now tags only. Archiving replaced deleting for projects and
+  // clients (0005 X1), and archiving needs none of this: it sets a flag, moves no entry, and
+  // reverses with the restore the row already offers.
   const clearError = useCallback(() => setError(null), [])
-  const deletes = useTaxonomyDeletes({ now, report, clearError })
+  const tagDeletes = useTagDeletes({ now, report, clearError })
 
   if (loading) return <p className="hint">Loading settings…</p>
 
   return (
-    <section className="panel settings-panel">
-      <div className="panel-header">
-        <h2>Settings</h2>
-      </div>
+    <>
+      {/*
+        Labelled by the heading TaxonomySection renders on the same line as its add buttons.
+        Not repeated here: two h2s with the same id would leave `aria-labelledby` resolving to
+        whichever came first, and name the panel after the wrong one of them.
+      */}
+      <section className="panel settings-panel" aria-labelledby="taxonomy-heading">
+        <TaxonomySection
+          clients={visibleClients}
+          allClients={clients}
+          projects={visibleProjects}
+          allProjects={projects}
+          showArchived={showArchived}
+          onToggleArchived={setShowArchived}
+          defaultCurrency={defaultCurrency}
+          now={now}
+          report={report}
+          banner={
+            /*
+              Both sources land in one place, but they are not the same: a failed read is not
+              dismissible, because nothing has loaded to act on, whereas a failed write is
+              something the Dismiss button can honestly clear.
+
+              Here rather than above the tags panel because a failed *load* of the taxonomy
+              affects clients, projects and tags equally — it is one read — so a single
+              banner covering all of it is honest, where one inside this panel would look
+              like a client-specific failure.
+            */
+            (error ?? loadError) !== null ? (
+              <div className="alert alert-error" role="alert" data-testid="settings-error">
+                <p>{error ?? loadError}</p>
+                {error !== null && (
+                  <button type="button" className="button" onClick={() => setError(null)}>
+                    Dismiss
+                  </button>
+                )}
+              </div>
+            ) : null
+          }
+        />
+      </section>
 
       {/*
-        Both sources land in one place, but they are not the same: a failed read is not
-        dismissible, because nothing has loaded to act on, whereas a failed write is
-        something the Dismiss button can honestly clear.
+        Tags in their own card (SPECS/todo.md item 50).
+
+        They were the third section of a panel headed "Settings", below two lists of records
+        that have nothing to do with them. A tag is not a client or a project, it is not
+        scoped to one, and its delete flow is the only one left with an undo bar — all of
+        which got lost in a shared card. Its confirmation and undo bar moved with it, which
+        also means they no longer appear under a heading about clients and projects.
       */}
-      {(error ?? loadError) !== null && (
-        <div className="alert alert-error" role="alert" data-testid="settings-error">
-          <p>{error ?? loadError}</p>
-          {error !== null && (
-            <button type="button" className="button" onClick={() => setError(null)}>
-              Dismiss
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* 0003 CU4: the last link in the resolution chain, for client-less work. */}
-      <div className="settings-block">
-        <h3>Default currency</h3>
-        <CurrencySelect
-          label="Currency for work with no client"
-          inheritLabel={`Not set — fall back to ${FALLBACK_CURRENCY}`}
-          value={defaultCurrency}
-          // No local copy: `writeDefaultCurrency` bumps the revision, and the hook
-          // re-reads on that. A second copy of this value in component state is the
-          // thing 0002 S2 exists to avoid, and it is how the value being displayed and
-          // the value being resolved could come to disagree.
-          onChange={(code) => void writeDefaultCurrency(code).catch(report)}
-        />
-        <p className="hint">
-          Reports show money in the project&apos;s currency, then the client&apos;s, then this
-          one.
-        </p>
-      </div>
-
-      <ClientSection
-        clients={visibleClients}
-        allClients={clients}
-        showArchived={showArchivedClients}
-        onToggleArchived={setShowArchivedClients}
-        onDelete={(client) => deletes.onDelete('client', client)}
-        now={now}
-        report={report}
-      />
-
-      <ProjectSection
-        projects={visibleProjects}
-        allProjects={projects}
-        clients={clients}
-        defaultCurrency={defaultCurrency}
-        showArchived={showArchivedProjects}
-        onToggleArchived={setShowArchivedProjects}
-        onDelete={(project) => deletes.onDelete('project', project)}
-        now={now}
-        report={report}
-      />
-
-      <TagSection
-        tags={tags}
-        onDelete={(tag) => deletes.onDelete('tag', tag)}
-        now={now}
-        report={report}
-      />
-
-      {deletes.confirmation}
-      {deletes.undoBar}
-    </section>
+      <section className="panel" aria-labelledby="tags-heading">
+        <h2 id="tags-heading">Tags</h2>
+        <TagSection tags={tags} onDelete={tagDeletes.onDelete} now={now} report={report} />
+        {tagDeletes.confirmation}
+        {tagDeletes.undoBar}
+      </section>
+    </>
   )
 }
 
@@ -160,247 +168,459 @@ interface SectionProps {
   report: (problem: unknown) => void
 }
 
-function ClientSection({
+/**
+ * Clients and their projects as one tree (SPECS/todo.md items 51 and 54).
+ *
+ * These were two stacked sections — a list of clients, then a list of projects — which asked
+ * the user to hold a client in their head while scrolling past every other client's projects
+ * to reach one. Now each client is one row that both carries its own actions and reveals the
+ * work under it, so the tree is the only copy of that relationship on the page.
+ *
+ * The client's Edit and Archive sit on the group header rather than in a separate list, which
+ * is the whole point: there is exactly one place a client can be acted on, and it is the same
+ * place its projects are found.
+ */
+function TaxonomySection({
   clients,
   allClients,
+  projects,
+  allProjects,
   showArchived,
   onToggleArchived,
-  onDelete,
+  defaultCurrency,
   now,
   report,
+  banner,
 }: SectionProps & {
   clients: Client[]
   allClients: Client[]
+  projects: Project[]
+  allProjects: Project[]
   showArchived: boolean
   onToggleArchived: (value: boolean) => void
-  onDelete: (client: Client) => void
+  defaultCurrency: string | null
+  banner: ReactNode
 }) {
-  const [creating, setCreating] = useState(false)
+  const [creatingClient, setCreatingClient] = useState(false)
+  /*
+   * The group whose project form is open, so it appears under the list it is adding to
+   * (item 55). Separate from the client form so opening one does not close the other
+   * part-way through.
+   */
+  const [addingFor, setAddingFor] = useState<string | null>(null)
+
+  /*
+   * Which groups are open, and how they start (item 51).
+   *
+   * A `Set` rather than one flag, because "collapsed" is per client: a user who opened one
+   * client's projects did not ask for every client's projects.
+   *
+   * Default is *nothing* open. The list used to be flat and complete, which meant a taxonomy
+   * of any size was a wall. The count on each row says how much is behind it, so a collapsed
+   * group is not a hidden group.
+   */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>())
+  function toggle(key: string): void {
+    setExpanded((previous) => {
+      const next = new Set(previous)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+  }
+
+  /*
+   * The tree, derived rather than stored.
+   *
+   * Derived because the taxonomy can change under us — a project archived, a client removed —
+   * and a grouping held in state would then describe a taxonomy that no longer exists.
+   */
+  const groups = useMemo(() => {
+    const byClient = new Map<string, Project[]>()
+    for (const project of projects) {
+      const key = project.clientId ?? UNGROUPED
+      const rows = byClient.get(key)
+      // Pushed rather than replaced, so this is linear in the projects rather than quadratic.
+      if (rows) rows.push(project)
+      else byClient.set(key, [project])
+    }
+
+    /*
+     * A client with no projects still gets a row. It exists, it can be edited or archived,
+     * and a client silently missing from the only list of clients would be its own bug — the
+     * "0 projects" count is also the honest answer to "where did my project go".
+     */
+    for (const client of clients) {
+      if (!byClient.has(client.id)) byClient.set(client.id, [])
+    }
+
+    /*
+     * No empty "No client" group. Every client gets a row even when it has no projects,
+     * because a client is a record that exists and can be acted on. The absence of a client
+     * is not a record — an empty row named "No client" told the user they had nothing under
+     * it, which is a fact about their data rather than something to act on.
+
+     * Internal work is still creatable: the client picker in the project form offers "No
+     * client — internal work" (0005 R1/U1), so it is reachable from any client's add button.
+     */
+
+    /*
+     * Ordering, and why a group can exist with no client to show.
+     *
+     * Projects belonging to a client that is archived and hidden are NOT dropped: archiving a
+     * client does not archive its projects (0005 A4), so hiding the client must not take live
+     * work off the page with it. Those groups are rendered without the client's actions,
+     * because there is no client on screen to act on, and they sort after the live clients so
+     * the ordinary case reads first.
+     */
+    const rank = (key: string) => (key === UNGROUPED ? 2 : byClient.has(key) ? 0 : 1)
+    const nameOf = (key: string) =>
+      key === UNGROUPED
+        ? 'No client'
+        : (allClients.find((c) => c.id === key)?.name ?? 'Unknown client')
+
+    return (
+      [...byClient.entries()]
+        .map(([key, rows]) => ({
+          key,
+          // The key is used in an id and a testid, so it must be safe in both.
+          domId: key === UNGROUPED ? 'none' : key,
+          client: clients.find((c) => c.id === key) ?? null,
+          name: nameOf(key),
+          projects: rows.sort((a, b) => a.name.localeCompare(b.name)),
+        }))
+        // Orphans last, so a client whose name sorts early cannot bury them.
+        .sort((a, b) => rank(a.key) - rank(b.key) || a.name.localeCompare(b.name))
+    )
+  }, [projects, clients, allClients])
 
   return (
     <div className="settings-block">
-      <AddToHeading
-        headingId="settings-clients-heading"
-        heading="Clients"
-        addLabel="New client"
-        onAdd={() => setCreating(true)}
-        className="panel-header taxonomy-section-heading"
-        testId="new-client"
-        headingLevel={3}
-      />
+      <div className="panel-header taxonomy-section-heading">
+        {/*
+          "Clients and projects", not "Settings". Every other panel on this page is named
+          for what it holds — Appearance, Currencies, Sync, Backup — and a panel called
+          "Settings", inside the settings page, named nothing at all.
+        */}
+        <h2 id="taxonomy-heading">Clients and projects</h2>
+        {/*
+          Only clients here (item 56). A project is added from the list it will join — under
+          its client, or under "No client" — so the client is already decided by where the
+          button is. A page-level "New project" asked the user to state the same thing the
+          button's own position already said.
+        */}
+        <button
+          type="button"
+          className="button button-icon"
+          data-testid="new-client"
+          aria-expanded={creatingClient}
+          onClick={() => {
+            // One form at a time. They sit in different parts of the section now, so both
+            // being open at once would leave two half-finished records on screen with no
+            // obvious relationship between them.
+            setCreatingClient((wasCreating) => {
+              if (wasCreating) return false
+              setAddingFor(null)
+              return true
+            })
+          }}
+          // Tooltips on the two add buttons say what each one creates, because on this card
+          // they sit on one line and "New client" / "New project" are the only thing
+          // distinguishing them at a glance.
+          title="Add a client to work for. It gets a default project of its own."
+        >
+          <PlusIcon />
+          <span>New client</span>
+        </button>
+      </div>
 
-      {creating ? (
+      {banner}
+
+      {creatingClient && (
         <ClientForm
           takenColours={allClients.map((row) => row.colour)}
           now={now}
-          onDone={() => setCreating(false)}
+          onDone={() => setCreatingClient(false)}
           report={report}
         />
-      ) : null}
+      )}
 
-      {clients.length === 0 && <p className="hint">No clients yet.</p>}
+      {groups.length === 0 && (
+        <p className="hint">
+          No clients or projects yet. Add a client, or a project on its own.
+        </p>
+      )}
 
-      <ul className="taxonomy-list">
-        {clients.map((client) => (
-          <li
-            key={client.id}
-            className={client.archived ? 'taxonomy-row archived' : 'taxonomy-row'}
-          >
-            <ClientRow
-              client={client}
+      {groups.length > 0 && (
+        <ul className="taxonomy-groups">
+          {groups.map((group) => (
+            <TaxonomyGroup
+              key={group.key}
+              group={group}
+              expanded={expanded.has(group.key)}
+              onToggle={() => toggle(group.key)}
+              addingProject={addingFor === group.key}
+              onAddProject={() => {
+                const opening = addingFor !== group.key
+                setAddingFor(opening ? group.key : null)
+                if (opening) setCreatingClient(false)
+                // The form lives with the projects it adds to, so the group has to be open
+                // for it to be visible at all.
+                if (opening) {
+                  setExpanded((previous) => new Set(previous).add(group.key))
+                }
+              }}
+              allClients={allClients}
+              defaultCurrency={defaultCurrency}
               now={now}
               report={report}
-              onDelete={() => onDelete(client)}
             />
-          </li>
-        ))}
-      </ul>
+          ))}
+        </ul>
+      )}
 
+      {/*
+        One control for both record types (0005 A2: "an explicit show-archived control").
+
+        Two of them was over-serving the requirement: separate toggles for clients and
+        projects, under one heading, asked the user to decide separately whether to see
+        archived *clients* and archived *projects* — which is one decision about one idea. The
+        original bug this replaced was two checkboxes bound to one value, each reporting the
+        other's state; one checkbox with a label naming both it shows is the honest form of
+        that, and A5's Restore makes each record recoverable regardless.
+
+        The count is both types together, because that is what the control reveals.
+      */}
       <ArchivedToggle
-        plural="clients"
-        singular="client"
         showArchived={showArchived}
         onToggle={onToggleArchived}
-        hiddenCount={allClients.length - clients.length}
+        hiddenCount={
+          allClients.length - clients.length + (allProjects.length - projects.length)
+        }
       />
     </div>
   )
 }
 
-function ClientRow({
-  client,
-  now,
-  report,
-  onDelete,
-}: {
-  client: Client
-  now: Date
-  report: (problem: unknown) => void
-  onDelete: () => void
-}) {
-  const [editing, setEditing] = useState(false)
-
-  if (editing) {
-    return (
-      <div className="taxonomy-edit">
-        <ClientForm
-          client={client}
-          now={now}
-          onDone={() => setEditing(false)}
-          report={report}
-        />
-      </div>
-    )
-  }
-
-  return (
-    <>
-      <span className="taxonomy-name">
-        {client.name}
-        {client.archived && <span className="badge badge-archived"> archived</span>}
-      </span>
-      <span className="taxonomy-meta">
-        {currencyLabel(client.currency)}
-        {/* Formatted, not raw. `9000` is the storage unit; the user bills in £90.00 an
-            hour, and a list showing "9000 minor units/hour" is the storage layer talking
-            to the user — which is what 0003 CU1 exists to stop. */}
-        {client.defaultRateMinor !== null &&
-          ` · ${formatMinor(client.defaultRateMinor, client.currency ?? FALLBACK_CURRENCY)}/hour`}
-      </span>
-      <span className="taxonomy-actions">
-        <button type="button" className="button" onClick={() => setEditing(true)}>
-          Edit
-        </button>
-        <button
-          type="button"
-          className="button"
-          onClick={() => {
-            // Caught: the user has pressed Archive and a silent failure leaves the row
-            // unchanged with no explanation, which reads as the button being broken. `report`
-            // is already used for every other failure in this file.
-            void setArchived('client', client.id, !client.archived, now).catch(report)
-          }}
-        >
-          {client.archived ? 'Restore' : 'Archive'}
-        </button>
-        <button type="button" className="button button-danger" onClick={onDelete}>
-          Delete
-        </button>
-      </span>
-    </>
-  )
-}
-
-function ProjectSection({
-  projects,
-  allProjects,
-  clients,
+/**
+ * One client and the projects under it: a header row that is both the client's record and the
+ * control for its projects.
+ */
+function TaxonomyGroup({
+  group,
+  expanded,
+  onToggle,
+  addingProject,
+  onAddProject,
+  allClients,
   defaultCurrency,
-  showArchived,
-  onToggleArchived,
-  onDelete,
   now,
   report,
 }: SectionProps & {
-  projects: Project[]
-  allProjects: Project[]
-  clients: Client[]
+  group: {
+    key: string
+    domId: string
+    client: Client | null
+    name: string
+    projects: Project[]
+  }
+  expanded: boolean
+  onToggle: () => void
+  /** Whether this client's project form is showing on its own row. */
+  addingProject: boolean
+  onAddProject: () => void
+  allClients: Client[]
   defaultCurrency: string | null
-  showArchived: boolean
-  onToggleArchived: (value: boolean) => void
-  onDelete: (project: Project) => void
 }) {
-  const [creating, setCreating] = useState(false)
-  /** Colours already in use, so a new project opens on a visibly distinct one (0005 P4). */
-  const takenColours = useCallback(
-    () => [...projects.map((row) => row.colour), ...clients.map((row) => row.colour)],
-    [projects, clients],
-  )
+  const [editing, setEditing] = useState(false)
+  const client = group.client
+  const bodyId = `projects-${group.domId}`
+
   return (
-    <div className="settings-block">
-      <AddToHeading
-        headingId="settings-projects-heading"
-        heading="Projects"
-        addLabel="New project"
-        onAdd={() => setCreating(true)}
-        className="panel-header taxonomy-section-heading"
-        testId="new-project"
-        headingLevel={3}
-      />
+    <li className="taxonomy-group">
+      {/*
+        Editing replaces the row but not the tree: the projects stay on screen underneath, so
+        saving an edit cannot make the work under this client appear to vanish.
+      */}
+      {editing && client !== null ? (
+        <div className="taxonomy-edit">
+          <ClientForm
+            client={client}
+            now={now}
+            onDone={() => setEditing(false)}
+            report={report}
+          />
+        </div>
+      ) : (
+        <div className={client?.archived ? 'taxonomy-row archived' : 'taxonomy-row'}>
+          {/*
+            A button rather than a plain name because the name is the control: clicking it is
+            how you see this client's projects. `aria-expanded` carries the state for anything
+            that cannot see the disclosure, and `aria-controls` ties it to what it reveals.
+          */}
+          <button
+            type="button"
+            className="taxonomy-group-toggle"
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            onClick={onToggle}
+            data-testid={`toggle-projects-${group.domId}`}
+          >
+            <ChevronIcon />
+            <span className="taxonomy-group-name">{group.name}</span>
+            {client?.archived === true && (
+              <span className="badge badge-archived"> archived</span>
+            )}
+          </button>
 
-      {creating ? (
-        <ProjectForm
-          clients={clients}
-          defaultCurrency={defaultCurrency}
-          takenColours={takenColours()}
-          idPrefix="project"
-          report={report}
-          onSubmit={async (fields) => {
-            await createProject({ ...fields, now })
-            setCreating(false)
-          }}
-          onCancel={() => setCreating(false)}
-        />
-      ) : null}
+          <span className="taxonomy-meta">
+            {/*
+              The currency and rate are the client's, and the count is what is behind the
+              disclosure — together they answer "is my work here, and what is it billed at?"
+              without expanding anything.
+            */}
+            {client !== null && currencyLabel(client.currency)}
+            {client !== null &&
+              client.defaultRateMinor !== null &&
+              /*
+                Formatted, not raw. `9000` is the storage unit; the user bills in £90.00 an
+                hour, and a list showing "9000 minor units/hour" is the storage layer talking
+                to the user — which is what 0003 CU1 exists to stop.
+              */
+              ` · ${formatMinor(client.defaultRateMinor, client.currency ?? FALLBACK_CURRENCY)}/hour`}
+            {` · ${counted(group.projects.length, 'project', 'projects')}`}
+          </span>
 
-      {projects.length === 0 && <p className="hint">No projects yet.</p>}
-
-      {/* 0005 N2: projects are grouped by client so the two types are never told apart by
-          colour alone. */}
-      <ul className="taxonomy-list">
-        {[...projects]
-          .sort((a, b) => {
-            const groupOrder = (p: Project) => (p.clientId === null ? '￿' : p.clientId)
-            return groupOrder(a).localeCompare(groupOrder(b)) || a.name.localeCompare(b.name)
-          })
-          .map((project) => {
-            const owner = clients.find((c) => c.id === project.clientId)
-            return (
-              <li
-                key={project.id}
-                className={project.archived ? 'taxonomy-row archived' : 'taxonomy-row'}
+          {/*
+            No actions for the orphan group, and none for a client that is archived and hidden
+            — in both cases there is no client on screen to edit or archive.
+          */}
+          {client !== null && (
+            <span className="taxonomy-actions">
+              <button type="button" className="button" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+              <button
+                type="button"
+                className="button"
+                onClick={() => {
+                  // Caught: the user has pressed Archive and a silent failure leaves the row
+                  // unchanged with no explanation, which reads as the button being broken.
+                  // `report` is already used for every other failure in this file.
+                  void setArchived('client', client.id, !client.archived, now).catch(report)
+                }}
               >
-                <ProjectRow
-                  project={project}
-                  clientName={owner?.name ?? null}
-                  clients={clients}
-                  defaultCurrency={defaultCurrency}
-                  now={now}
-                  report={report}
-                  onDelete={() => onDelete(project)}
-                />
-              </li>
-            )
-          })}
-      </ul>
+                {client.archived ? 'Restore' : 'Archive'}
+              </button>
+            </span>
+          )}
+        </div>
+      )}
 
-      <ArchivedToggle
-        plural="projects"
-        singular="project"
-        showArchived={showArchived}
-        onToggle={onToggleArchived}
-        hiddenCount={allProjects.length - projects.length}
-      />
-    </div>
+      {/*
+        Opened from the list it adds to, so the client is already chosen and the form appears
+        where the new row will. A form at the top of the section would have appeared to come
+        from nowhere.
+      */}
+      {addingProject && (
+        <div className="taxonomy-edit">
+          <ProjectForm
+            clients={allClients}
+            defaultCurrency={defaultCurrency}
+            /*
+              The group's own colours, and the client's. Not the whole taxonomy: the picker
+              only has to avoid the colours already in view here, and every project in the
+              app would leave it with almost nothing to offer (0005 P4).
+            */
+            takenColours={[
+              ...group.projects.map((row) => row.colour),
+              // No client in the orphan group, so there is no client colour to avoid.
+              ...(client !== null ? [client.colour] : []),
+            ]}
+            idPrefix="project"
+            initialClientId={client?.id}
+            report={report}
+            onSubmit={async (fields) => {
+              await createProject({ ...fields, now })
+              onAddProject()
+            }}
+            onCancel={onAddProject}
+          />
+        </div>
+      )}
+
+      <ul className="taxonomy-list" id={bodyId} hidden={!expanded}>
+        {group.projects.map((project) => (
+          <li
+            key={project.id}
+            className={project.archived ? 'taxonomy-row archived' : 'taxonomy-row'}
+          >
+            <ProjectRow
+              project={project}
+              clients={allClients}
+              defaultCurrency={defaultCurrency}
+              now={now}
+              report={report}
+            />
+          </li>
+        ))}
+
+        {/*
+          Underneath the last project, inside the group it adds to (item 56). It goes here
+          rather than on the client row so that where the button is says which list the new
+          project joins — including for the "No client" group, which is how internal work
+          gets created at all now that there is no page-level project button.
+
+          Inside the collapsible list on purpose: it hides with the projects it adds to,
+          leaving the client row as the only thing on screen when the group is closed.
+        */}
+        {/*
+          No button under an archived client (item 58): work is not being started for a
+          client that has been finished with, and offering the affordance invites it. The
+          orphan group keeps its button — internal work belongs to nobody, so nothing is
+          finished.
+        */}
+        {client?.archived !== true && (
+          <li className="taxonomy-add-row">
+            <button
+              type="button"
+              className="button"
+              data-testid={`add-project-for-${group.domId}`}
+              aria-expanded={addingProject}
+              // An explicit label, because the name is built from a visible "New project" and
+              // the client it belongs to, and the accessible-name computation trims each of
+              // those separately — running them together as "New projectfor Acme Ltd". It
+              // also has to be unique: with one button per group, "New project" alone would
+              // leave a screen reader user several identical controls and no way to tell
+              // which client each one serves.
+              aria-label={`New project for ${group.name}`}
+              // Says what it will be filed under, which is the one thing a bare "New
+              // project" cannot: the button sits inside the group, so the client is a
+              // glance away but not a certainty until you read it.
+              title={`Add a project under ${group.name}. The client is already filled in.`}
+              onClick={onAddProject}
+            >
+              <PlusIcon />
+              <span>New project</span>
+            </button>
+          </li>
+        )}
+      </ul>
+    </li>
   )
 }
 
 function ProjectRow({
   project,
-  clientName,
   clients,
   defaultCurrency,
   now,
   report,
-  onDelete,
 }: {
   project: Project
-  clientName: string | null
   clients: Client[]
   defaultCurrency: string | null
   now: Date
   report: (problem: unknown) => void
-  onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
 
@@ -442,13 +662,23 @@ function ProjectRow({
           style={{ background: project.colour }}
           aria-hidden="true"
         />
-        {project.name}
+        {/*
+          Its own element so the archived strike reaches the name and stops there. A
+          descendant cannot turn off a decoration propagated from an ancestor, so leaving the
+          name as a bare text node struck the "archived" badge with it — striking the word
+          that says the row is archived, which argues with itself.
+        */}
+        <span className="taxonomy-name-text">{project.name}</span>
         {project.archived && <span className="badge badge-archived"> archived</span>}
       </span>
-      {/* Labelled, never colour alone (0005 N2): the client is named, and a project with
-          no client says so rather than showing nothing. */}
+      {/*
+        Deliberately does not name the client (0005 N2). It used to read "Client: Acme Ltd",
+        or "No client" when there was none — but item 51 moved the owner to the group heading
+        above, so repeating it here was both redundant and, when the prop was left null, a
+        lie: every row read "No client" even under a named client. The heading names the
+        owner, which satisfies N2 by grouping rather than by labelling.
+      */}
       <span className="taxonomy-meta">
-        {clientName === null ? 'No client' : `Client: ${clientName}`}
         {/* The rate, where there is one. It used to say only "billable", which told the
             user nothing they could not already see — and left the one number on this row
             with nowhere to read it. */}
@@ -468,9 +698,6 @@ function ProjectRow({
           }}
         >
           {project.archived ? 'Restore' : 'Archive'}
-        </button>
-        <button type="button" className="button button-danger" onClick={onDelete}>
-          Delete
         </button>
       </span>
     </>
@@ -526,7 +753,6 @@ function TagSection({
 
   return (
     <div className="settings-block">
-      <h3>Tags</h3>
       <p className="hint">
         Tags can also be typed straight into an entry as you record it — anything you add here
         does not have to exist first.
@@ -710,35 +936,35 @@ function TagRow({
  * bare symbol to a screen reader.
  */
 function ArchivedToggle({
-  plural,
-  singular,
   showArchived,
   onToggle,
   hiddenCount,
 }: {
-  /** Names the section, so two toggles on one page stay distinguishable to a screen reader. */
-  plural: 'clients' | 'projects'
-  singular: 'client' | 'project'
   showArchived: boolean
   onToggle: (value: boolean) => void
+  /** Archived clients and projects together, because one control reveals both. */
   hiddenCount: number
 }) {
   return (
     <div className="archived-toggle">
-      {/* A2: archived records stay hidden by default but must remain reachable, or
-          historical entries become impossible to edit. */}
+      {/*
+        A2: archived records stay hidden by default but must remain reachable, or historical
+        entries become impossible to edit.
+
+        The label names both types it reveals rather than a section. It used to take the
+        section's name because there were two controls and each covered one type; there is
+        one now, so there is one thing to say about it.
+      */}
       <label>
         <input
           type="checkbox"
           checked={showArchived}
           onChange={(e) => onToggle(e.target.checked)}
         />{' '}
-        Show archived {plural}
+        Show archived clients and projects
       </label>
       {hiddenCount > 0 && !showArchived && (
-        <span className="hint">
-          {counted(hiddenCount, `${singular} is`, `${plural} are`)} hidden.
-        </span>
+        <span className="hint">{counted(hiddenCount, 'record is', 'records are')} hidden.</span>
       )}
     </div>
   )

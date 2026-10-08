@@ -6,10 +6,11 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    running timer shows `H:MM:SS`.
 2. [x] Timer accuracy on save screen to the second. Done in `phase-2b`: the form's
    duration preview shows `H:MM:SS` alongside the rounded minutes.
-3. [ ] **stop should just stop and save, not present another screen.** Still open. The
-   timer already stops and saves, but `App.tsx` navigates to a form afterwards; the fix
-   is to save and stay put. Note this interacts with item 5 — the modify-after-the-fact
-   affordance is what makes skipping the screen safe.
+3. [x] **stop should just stop and save, not present another screen.** **Done by item 48.**
+   Stopping writes the entry and stays where you are; the form is offered as a link on the
+   timer panel rather than imposed as a navigation. That is also the affordance this item
+   said the change depended on — the entry is not stranded uncategorised, it is one click
+   away from being described, and the entry list reaches it too. `0001 US2` amended.
 4. [x] **Need ability to categorise by job/client.** Done in `phase-4`, though the branch is
    still uncommitted. A `#/settings` view reachable from the header in one click (two
    interactions to any record, 0005 P1), a project picker on the entry form grouped by
@@ -182,36 +183,342 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     than wrapped, so a long client name cannot move it either. Measured in a browser, because
     auto-placement has a subtlety that looks correct in review: with only two children the
     controls landed in column 2 and jumped to column 3 the moment the note appeared.
-35. [ ] edit and discard button sizes should match as well as start/stop, so that buttons don't move when start is clicked.
-36. [ ] do not allow delete of only remaining project against a client
-37. [ ] archived clients should not appear in the list for starting a timer
+35. [x] edit and discard button sizes should match as well as start/stop, so that buttons
+   don't move when start is clicked — **done.** `Start` is wider than `Stop` and `Edit`
+   narrower than `Discard`, so pressing Start shrank the first button and grew the second:
+   the control under the pointer changing shape as it is pressed. Each slot is pinned to the
+   widest word that ever occupies it, and the browser suite now asserts both width *and*
+   left position across the transition, beside the existing row-height check.
+36. [x] do not allow delete of only remaining project against a client — **closed by item 41.**
+   Answered at the root rather than per-case: clients and projects are not deletable at all,
+   so there is no path to deleting a client's last project.
+37. [x] archived clients should not appear in the list for starting a timer — **done in item
+   41.** `useTaxonomy` deliberately loads archived records and leaves filtering to each view,
+   and `TimerPanel` was the one view that never filtered. The wrinkle held up: a client
+   archived *while* one of its timers runs stays visible, or the row vanishes and the timer
+   reappears in the orphan row claiming it has no client. Both halves have tests.
+38. [x] add info on creating github issues for feedback to the about page — **done.** A
+   "Found a problem?" panel with a prefilled new-issue link, plus a request *not* to attach a
+   backup file: a backup is the user's work, and a public issue is the last place it belongs.
+   The repository URL is a constant in `src/app/repository.ts` rather than a literal in the
+   view, so a fork has one place to change it.
+39. [x] add a privacy policy to the about page — **done**, and it closed an unmet MUST.
+   `0011 AR2` requires the absence of encryption to be documented *in the settings screen*,
+   and nothing in the app said so anywhere. The policy states what the app cannot do (no
+   analytics, telemetry, cookies or third-party assets; no accounts, no server), where things
+   are stored, and what a compromised Dropbox account would expose — plus how to remove
+   everything. The same disclosure now also sits on the sync panel, because that is where the
+   decision to sync is made and a policy behind a link is a policy nobody opens.
+
+   Five tests assert the *claims*, since the failure mode of a privacy policy is being quietly
+   untrue: a change to storage can invalidate a sentence without touching the page. The
+   behaviour behind "no analytics" is not asserted here and cannot be — it needs a browser
+   watching every request, which is the e2e suite's job (0011 P6).
+40. [x] the title says "dev" on a non-production origin — **done.** Marked as a small badge
+   beside the name rather than as part of it: "Time Tracker DEV" reads like a fork, where a
+   quiet stamp says the same app on another origin. It reads `environmentForHost`, the same
+   function that picks the Dropbox app, so the badge and the sync target cannot disagree —
+   the failure that matters, since a dev build writing to production Dropbox is the dangerous
+   one and a badge claiming otherwise is worse than no badge.
+41. [x] **Clients and projects are not deletable; archiving replaces it.** **Done.** Spec
+   (0005 X1–X7), storage, settings, timer card, entry form and tests. This supersedes item
+   36 and was a product change rather than a bug fix.
+
+   *Why:* retiring a project is usually not a rare destructive act — it is a project that has
+   finished. Offering both "archive" and "delete" meant the safe button got used less than it
+   should have, because the destructive one looked like the official answer. The old rules
+   (soft delete, impact counts, second confirmation, undo) were defensible; the premise was
+   not.
+
+   *Scope:*
+   - Remove `deleteProject`, `deleteClient`, `undoDeleteProject`, `undoDeleteClient`,
+     `projectDeleteImpact`, `clientDeleteImpact` and their receipt types from
+     `storage/taxonomyRepo.ts`.
+   - Drop the Delete button from `ClientRow` and `ProjectRow`; Archive/Restore already exists.
+   - `useTaxonomyDeletes` becomes `useTagDeletes`, tags only — deleting a tag *moves* entries
+     rather than hiding one, so it keeps its count, confirmation and undo.
+   - Filter archived records out of every choice (0005 X4): the timer list, the project
+     picker, and the client filter. The client filter *is* the timer card's client name
+     button, so there is no separate control to fix.
+   - Keep an archived record visible when it is the entry's **own** current value, else the
+     `<select>` holds a value with no option and saving silently re-files the work.
+
+   *Tests to remove or rewrite:* ~7 describe blocks in `storage/taxonomyRepo.test.ts`
+   (project/client delete, tombstones, names freed by deletion, undo, impact counts),
+   35 references in `TaxonomySettings.test.tsx`, plus `EntryForm.test.tsx` and
+   `App.test.tsx`. Replacement coverage is the point and is not mechanical: archiving instead
+   of deleting, archived records absent from each picker, and the chosen-archived-record
+   exemption.
+
+   *Two things worth knowing that came out of it:*
+
+   - **A tombstone can still arrive from 0.1.0**, which shipped with delete enabled. So the
+     guards against resurrecting a soft-deleted project stay, and their tests now write the
+     tombstone straight into the table — otherwise they would only exercise a state this
+     code can no longer produce, which is exactly the case needing cover.
+   - **Archiving a client does not free its name**, unlike a project. Deliberate and spec'd:
+     client names are globally unique regardless of archived state, because a report
+     attributes by name. The consequence is that archiving is a one-way door for a *client's
+     name* even though the record itself is restorable. Asserted side by side so the
+     asymmetry is deliberate rather than accidental.
+42. [x] remove the "running" tag from client with running timer - just keep the timers
+   ticking — **done.** The badge said "running" beside a figure already counting up, so the
+   word was read first and the number read as decoration. Only the visible word went: the
+   row keeps `aria-current` and its active class, so *which* client is still conveyed to a
+   screen reader and still drives the highlight.
+43. [ ] **About page needs work.** Partly addressed: it now says who serves the page and
+    points at GitHub's own privacy statement rather than paraphrasing it (item 65), and the
+    bundled changelog no longer shows literal `[0.2.0]` brackets on every version heading —
+    a defect that has been on the page since 0.1.0 and was never caught, because the assertion
+    was written against the file rather than the rendered output. **Still open**, because the
+    item says what feels wrong without saying what should be there instead, and guessing at
+    that has been the wrong move twice now.
+44. [x] **settings page needs work** — **addressed by items 50 and 54 to 60**, though the item
+    was never as specific as the work it asked for. Clients and projects are one list, a
+    project is added from the list it joins, the archive control is one checkbox, an
+    archived client's projects hide with it, and tags have their own card. What remains is
+    whatever is still not right *now*, which this line cannot describe.
+45. [ ] **what shows by default needs some work.** Untouched. Genuinely unclear which default
+    is meant — the entries period, the summary, the archived toggles, or the projects list
+    all have a default, and they were each argued about individually and settled. Needs a
+    specific complaint before it can be acted on.
+46. [x] **all settings should remain across the page in dropbox storage** — **done.**
+   The three settings that describe how you work — default currency, visible currencies,
+   entries period — now live in their own `settings` table and travel in the sync payload
+   and in backups.
+
+   The obstacle was not the envelope, it was that `meta` held two unrelated things: the
+   user's preferences and this device's `lastRev`/`lastSyncAt`. Syncing settings therefore
+   meant deciding which rows of one table to send, and getting it wrong would have shipped a
+   revision number to Dropbox. Splitting the tables makes the exclusion structural.
+
+   Each setting is written as a `Mergeable`, so it merges through the existing union-by-id,
+   last-write-wins path with no rule of its own to be wrong.
+
+   Two settings are deliberately still local. The theme, because 0002 TH4 needs it before
+   first paint and only `localStorage` can be read synchronously. The Dropbox app key,
+   because it is chosen by host — syncing it would let a local build inherit the deployed
+   app's identity, which is the one mistake in this file that could damage real data.
+
+   Schema v4 carries the three existing `meta` rows across. They are copied rather than
+   moved, so downgrading loses nothing.
+47. [x] **when should dropbox connect auto-run?** — **answered, and the premise changed.**
+   The item asks to record the last connection attempt and retry after *x* minutes. That
+   turns out to retry the wrong thing: the provider was receiving a refresh token from
+   Dropbox and discarding it, so there was nothing to retry *with*. Every timed retry would
+   hit the same wall, fail, and — worse — re-run the discard path, silently deleting a
+   working credential on a schedule.
+
+   So the answer is not a timer, it is three pieces:
+
+   - **Store the refresh token.** Already present in the token response, read and thrown
+     away, on the stated reasoning that Dropbox only issues one to confidential clients.
+     That was factually wrong. Stored beside the access token in `secrets`, so it stays out
+     of backups by table structure.
+   - **Refresh on 401/403, once.** Both `pull` and `push`, through one shared wrapper. Bounded
+     to a single retry, because a dead refresh token answers `invalid_grant` and an unbounded
+     retry is a loop that looks like syncing. One exchange per session for a dead token, so
+     an open tab does not spend a token request per cycle. Concurrent failures share the
+     exchange rather than racing each other's credential write.
+   - **Retry a transiently failed cycle, backed off.** `network` and `rate-limited` only,
+     three attempts at 5s/30s/120s, budget reset on success. Specified as C6.1, because the
+     distinction from the C6 polling ban is the whole reason this is allowed: the timer only
+     exists after a failure, so a healthy tab schedules nothing.
+
+   `auth` and `scope-missing` are excluded from retrying: waiting fixes neither, and
+   re-arming on them would destroy a dead credential once per cycle.
+
+   Three defects found while doing it, all by tests written for the new behaviour:
+   `stop()` did not clear the armed retry, so a torn-down scheduler kept syncing;
+   `syncNow()` did not check `stopped` at all, so a manual sync after teardown started a
+   cycle nobody held; and `hasUsableToken()` reported "not connected" purely because the
+   *access* token had expired, which is consulted *before* any refresh can run — so the
+   first three commits changed nothing a user would ever see. Now specified as C6.1–C6.3.
+
+   **On "how long should the connection last": there is no time limit.** Nothing here expires
+   a credential on a schedule. It lasts until Dropbox refuses the refresh token, or the user
+   removes the app or disconnects — which is indefinite from the app's side, and a five-day
+   requirement is met by an unbounded one. The thing that had to be fixed to get there was
+   not the lifetime but the discarding: a 5xx or a dropped connection during a refresh was
+   being treated as a rejected token, and the scheduler's answer to `auth` is to destroy the
+   credential and ask the user to sign in again. So one network flicker cost someone their
+   connection. Only an explicit refusal now retires it (C6.3).
+48. [x] on timer stop, do not go to edit screen automatically — **done.** Stopping writes
+   the entry and stays put. The offer to classify it is a line on the timer panel with a link
+   to the form, which is what US2's routing actually bought, and it expires when the next
+   timer starts. `0001 US2` amended rather than ignored: the intent — classify while fresh —
+   is kept, only the screen-grab is dropped.
+
+   One placement detail worth keeping: the notice renders *before* the client list's
+   empty-or-not branch, not inside the list. Inside it, the person most likely to be stopping
+   their very first timer was the one person who never saw the offer, because they had no
+   clients yet.
+49. [x] client lines in the TIMER card should remain in static location — **done.** Every
+   client line moved down 47px when Stop was pressed: the "saved as uncategorised" notice
+   rendered *above* the list, so the second client you were aiming at slid out from under the
+   button. Height was already checked (item 19); position was not, and height is not position.
+   The notice now sits below the list — a notice about something you just did belongs under
+   the thing you just did, and nothing above can shift. The browser suite measures every
+   row's `top` across the transition.
+50. [x] on settings page move tags into it's own card — **done.** They were the third
+   section of a panel headed "Settings", below two lists of records they have nothing to do
+   with. A tag is not a client or a project, is not scoped to one, and its delete flow is the
+   only one left with an undo bar — all of which got lost in a shared card. Its confirmation
+   and undo bar moved with it, so they no longer appear under a heading about clients and
+   projects.
+
+   The remaining panel is headed **"Clients and projects"** rather than "Settings", which
+   named nothing at all inside the settings page — every other panel there is named for its
+   contents.
+51. [x] settings page: projects should be grouped with their clients, client name, when clicked on should show the list of clients. default to collapsed.
+52. [x] the "Sync Card" on settings page does not need to say "Non Production" in dev version.
+53. [x] when scrolling on a page, keep the header static (not scrolling)
+54. [x] settings page: compress clients and projects into one section — each client is a row that both carries its own actions and reveals the projects under it.
+55. [x] settings page: a "new project" button on each client, so the project is created in the context of that client.
+56. [x] settings page: no "new project" button in the section header; each client's button sits under the last project in that client.
+57. [x] settings page: a client's projects are hidden while the client is archived, unless "show archived" is selected.
+58. [x] settings page: no "new project" button under an archived client.
+59. [x] settings page: no "No client" group when there is no internal work.
+60. [x] settings page: an archived client's name has a strikethrough; the word "archived" does not.
+61. [x] when selecting a customer on the main page, it should add the list of projects under that customer with buttons to start timer on that project.
+62. [x] Dropbox sync button is opening the settings page if I click on it. that should not be the case.
+63. [x] timer card - edit buttons go away, start buttons become right aligned (leave space for the discard and only show it while a timer is running). swap "start" "Stop" words for play & pause icons. the "discard" should be swapped for a red X icon.
+64. [x] timer card is incorrectly reporting that timers are stored uncategories on stop. it should be impossible to store them uncategorised now.
+65. [x] replace text on dropbox info with icons (on main page). The header indicator is one
+    cloud carrying the state — a tick, a bang, a clock or chasing arrows — tinted by the
+    existing `--sync-*` tokens, with the words moved to the tooltip and the accessible name.
+    The privacy policy now also says the page is served by GitHub Pages and points at GitHub's
+    own privacy statement for what the *host* processes.
+66. [x] a project row runs its own timer (items 61 and 63) — play/stop, discard and a count-up
+    on the project's own line, not only on the client's.
+67. [x] tooltips on the "new client", Dropbox and discard buttons, each saying what the press
+    will do rather than repeating the label.
+69. [x] **About page: each release is a collapsible section, closed by default.** The card is
+    the first thing under the header and was holding every release expanded. Sections are cut
+    on the `##` headings only — cutting on every heading looked equivalent and left each
+    version's body stopping at its first `###` subsection, with the subsections becoming
+    sections of their own.
+70. [x] **About page: the privacy policy is collapsible too, closed by default.**
+71. [x] **`Collapsible` extracted** (`src/app/Collapsible.tsx`) once there were two
+    disclosures, rather than the markup being written twice. The button sits *inside* the
+    heading, so the section keeps its place in the page outline and the panel's
+    `aria-labelledby` still resolves — a bare button styled like a heading looks the same and
+    vanishes from the outline.
+73. [ ] **a sync user hitting a newer schema is told about a *backup* they never had.**
+    Deferred deliberately, so 0.2.0 can ship: the sync fixes are worth more to a user than
+    this wording is worth delaying them by. Traced end to end while validating the version
+    bump — a 0.2.0 device pulling a file published by a future schema-5 build gets:
+
+        Backup uses data schema 5, but this build understands 4. Update the app.
+
+    The refusal itself is correct (0012 M9 — reading a file whose shape you cannot interpret
+    is how data gets corrupted), no push happens, and the remote file is never overwritten.
+    Only the wording is wrong. `parseEnvelope` is shared between `restoreBackup` and the sync
+    engine, so its message is written for the restore path and reaches a user who has never
+    downloaded or restored a backup. It names the wrong artefact, which sends them looking
+    for a file they do not have.
+
+    A correctly-worded version already exists and is never reached: `src/sync/engine.ts` has
+    `"Remote data uses schema 5; this build understands 4. Not syncing."` on the merge
+    branch, but `parseEnvelope` refuses first.
+
+    *Fix, when it is worth doing:* give `parseEnvelope` a source label — "Backup" for a
+    restore, "The file in Dropbox" for a sync — or have the engine rewrite the message it
+    forwards. Add a regression test asserting a syncing user is never told about a backup,
+    since that is the shape which would have caught it.
+
+74. [ ] **a corrupt sync file surfaces a raw JSON parse error.** Same deferral, same reason.
+    If the remote body is not valid JSON, `JSON.parse` throws and the catch-all in
+    `src/sync/engine.ts` forwards `error.message` unedited, so the user sees something like
+    `Unexpected token '}' in JSON at position 412` — an internal parser error naming neither
+    Dropbox, nor their data, nor anything they could act on. Should say what happened and
+    what it means for their work, in the same place the schema message is rendered.
+
+    Note when fixing: this path is also reachable with a *non-schema* parse failure, so it
+    is wider than the schema case above and worth covering separately.
+
+72. [x] **found and fixed a false claim in my own migration test.** It asserted a 0.1.0 device
+    could read what we publish, while checking only `schemaVersion >= 3` — which 4 satisfies.
+    Probed it properly: we publish schema 4, and a 0.1.0 build **refuses** it, per 0012 M9.
+    That is correct behaviour and a real rollout consequence: once one device is on 0.2.0,
+    another still on 0.1.0 stops syncing until it is updated. Nothing is corrupted and nothing
+    is written by the device that refuses, but it is the one thing in this release a user can
+    hit through no action of their own, so it is now stated in the release notes and asserted
+    as what it is.
+68. [x] **cover the path from the released 0.1.0 to this build** — three suites, because the
+    three things it touches were each individually tested and jointly untested.
+
+    - `src/storage/db.migration.test.ts` — a database seeded at **v3** through a throwaway
+      `Dexie` subclass declaring the old stores verbatim, then opened against the current
+      schema. This is the *only* thing that runs `db.ts`'s `.upgrade()`: every other test
+      opens a fresh database at the current version, so the one callback in this codebase
+      that moves a row was dead code as far as the suite was concerned. It asserts the three
+      preferences survive, that `lastRev`/`lastSyncAt` are **not** carried across, that
+      tombstones survive, that it is safe to run twice, and that a device which never set
+      the preferences gets none invented.
+    - `src/export/legacyFile.test.ts` — a hand-written envelope in the exact shape 0.1.0
+      wrote (schema 3, **no `settings` key**). Asserts that absent is dropped rather than
+      defaulted to `[]`, and that restoring such a file leaves this device's own preferences
+      alone. A file saying nothing about your settings is not a statement that you have none.
+    - `src/sync/engine.legacy.test.ts` — that file through the whole engine, asserting the
+      cycle succeeds, every record arrives, a project deleted on 0.1.0 stays deleted, this
+      device's settings are untouched, both devices' work merges, and what is published is
+      still readable by an 0.1.0 build.
+
+    Each was checked against a deliberately broken version: a typo in the carried key list,
+    `.default([])` instead of `.optional()`, refusing an older schema, and filtering
+    tombstones out of the merge. All four failed the tests that were supposed to catch them.
+
+    **Why this was worth doing.** 0.1.0 shipped at `SCHEMA_VERSION = 3`, so this is not a
+    hypothetical: it is the first load on every existing device, and the failure mode is
+    silent either way. A broken upgrade resets a billing currency and an entry period with
+    the app still looking healthy; a tombstone dropped by the merge resurrects a project the
+    user deleted three versions ago and republishes it.
 
 # Where the branches are
 
-- `phase-2a` — basic end-to-end: timer, entries, storage, list. PR #3 open.
-- `phase-2b` — Dropbox sync, merge, backup. Complete and committed; **not pushed**.
-- `phase-3` — test suite. Complete and committed; folded into the `phase-4` branch's
-  history, since each phase branches from the previous phase's head.
-- `phase-4` — taxonomy. **In progress.** Current branch.
+- `phase-2a` — basic end-to-end: timer, entries, storage, list. Merged as PR #3.
+- `phase-2b` — Dropbox sync, merge, backup. Complete; **still not pushed** as its own
+  branch. Its work reached `main` via `phase-4`.
+- `phase-3` — test suite. Complete; folded into `phase-4`'s history, since each phase
+  branches from the previous phase's head.
+- `phase-4` — taxonomy. Merged as PR #4 and **released as 0.1.0**. Deployed and verified
+  live: `/package.json` 404s, so Pages is on Actions rather than branch source (0009 MP1).
+- `phase-5` — reports and charts. **Current branch.** Local only, see item 1 below.
 
 ## Outstanding on `phase-2b` and `phase-3`
 
-1. [ ] **Push the branches.** `phase-2b`, `phase-3` and `phase-4` are local only. Write
-   access now works over SSH, so this is no longer blocked on a token.
-2. [ ] **Neither Dropbox app can sync.** Both `gh3s5cqaz4n30ah` (production) and
-   `5k94zo8ymchm1ge` (testing) have neither `files.content.read` nor
-   `files.content.write` granted, so authorisation returns `scope_not_granted` and no
-   device has ever synced to either. Verified against the live authorize endpoint and
-   recorded in `docs/dropbox-app-setup.md`.
+1. [x] **Push the branches.** `phase-4` was pushed; `phase-5` now is, as PR #5. Write access
+   worked over SSH all along — it was never blocked on a token, only undone — and 30-odd
+   commits of `phase-4` did sit on one machine until the release, so the cost of leaving it
+   was measured and paid.
+2. [ ] **`phase-2b` is still local only.** It reached `main` via `phase-4`, so nothing is
+   lost by leaving it, but it is the one branch in this list with no remote copy at all.
+3. [ ] **Partly verified against real Dropbox.** The scopes are granted — re-verified
+   5 October 2026 against the live authorize endpoint, where both apps now reach consent for
+   both content scopes and previously answered `scope_not_granted`. Recorded in
+   `docs/dropbox-app-setup.md`. **A first sync against production has been done and is
+   working as expected**, which retires the longest-standing entry in this list.
+   *Still outstanding, and none of it is a code change:*
+   - [ ] `docs/UAT.md` section 15 — two devices, both offline, converge with nothing lost.
+         Untested against the rewritten sync path (items 47 and the offline-token work), so
+         it is now the most valuable single check outstanding anywhere in this repository.
+   - [ ] **Settings → Access token expiration** set to *Short-lived* on both apps. The app now
+         sends `token_access_type=offline`, so it does not depend on this — but the two are
+         consistent and this is what the app expects.
 
    An earlier version of this file said the non-production app was "configured and
    working". That was wrong, and contradicted the setup doc beside it. Corrected here
    rather than left to be found during a release.
 
-   **This gates the 0.1.0 merge.** The app is fully usable without sync (0007 AU8), so
-   this is not a data-loss risk — but shipping a Connect button that leads to a failed
-   consent flow is worse than not having one, so the merge waits on: both scopes granted,
-   a first sync completed against production, and the two-device test in UAT section 15.
+   **This gated the 0.1.0 merge, and is now reduced to one item.** The app is fully usable
+   without sync (0007 AU8), so none of this is a data-loss risk — but shipping a Connect
+   button that leads to a failed consent flow is worse than not having one, so the merge
+   waited on three things: both scopes granted, a first sync completed against production,
+   and the two-device test in UAT section 15. The first two are done. The third is now the
+   only one left, and it is the reason this is worth doing before 0.2.0 rather than after:
+   the sync path has been rewritten since 0.1.0 (items 47 and the offline-token work) and
+   none of that has been exercised by two real devices.
 
 # What is next
 
@@ -252,15 +559,22 @@ Per `0014-development-plan.md`. Not started.
    genuine fix look broken twice, because the browser was faithfully running the previous
    code. Worth remembering when a browser check fails after a change that should have fixed
    it.
-3. [ ] **The app default currency is device-local.** It lives in IndexedDB `meta`, and `meta`
-   is excluded from both sync and backup, so a second device does not inherit it and a
-   restore does not bring it back. Deliberate for now: it is a display preference, not
-   data. If it ever becomes something a user would be upset to lose, it has to move into
-   the snapshot like everything else.
+3. [x] **The app default currency was device-local** — **fixed by item 46.** It lived in
+   IndexedDB `meta` alongside this device's own sync bookkeeping, and `meta` is excluded from
+   both sync and backup, so a second device did not inherit it. Settings now have their own
+   table, so syncing them needed no new merge rule: each setting is one row shaped exactly
+   like every other mergeable record, and union-by-id with last-write-wins is already the
+   right rule for a single value under a stable key.
+
+   The theme stays device-local on purpose, and cannot be otherwise: 0002 TH4 needs it
+   readable before first paint, which IndexedDB cannot do.
 4. [ ] **The taxonomy undo window closes when you leave the settings view.** The receipt is
    component state, so navigating away discards it and the deletion stands. The entry undo
    bar in `App.tsx` survives navigation because it lives at the app level; moving the
    taxonomy one up would need the receipt held outside `TaxonomySettings`.
+   **Now tag deletion only** — clients and projects are not deletable (item 41), so there is
+   nothing of theirs left to undo. Which means the cost of fixing this dropped a long way:
+   one tag's entries lose it, and it is restorable by retyping.
 5. [ ] Two layout bugs of the same shape are worth remembering because neither is visible
    to jsdom: the rate and colour feedback lines used to appear on blur, which moved the
    button under the pointer mid-click, so **clicking Save straight after typing a rate did
@@ -271,17 +585,33 @@ Per `0014-development-plan.md`. Not started.
    gets a default project" had forced — every client now has a project called `General`.
 7. [ ] **Weeks start on Monday, and Sunday is the trap.** Mapping Sunday to 0 rather than 7
    makes every Sunday land eight days early and every week one day too long.
-8. [ ] **State seeded in `useState` from something that arrives later stays stale.** A new
+8. [x] **State seeded in `useState` from something that arrives later stays stale.** A new
    client's currency was seeded once from the app default, which had not been read yet, so
    it kept the fallback and item 31 did nothing. It is now derived —
    `picked ?? appDefault ?? FALLBACK` — so a late read has something to update. Worth
    remembering whenever an initial value comes from storage.
-9. [ ] **A clickable control that depends on an async read must not be clickable yet.**
+9. [x] **A clickable control that depends on an async read must not be clickable yet.**
    Start was live while the client's default project was still being read, so a quick click
    started a timer with no project and the time was recorded *uncategorised* for a client
    that had one — silently, and with no way to tell afterwards. Found by a test that failed
    once in six runs, which is worth remembering: a rare failure is usually a real ordering
    bug rather than a flaky test, and re-running until it passes hides it.
+
+   **It came back, in the same shape, and it was this note being right.** A test that added a
+   project and pressed Start expecting the new default failed about one run in four. The cause
+   was here: the panel held the default-project map and re-read it keyed on the project ids,
+   so between the project landing and the read finishing, every Start on the card was filing
+   against the project that *used* to be the default. The map now carries the id list it was
+   read from, and Start is disabled while the two disagree.
+
+   The test had two races stacked, and fixing only the first is what made it look fixed for a
+   while. It waited on a condition that was already true, so it guarded nothing; and waiting on
+   the button being *enabled* was still not enough, because a project could land between that
+   check and the click — and a click on a disabled button is silently dropped, so the failure
+   showed up as a length rather than a value. It now retries the click until a Start is
+   recorded against something other than the old default. That is the only form of the
+   assertion that cannot pass by accident: a panel still holding the stale map records the old
+   id however many times it is pressed.
 10. [ ] **A Dexie transaction fails if it touches a store it did not declare**, and says
    `NotFoundError: ... an object store did not exist` rather than mentioning the
    transaction. `createClientWithDefaultProject` hit this by wrapping two helpers that each

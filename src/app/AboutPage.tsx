@@ -1,5 +1,7 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
+import { Collapsible } from './Collapsible'
 import changelog from '../../CHANGELOG.md?raw'
+import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 
 /**
  * About, and the release notes.
@@ -50,9 +52,190 @@ export function AboutPage() {
         </ul>
 
         <p className="hint">
-          Your display preferences — theme, chosen currencies, entries period — are kept per
-          device rather than synced. They are preferences rather than data, and they are not
-          included in a backup either.
+          Your preferences — default currency, which currencies you work in, entries period —
+          travel with you when you sync. Your theme does not, because it has to be readable
+          before the page paints and only <code>localStorage</code> can do that.
+        </p>
+      </section>
+
+      {/*
+        Items 38 and 39. Kept on the About page rather than a separate document because a
+        privacy policy behind a link is a privacy policy nobody opens, and the facts it has to
+        state — what is stored, where, and what a stolen account would expose — are the same
+        facts a user is already on this page to check.
+
+        Collapsed by default (item 70), and that cuts both ways. It is reference material a
+        reader arrives at deliberately, and expanding it pushed everything below it — the
+        feedback link, and then "What's new" — down a card that is a wall of prose. The
+        disclosure *state* is unchanged either way: the claims are still on the page and still
+        assertable, they are just one click away rather than always on screen.
+      */}
+      <section className="panel" aria-labelledby="privacy-heading">
+        <Collapsible
+          level={2}
+          title="Privacy"
+          id="privacy-heading"
+          className="about-privacy"
+          toggleClassName="about-privacy-toggle"
+        >
+          <p className="hint">
+            This app has no interest in your data, and the shortest way to show that is to say
+            what it cannot do.
+          </p>
+
+          <h3>What this app does not do</h3>
+          <ul>
+            <li>
+              <strong>
+                No analytics, no telemetry, no crash reporting, no session replay.
+              </strong>{' '}
+              There is no code path in it that sends usage data. If a page view were interesting
+              enough to record, it would have somewhere to go — it does not.
+            </li>
+            <li>
+              <strong>No cookies</strong>, and no third-party cookies. Nothing on this page sets
+              one.
+            </li>
+            <li>
+              <strong>No third-party assets.</strong> No CDN scripts, no hosted fonts, no
+              analytics tags. Fonts are your operating system&rsquo;s, so loading this page does
+              not tell anyone else you visited it.
+            </li>
+            <li>
+              <strong>No accounts and no server.</strong> The app is a static site. It cannot
+              see who you are because it has nobody to tell.
+            </li>
+          </ul>
+
+          {/*
+          The host, named rather than described (item 65).
+
+          Everything above is about this project's code. Somebody asking whether their data
+          is private also has to know who serves them the page, and the honest answer is that
+          it is not this project: it is a static site on GitHub Pages.
+
+          What GitHub *collects* is deliberately not asserted here. That changes, it is
+          published in several places, and this project has no way to keep a summary of
+          another company's data practices true. So the page names the host and points at
+          where GitHub states its own position, and says "at the time of writing" where even
+          that much needed qualifying. A privacy policy that paraphrases a third party's
+          policy is a copy that goes stale without anyone noticing, which is the failure this
+          whole section exists to avoid.
+        */}
+          <h3>Who serves this page</h3>
+          <ul>
+            <li>
+              This is a <strong>static site served by GitHub Pages</strong>, built from a public{' '}
+              <a href={REPOSITORY_URL}>GitHub repository</a>. There is no application server
+              behind it: the page you are reading is files, and nothing you type is sent to one.
+            </li>
+            <li>
+              <strong>GitHub, not this project, handles the connection</strong> — so what GitHub
+              receives when you load this page is a matter of GitHub&rsquo;s policy rather than
+              this app&rsquo;s.{' '}
+              <span className="privacy-at-the-time">At the time of writing</span>, GitHub sets
+              that out in its{' '}
+              <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">
+                privacy statement
+              </a>{' '}
+              and, for hosted sites specifically, its{' '}
+              <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement#github-pages">
+                GitHub Pages section
+              </a>
+              . Read those for what is collected and on what basis; this page will not restate
+              it, because a summary of someone else&rsquo;s policy goes out of date quietly.
+            </li>
+            <li>
+              <strong>What this app does is still knowable, and it is the list above.</strong>{' '}
+              No analytics, no telemetry, no third-party requests, nothing sent anywhere but
+              Dropbox. That is a claim about code in this repository, which you can read — and
+              where the app is silent on what happens at the edges, the links above are where
+              the answer lives.
+            </li>
+            <li>
+              <strong>The source is public.</strong> It is an open repository, so anyone can
+              read the code that makes all of these claims — including this page. If you are
+              checking whether a claim is true, you do not have to take the word of whoever
+              wrote it.
+            </li>
+          </ul>
+
+          <h3>Where your data lives</h3>
+          <ul>
+            <li>
+              Your entries, projects, clients and tags, and your Dropbox token, are in this
+              browser&rsquo;s <strong>IndexedDB</strong>. They are not encrypted by this app —
+              they are as protected as the browser profile they sit in.
+            </li>
+            <li>
+              Your theme choice and the Dropbox app id are in <code>localStorage</code>. Neither
+              is personal data, and neither is a credential: the app id is a public identifier
+              that ships in the JavaScript anyway.
+            </li>
+            <li>
+              While you are signing in to Dropbox, a piece of pending OAuth state sits in{' '}
+              <code>sessionStorage</code> and is cleared when the redirect finishes.
+            </li>
+            <li>
+              A Content Security Policy restricts what this page is allowed to load and connect
+              to. The only external origins it permits are Dropbox&rsquo;s two APIs, and nothing
+              works without that permission.
+            </li>
+          </ul>
+
+          <h3>If you connect Dropbox</h3>
+          <ul>
+            <li>
+              Syncing writes <strong>one JSON file</strong> to your own Dropbox account, and
+              nothing is written anywhere else.
+            </li>
+            <li>
+              <strong>That file is not encrypted by this app.</strong> It is ordinary JSON, in
+              readable text, in your Dropbox account. Dropbox encrypts it at rest and controls
+              who can read it, but there is no passphrase from this app on top. Anyone with
+              access to the file can read your work history, and so can Dropbox under a court
+              order or a service change. That was a deliberate choice over client-side
+              encryption, not an oversight — see 0011 &sect;Accepted risks.
+            </li>
+            <li>
+              So the protection on that account is entirely your account&rsquo;s: a strong
+              unique password, two-factor authentication, and app-specific authorisation where
+              Dropbox offers it.
+            </li>
+            <li>
+              Disconnecting stops syncing and deletes the stored token. It does not touch what
+              is already in your Dropbox, and it does not touch this browser either.
+            </li>
+          </ul>
+
+          <h3>If you want it gone</h3>
+          <p>
+            Clearing this site&rsquo;s data in your browser removes everything, including the
+            running timer. Deleting the file from your Dropbox removes the copy that left this
+            device. There is nothing else, because there is nowhere else.
+          </p>
+        </Collapsible>
+      </section>
+
+      <section className="panel" aria-labelledby="feedback-heading">
+        <h2 id="feedback-heading">Found a problem?</h2>
+        <p>
+          This is a small project and problems are read and usually fixed. If something did not
+          work, or worked in a way you did not expect,{' '}
+          <a className="link-button" href={NEW_ISSUE_URL} rel="noreferrer noopener">
+            open an issue
+          </a>
+          . A sentence about what you did and what you expected is worth more than a
+          reproduction you have not had time to write down.
+        </p>
+        <p className="hint">
+          Please do not attach a backup file to an issue. A backup contains your work, and a
+          public issue is the last place it belongs. If a specific entry is the problem,
+          describe it in words. The code is at{' '}
+          <a href={REPOSITORY_URL} rel="noreferrer noopener">
+            the repository
+          </a>
+          .
         </p>
       </section>
 
@@ -77,7 +260,50 @@ export function AboutPage() {
  * renders, and more surface for something to go subtly wrong.
  */
 function Changelog({ source }: { source: string }): ReactNode {
-  const blocks: ReactNode[] = []
+  /*
+   * Which versions are open (item 69).
+   *
+   * A `Set` of version strings rather than one flag, because a reader who opens 0.2.0 did not
+   * ask for 0.1.0 as well.
+   *
+   * Keyed on the version rather than its position, because position is not an identity: the
+   * releases sit at whatever indices the preamble, the `Versioning` section and any empty
+   * sections leave them at, so adding a section to the file would silently renumber them —
+   * and a toggle whose identity shifted could end up controlling a different release's body.
+   *
+   * Default is *nothing* open. The newest release is the one a reader came for, and it is
+   * also the longest — a page that opened with every version expanded put the oldest notes at
+   * the bottom of a wall, and the "What's new" card is the first thing under the header.
+   *
+   * Held here rather than inside each `Collapsible`, because the versions share one expansion
+   * and each section is therefore told whether *it* is open.
+   */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>())
+
+  /*
+   * One entry per `##` section, built as the file is read.
+   *
+   * Sections are cut on the **top-level** headings only. Cutting on every heading looked
+   * equivalent and was not: a release is written as `## [0.2.0]` followed by several
+   * `### Changed — …` subsections, so splitting on all of them made each version's body stop
+   * at its first subsection — the introduction and nothing else — while the subsections became
+   * sections in their own right. A `###` belongs to the release above it.
+   */
+  const sections: { heading: string | null; level: number; body: ReactNode[] }[] = []
+  let current: { heading: string | null; level: number; body: ReactNode[] } | null = null
+
+  /** The section being filled, opening an untitled one if content arrives before any heading. */
+  function target(): { heading: string | null; level: number; body: ReactNode[] } {
+    if (current === null) {
+      current = { heading: null, level: 0, body: [] }
+      sections.push(current)
+    }
+    return current
+  }
+
+  function addBody(node: ReactNode): void {
+    target().body.push(node)
+  }
   let list: string[] = []
   /**
    * Prose being accumulated, flushed when a heading, a bullet or a blank line interrupts.
@@ -91,15 +317,17 @@ function Changelog({ source }: { source: string }): ReactNode {
 
   function flushParagraph(): void {
     if (paragraph === null) return
-    blocks.push(<p key={`p-${blocks.length}`}>{inline(paragraph)}</p>)
+    addBody(
+      <p key={`p-${sections.length}-${current?.body.length ?? 0}`}>{inline(paragraph)}</p>,
+    )
     paragraph = null
   }
 
   function flushList(): void {
     if (list.length === 0) return
     const items = list
-    blocks.push(
-      <ul key={`ul-${blocks.length}`}>
+    addBody(
+      <ul key={`ul-${sections.length}-${current?.body.length ?? 0}`}>
         {items.map((item, index) => (
           <li key={index}>{inline(item)}</li>
         ))}
@@ -124,17 +352,35 @@ function Changelog({ source }: { source: string }): ReactNode {
       flushParagraph()
       flushList()
       const level = (heading[1] ?? '').length
-      // Keep a Changelog writes versions as `[Unreleased]` / `[0.1.0]`. The brackets are
-      // link syntax for GitHub, and they read as leftover syntax in a rendered heading.
-      const text = (heading[2] ?? '').replace(/^\[(.*)\]$/, '$1')
+      /*
+       * Keep a Changelog writes versions as `[Unreleased]` and `[0.2.0] - 2026-10-13`. The
+       * brackets are link syntax for GitHub and read as leftover syntax in a rendered
+       * heading.
+       *
+       * Stripped from the front only, and not anchored to the end: the pattern used to
+       * require the closing bracket to be the last character, so it matched `[Unreleased]`
+       * and silently left every dated version as `[0.2.0] - 2026-10-13`. The in-app
+       * changelog has been showing brackets on every released version since 0.1.0, and no
+       * test caught it because the assertion was written against the *file*, not the page.
+       *
+       * Nothing is trimmed after the brackets: eating the following space turned the heading
+       * into "0.2.0- 2026-10-13".
+       */
+      const text = (heading[2] ?? '').replace(/^\[([^\]]*)\]/, '$1')
       // The file's own title is dropped: the card already has a heading, and two h1s on one
       // page is a document outline problem, not a style preference.
       if (level === 1) continue
-      blocks.push(
-        <Fragment key={`h-${blocks.length}`}>
-          {level === 2 ? <h3>{inline(text)}</h3> : <h4>{inline(text)}</h4>}
-        </Fragment>,
-      )
+      if (level === 2) {
+        // A new top-level section, and therefore a new disclosure.
+        current = { heading: text, level, body: [] }
+        sections.push(current)
+      } else {
+        // A subsection of the section above it, so it goes into that section's body rather
+        // than starting one of its own.
+        addBody(
+          <h4 key={`h-${sections.length}-${current?.body.length ?? 0}`}>{inline(text)}</h4>,
+        )
+      }
       continue
     }
 
@@ -168,7 +414,78 @@ function Changelog({ source }: { source: string }): ReactNode {
   flushParagraph()
   flushList()
 
-  return <div className="changelog">{blocks}</div>
+  /*
+   * Drop a section with nothing in it.
+   *
+   * `## [Unreleased]` is kept in the changelog by convention and is empty at every release
+   * cut, so without this the About page opened "What's new" with a bare "Unreleased" heading
+   * and nothing under it — the first thing on the page being a section with no content in it.
+   * The file was right and the renderer was wrong: an empty heading in a document is a
+   * convention, and a heading on a page is a promise that something follows it.
+   */
+  const kept = sections.filter((section) => section.heading === null || section.body.length > 0)
+
+  return (
+    <div className="changelog">
+      {kept.map((section, index) => {
+        if (section.heading === null) {
+          return <Fragment key={index}>{section.body}</Fragment>
+        }
+        const key = section.heading
+
+        /*
+         * A version heading starts with a digit; "Versioning" does not. That is the whole
+         * distinction, and it is why the prose section above the releases stays put while the
+         * releases themselves fold away.
+         */
+        if (!/^\d/.test(section.heading)) {
+          return (
+            <Fragment key={index}>
+              {section.level === 2 ? (
+                <h3>{inline(section.heading)}</h3>
+              ) : (
+                <h4>{inline(section.heading)}</h4>
+              )}
+              {section.body}
+            </Fragment>
+          )
+        }
+
+        /*
+         * The id is derived from the version, so `aria-controls` names something belonging
+         * to this release rather than to a position in a list.
+         *
+         * Open state is held here rather than inside `Collapsible` because these versions
+         * share one expansion: a reader who opened 0.2.0 did not ask for 0.1.0 as well, which
+         * means each component has to be told whether *this* one is open.
+         */
+        const bodyId = `changelog-version-${key.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
+        const isOpen = expanded.has(key)
+        return (
+          <div key={key} className="changelog-version">
+            <Collapsible
+              level={3}
+              title={key}
+              id={bodyId}
+              bodyClassName="changelog-version-body"
+              toggleClassName="changelog-version-toggle"
+              open={isOpen}
+              onOpenChange={(next) => {
+                setExpanded((previous) => {
+                  const updated = new Set(previous)
+                  if (next) updated.add(key)
+                  else updated.delete(key)
+                  return updated
+                })
+              }}
+            >
+              {section.body}
+            </Collapsible>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 /** `**bold**` and `` `code` ``, as React nodes. Nothing is ever injected as markup. */

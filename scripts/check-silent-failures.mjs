@@ -109,10 +109,15 @@ const MUTATIONS = [
     id: 'entity-table-forgotten',
     failure: 'New entity type added, forgotten in merge — that data never syncs (0012 M2)',
     file: 'src/storage/snapshotRepo.ts',
-    // Drops entries from the bridge's list of tables. The merge is table-agnostic, so the only
-    // symptom would be that this entity never syncs, silently.
-    find: "const TABLES = ['entries', 'projects', 'clients', 'tags'] as const",
-    replace: "const TABLES = ['projects', 'clients', 'tags'] as const",
+    // Drops a table from the bridge's list. The merge is table-agnostic, so the only symptom
+    // would be that this entity never syncs, silently.
+    //
+    // `settings` rather than `entries`: the stated failure is a *newly added* table being
+    // forgotten, and `entries` missing would be caught by a hundred other tests while
+    // `settings` missing is exactly the item-46 regression — settings quietly reverting to
+    // per-device, which is the bug that change existed to fix.
+    find: "const TABLES = ['entries', 'projects', 'clients', 'tags', 'settings'] as const",
+    replace: "const TABLES = ['entries', 'projects', 'clients', 'tags'] as const",
     test: 'src/storage/snapshotRepo.test.ts',
   },
   {

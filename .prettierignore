@@ -16,3 +16,7 @@ README.md
 # a thousand-line diff nobody can read, and a file being edited elsewhere is not
 # this project's to reformat.
 review
+
+# Session handover notes. Prose, written under time pressure, and not project
+# source — formatting it would fail `npm run verify` for a file nothing builds.
+context.md

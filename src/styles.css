@@ -105,6 +105,31 @@ body {
   flex-wrap: wrap;
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--border);
+
+  /*
+   * Item 53: the header stays put while the page scrolls.
+   *
+   * It holds the way home, the sync state and the settings menu, so scrolling it away takes
+   * all three off the top of a long entries list, or a settings page with a lot of records.
+   *
+   * `sticky` rather than `fixed`, so it keeps its place in the flow: nothing overlaps the
+   * first thing on the page, and there is no padding to add back to compensate for a header
+   * that has been taken out of it.
+   *
+   * The negative margin and matching padding are the gutters. `.app` is padded, and a
+   * sticky element only covers its own box — without this, entries would scroll past in the
+   * 1.5rem either side of the header, beside it rather than behind it.
+   */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--bg);
+  margin-inline: -1.5rem;
+  padding-inline: 1.5rem;
+  /*
+   * Above the panels and rows, below the menu panel (z-index 20), which is positioned
+   * against the toggle and has to open over the page rather than under the header.
+   */
 }
 
 .app-header h1 {
@@ -717,6 +742,16 @@ code {
   border-top: 1px dotted var(--border);
 }
 
+/*
+ * One client, and — when it is selected — the projects under it (item 61).
+ *
+ * The separator belongs to the item, not the row: a border on the row would draw a line
+ * between a client and its own projects, which are one thing rather than two.
+ */
+.timer-client-item {
+  border-bottom: 1px dotted var(--border);
+}
+
 /* Item 24: tighter rows. */
 .timer-client-row {
   display: grid;
@@ -725,7 +760,6 @@ code {
   align-items: center;
   gap: 0.4rem;
   padding: 0.15rem 0;
-  border-bottom: 1px dotted var(--border);
 }
 
 /* Item 25: the name is the selection, so it is a button that looks like text until it is
@@ -769,17 +803,6 @@ code {
   font-weight: 600;
 }
 
-.badge-active {
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--fg);
-  border: 1px solid currentColor;
-  border-radius: 0.2rem;
-  padding: 0 0.25rem;
-  margin-left: 0.35rem;
-}
-
 .timer-orphan {
   display: flex;
   flex-wrap: wrap;
@@ -789,9 +812,141 @@ code {
   padding-top: 0.4rem;
 }
 
+/*
+ * The action slot, right-aligned, with fixed-size icon buttons (SPECS/todo.md items 63, 35).
+ *
+ * Every control here is a lone icon now, so the widths are pinned rather than measured: a
+ * play triangle and a pair of pause bars are drawn in the same box, and the discard slot is
+ * held open whether or not a timer is running. Starting and stopping therefore changes what
+ * is *in* the buttons and nothing about the row's geometry — which is what item 35 was for,
+ * back when the words were "Start"/"Stop" and "Edit"/"Discard" and the buttons resized under
+ * the pointer as they were pressed.
+ *
+ * `margin-left: auto` on the actions is what right-aligns them: the name takes the `1fr`
+ * column and everything after it is pushed to the end of the row.
+ */
 .timer-client-actions {
   display: flex;
   gap: 0.3rem;
+  margin-left: auto;
+}
+
+.timer-client-actions .button {
+  /* A square tap target. Sized to the icon plus the button's own padding rather than to a
+     word, because there is no word here to be wider than. */
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0.45rem 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The gap the discard button occupies while nothing is running.
+ *
+ * An `aria-hidden` span rather than a disabled button: a disabled control is still in the
+ * tab order and still announced as something available to press, and there is nothing to
+ * discard while nothing is running.
+ */
+.timer-action-slot {
+  width: 2.35rem;
+  min-width: 2.35rem;
+}
+
+/* The discard cross, in the one colour that says "this throws the work away". */
+/*
+ * The discard cross, in the colour that says "this throws the work away".
+ *
+ * Extends `.button-danger`, which already carries that colour for text buttons, rather than
+ * restating the token: the hover wash is the part that had to be spelled out, because the
+ * base rule has no hover of its own.
+ */
+.timer-discard {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.timer-discard:hover {
+  background: var(--danger);
+  color: var(--surface);
+}
+
+/* The orphan row's controls, icon-sized for the same reason the client rows' are. */
+.timer-orphan .button-row .button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0.45rem 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The selected client's projects (item 61).
+ *
+ * Indented under the client with a dotted edge, so they read as belonging to the row above
+ * rather than as clients of their own. No separator of their own: the client's row already
+ * carries the line that separates it from the next client.
+ */
+.timer-project-list {
+  list-style: none;
+  margin: 0.1rem 0 0.3rem;
+  padding: 0 0 0 1.25rem;
+  border-left: 1px dotted var(--border);
+}
+
+/*
+ * A project row inside the selected client, laid out like a client row (items 61, 63).
+ *
+ * Grid rather than the flex it started as, so the name, the count-up and the actions sit in
+ * the same columns as the client line above. That is what makes the two read as the same
+ * kind of control: a project row that started a timer now shows its own Stop and discard
+ * exactly where a client's would be, so nothing has to be learned twice.
+ */
+.timer-project-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0;
+}
+
+.timer-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 0.9rem;
+}
+
+/* The count-up while this project's timer runs, matching the client row's treatment. */
+.timer-project-live {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+  font-size: 0.85rem;
+}
+
+.timer-project-row-active .timer-project-live {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Right-aligned, with the same fixed-size icon buttons the client rows use. */
+.timer-project-actions {
+  display: flex;
+  gap: 0.3rem;
+  margin-left: auto;
+}
+
+.timer-project-actions .button {
+  width: 2.35rem;
+  min-width: 2.35rem;
+  padding: 0.45rem 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Currency preferences (items 13–14): chosen first, then the rest. */
@@ -825,35 +980,154 @@ code {
   padding: 0.1rem 0;
 }
 
-/* The header sync indicator (item 10). */
+/*
+ * The header sync indicator (items 10, 65).
+ *
+ * Icon-only, so there is no gap to declare and no dot: the mark carries the state and the
+ * colour carries the tone, and both come from the one element.
+ *
+ * The horizontal padding is tighter than `.button`'s because there is no word inside it
+ * any more. The icon is drawn larger to make up the width the text used to take, which keeps
+ * the control the same size on screen as the word button it replaced — a smaller mark in the
+ * old padding would have left a header control that looks like a mistake.
+ */
 .sync-indicator {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
 }
 
-.sync-indicator-dot {
-  width: 0.55rem;
-  height: 0.55rem;
-  border-radius: 50%;
+/*
+ * Padded to keep the button the same size it was as a word button, while the mark inside is
+ * drawn larger to fill it. Less padding than `.button`'s because there is no word to clear —
+ * the icon is the whole content, so the horizontal padding is only there to stop the mark
+ * touching the border.
+ */
+.sync-indicator-icon {
+  padding: 0.4rem 0.45rem;
+}
+
+/*
+ * The shared disclosure: a heading whose button reveals the content under it (items 69, 70).
+ *
+ * The button sits *inside* the heading rather than replacing it, so the section keeps its
+ * place in the page outline and `aria-labelledby` on the surrounding panel still resolves.
+ * The heading itself carries no styling beyond unpinning the button's box, so a caller styles
+ * the button and the heading inherits the panel's.
+ *
+ * The chevron is drawn pointing down, which is the open state, so it rotates shut when the
+ * section is collapsed. Decorative: the state is on the button, and the shared icon wrapper
+ * hides unlabelled SVGs from the accessibility tree, so it is not announced twice.
+ */
+.collapsible-heading {
+  margin: 0;
+}
+
+.collapsible-toggle,
+.changelog-version-toggle,
+.about-privacy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.collapsible-toggle:hover,
+.changelog-version-toggle:hover,
+.about-privacy-toggle:hover {
+  color: var(--accent);
+}
+
+.collapsible-toggle svg,
+.changelog-version-toggle svg,
+.about-privacy-toggle svg {
   flex: none;
-  box-shadow: 0 0 0 1px var(--fg);
+  transform: rotate(-90deg);
+  transition: transform 120ms ease;
 }
 
-.sync-indicator-ok .sync-indicator-dot {
-  background: var(--sync-ok);
+.collapsible-toggle[aria-expanded='true'] svg,
+.changelog-version-toggle[aria-expanded='true'] svg,
+.about-privacy-toggle[aria-expanded='true'] svg {
+  transform: rotate(0deg);
 }
 
-.sync-indicator-warn .sync-indicator-dot {
-  background: var(--sync-warn);
+/* A version of the changelog: one rule above it, its own notes indented under the line. */
+.changelog-version {
+  border-top: 1px dotted var(--border);
 }
 
-.sync-indicator-error .sync-indicator-dot {
-  background: var(--sync-error);
+.changelog-version-toggle {
+  padding: 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
-.sync-indicator-idle .sync-indicator-dot {
-  background: var(--fg-muted);
+/* Indented under its toggle, so a version's body reads as belonging to the line above it. */
+.changelog-version-body {
+  padding-bottom: 0.75rem;
+}
+
+/*
+ * The privacy disclosure. Inherits the panel's uppercase, muted heading treatment — it is
+ * the same kind of thing as the other panel headings — and only overrides the padding the
+ * button's box needs, since a full-width button inside a heading would otherwise be flush
+ * with the panel edge.
+ */
+.about-privacy-toggle {
+  padding: 0.25rem 0;
+  font-size: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.about-privacy-toggle:hover {
+  color: var(--accent);
+}
+
+/* Room for the content under a closed panel heading, matching the other panels. */
+.about-privacy > div {
+  padding-top: 0.75rem;
+}
+
+/*
+ * The "at the time of writing" qualifier used where this page points at somebody else's
+ * policy (item 65). It reads as a caveat on the sentence rather than as part of it, which is
+ * what it is — a note that the link may say something different by the time you follow it.
+ */
+.privacy-at-the-time {
+  font-style: italic;
+}
+
+/*
+ * The tone, on the icon. `currentColor` is what the shared `Svg` wrapper strokes with, so
+ * this is the whole rule — the mark is coloured without the icon knowing anything about it.
+ *
+ * The three values already clear 3:1 against both themes (see the tokens' own comment), so
+ * this carries no new contrast risk; `colour.test.ts` still guards them.
+ */
+.sync-indicator-ok {
+  color: var(--sync-ok);
+}
+
+.sync-indicator-warn {
+  color: var(--sync-warn);
+}
+
+.sync-indicator-error {
+  color: var(--sync-error);
+}
+
+.sync-indicator-idle {
+  color: var(--fg-muted);
 }
 
 /*
@@ -1143,6 +1417,17 @@ code {
   border-top: 1px solid var(--border);
 }
 
+/*
+ * The taxonomy panel's block *is* the panel (item 54): it opens with the panel's own heading,
+ * so the margin, padding and rule that separate a second block inside a panel were drawing a
+ * blank line across the top of the card.
+ */
+.settings-panel > .settings-block {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .settings-block h3 {
   margin: 0 0 0.75rem;
   font-size: 1rem;
@@ -1188,6 +1473,95 @@ code {
   max-width: 28rem;
 }
 
+/*
+ * Projects grouped under their client (SPECS/todo.md item 51).
+ *
+ * A bare `<ul>` because these are not rows of their own — each one holds a disclosure and the
+ * project rows it reveals, so the grouping is the list item rather than something bolted on
+ * beside it.
+ */
+.taxonomy-groups {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.taxonomy-group {
+  border-top: 1px dotted var(--border);
+}
+
+/*
+ * The disclosure spans the full width, because the client name *is* the control: there is no
+ * separate row for the client up here, so anywhere on the line has to be clickable. Weight
+ * matches `.taxonomy-name` so a group reads at the same level as the client list it sits
+ * under, one step above the projects it reveals.
+ */
+.taxonomy-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: start;
+  cursor: pointer;
+}
+
+.taxonomy-group-toggle:hover .taxonomy-group-name {
+  text-decoration: underline;
+}
+
+/*
+ * The chevron is drawn pointing down, which is the open state, so it rotates shut when the
+ * group is collapsed. It is decorative — `aria-expanded` carries the state — and the shared
+ * icon wrapper hides unlabelled SVGs from the accessibility tree, so it is not announced
+ * twice.
+ */
+.taxonomy-group-toggle[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+
+/* Room for the rotated chevron, so the name does not shift as the group opens. */
+.taxonomy-group-toggle svg {
+  flex: none;
+  transition: transform 120ms ease;
+}
+
+.taxonomy-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.taxonomy-group-toggle .hint {
+  margin-inline-start: auto;
+}
+
+/*
+ * Indented under its group, so an open project's owner is obvious at a glance instead of
+ * having to re-read the heading it happens to fall under. The rule repeats the group's own
+ * dotted line as a continuous edge rather than restarting it per row.
+ */
+.taxonomy-group .taxonomy-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  border-inline-start: 1px dotted var(--border);
+}
+
+.taxonomy-group .taxonomy-list .taxonomy-row:first-child {
+  border-top: 0;
+}
+
+/* The per-client add button sits with the projects it adds to, not on the client row. */
+.taxonomy-add-row {
+  padding: 0.25rem 0 0.5rem;
+}
+
 .taxonomy-list {
   list-style: none;
   margin: 0.75rem 0 0;
@@ -1206,7 +1580,22 @@ code {
 }
 
 /* An archived row stays readable rather than greyed into illegibility. */
-.taxonomy-row.archived .taxonomy-name {
+/*
+ * On the name text alone, never on `.taxonomy-name` itself. `text-decoration` propagates to
+ * descendants and cannot be undone by them, so striking the wrapper struck the "archived"
+ * badge inside it too — striking the very word that says the row is archived.
+ */
+.taxonomy-row.archived .taxonomy-name-text {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/*
+ * An archived client's name, struck for the same reason a project's is. On the name span
+ * only: the "archived" badge is its sibling, and striking that would be arguing with
+ * itself — the word saying the row is archived, with a line through it.
+ */
+.taxonomy-row.archived .taxonomy-group-name {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
@@ -1467,4 +1856,25 @@ code {
   .taxonomy-form.inline-form {
     grid-template-columns: 1fr;
   }
+}
+
+/*
+ * The "dev" marker in the title (SPECS/todo.md item 40).
+ *
+ * Uppercase and small, so it reads as a status stamp rather than part of the product name
+ * — a title saying "Time Tracker DEV" looks like a fork, where a quiet badge says the
+ * build is the same app on another origin.
+ */
+.env-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.05rem 0.3rem;
+  border: 1px solid var(--danger);
+  border-radius: 0.25rem;
+  color: var(--danger);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
 }

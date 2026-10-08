@@ -59,8 +59,13 @@ assume anything about that person's employer, billing model or tax regime.
 **Capture**
 - US1 — As a user, I can start a timer and have it immediately show as running,
   so I do not have to remember what I am working on.
-- US2 — As a user, I can stop a running timer and land on a form to fill in the
-  details, so I classify the entry while it is fresh.
+- US2 — As a user, I can stop a running timer and be offered a form to fill in
+  the details, so I classify the entry while it is fresh. **Amended** by
+  `SPECS/todo.md` item 48: stopping no longer *lands* on the form, it offers it
+  from the timer panel. The intent was right and the mechanism was wrong — taking
+  the screen away on Stop made stopping feel like it did three things, when it
+  does one. The entry is written either way, so the offer is made where the user
+  already is, with a link.
 - US3 — As a user, I can enter a past time range by hand, so forgotten work is
   not permanently lost.
 - US4 — As a user, I can edit or delete any entry, including one just recorded.

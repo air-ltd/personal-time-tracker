@@ -65,7 +65,7 @@ describe('routing', () => {
 })
 
 describe('recording a timer (Phase 2A gate)', () => {
-  it('starts, shows elapsed, then routes to the form on stop (0001 US2)', async () => {
+  it('starts, shows elapsed, then stays put on stop and offers to classify it (item 48)', async () => {
     const user = userEvent.setup()
     render(<App />)
 
@@ -74,17 +74,36 @@ describe('recording a timer (Phase 2A gate)', () => {
       expect(screen.getByTestId('timer-elapsed')).not.toHaveTextContent('No timer running')
     })
 
-    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    await user.click(screen.getByRole('button', { name: 'Stop the timer' }))
 
-    // Stopping lands on the detail form for the entry just stopped.
-    await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Edit entry' })).toBeInTheDocument()
-    })
-    expect(window.location.hash).toMatch(/^#\/entries\/[0-9a-f-]{36}$/)
+    // The screen does not change: the timer card is still the thing in front of the user,
+    // and the offer to classify is made here. 0001 US2 wanted classification while the work
+    // was fresh; this keeps that intent without taking the screen away on Stop.
+    const notice = await screen.findByTestId('just-stopped')
+    expect(window.location.hash).not.toMatch(/entries/)
 
     const entries = await listEntries()
     expect(entries).toHaveLength(1)
     expect(entries[0]?.end).not.toBeNull()
+
+    /*
+     * This timer was started with no client at all, so the entry really is uncategorised
+     * and the offer to classify it is the right thing to say (item 64). It used to say so
+     * for every stop, including the ones where the entry was already filed against a
+     * client's default project.
+     */
+    expect(entries[0]?.projectId).toBeNull()
+    expect(notice).toHaveTextContent(/uncategorised/i)
+    // The link goes to the entry that was just written, which is the only thing US2's
+    // routing actually bought.
+    expect(within(notice).getByRole('link')).toHaveAttribute(
+      'href',
+      `#/entries/${entries[0]?.id}`,
+    )
+
+    // And following it lands on the form the old behaviour used to force.
+    await user.click(within(notice).getByRole('link'))
+    expect(await screen.findByRole('heading', { name: 'Edit entry' })).toBeInTheDocument()
   })
 
   // 0004 T1: starting twice must not create two running entries.
@@ -94,7 +113,7 @@ describe('recording a timer (Phase 2A gate)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: 'Stop the timer' })).toBeInTheDocument(),
     )
     // The Start button is replaced while running, so a double-click cannot race.
     expect(screen.queryByRole('button', { name: 'Start' })).not.toBeInTheDocument()
@@ -108,9 +127,9 @@ describe('recording a timer (Phase 2A gate)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: 'Discard the timer' })).toBeInTheDocument(),
     )
-    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    await user.click(screen.getByRole('button', { name: 'Discard the timer' }))
 
     await waitFor(() => expect(screen.getByTestId('empty-state')).toBeInTheDocument())
     expect(await listEntries()).toHaveLength(0)
@@ -374,7 +393,7 @@ describe('unload warning (0004 W1, W5)', () => {
 
     await user.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument(),
+      expect(screen.getByRole('button', { name: 'Stop the timer' })).toBeInTheDocument(),
     )
 
     await waitFor(() => expect(beforeUnloadIsPrevented()).toBe(true))
@@ -390,9 +409,11 @@ describe('unload warning (0004 W1, W5)', () => {
     await user.click(screen.getByRole('button', { name: "Don't remind me" }))
     await waitFor(() => expect(beforeUnloadIsPrevented()).toBe(false))
 
-    // Stopping routes to the entry form (0001 US2), so go back to the list before
-    // looking for the Start button.
-    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    // Stopping no longer navigates (item 48), so the timer card is already here and the
+    // notice is the only new thing on screen. Following its link is also the way to the
+    // form, which is what this test used to rely on routing for.
+    await user.click(screen.getByRole('button', { name: 'Stop the timer' }))
+    await user.click(within(await screen.findByTestId('just-stopped')).getByRole('link'))
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: 'Edit entry' })).toBeInTheDocument(),
     )

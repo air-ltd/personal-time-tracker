@@ -36,6 +36,13 @@ export interface ProjectFormProps {
   takenColours: readonly string[]
   /** `''` for the create form, the project id for the edit form. */
   idPrefix: string
+  /**
+   * The client to preselect when creating from that client's own row.
+   *
+   * Ignored when editing: a record's stored client is its client, and an edit that silently
+   * re-homed the project would be a data change nobody asked for.
+   */
+  initialClientId?: string | undefined
   report: (problem: unknown) => void
   onSubmit: (fields: ProjectFields) => Promise<void>
   onCancel: () => void
@@ -56,13 +63,23 @@ export function ProjectForm({
   defaultCurrency,
   takenColours,
   idPrefix,
+  initialClientId,
   report,
   onSubmit,
   onCancel,
 }: ProjectFormProps) {
   const creating = project === undefined
   const [name, setName] = useState(project?.name ?? '')
-  const [clientId, setClientId] = useState<string | null>(project?.clientId ?? null)
+  /*
+   * Seeded from `initialClientId` when the form was opened from a client's own row (item 55),
+   * so adding work under a client does not mean picking that client out of a dropdown that
+   * already lists the client you clicked. The select stays editable: a wrong button press
+   * should be recoverable, and locking it would also make internal work unreachable from
+   * here.
+   */
+  const [clientId, setClientId] = useState<string | null>(
+    project?.clientId ?? initialClientId ?? null,
+  )
   const [rate, setRate] = useState<number | null>(project?.defaultRateMinor ?? null)
   const [currency, setCurrency] = useState<string | null>(project?.currency ?? null)
 

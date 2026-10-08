@@ -231,10 +231,37 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
     }
   }
 
-  // A project whose client has been deleted still has to be selectable, or an existing
-  // entry becomes unsaveable the moment a client is removed.
-  const orphanedProjects = projects.filter(
-    (row) => row.clientId === null || clients.every((row2) => row2.id !== row.clientId),
+  /*
+   * Archived records are not offered as choices (0005 X4) — not here, not in the client
+   * filter, not as a timer target. They used to appear labelled "(archived)", which left
+   * the user to decide, every time, whether a project they had finished with was a thing
+   * they meant to file new work under.
+   *
+   * With one exception, and it is the load-bearing one: a record that is *already* the
+   * entry's own. Removing it from the list would leave the `<select>` holding a value that
+   * has no option, and saving would either fail or silently write `null` — re-filing
+   * existing work somewhere the user never chose. So an archived project stays visible when
+   * this entry is the reason, and vanishes as soon as it is not.
+   */
+  const visibleProjects = projects.filter((row) => !row.archived || row.id === projectId)
+
+  /*
+   * An archived client is dropped as a heading, unless this entry's own chosen project
+   * belongs to it — in which case keeping the heading is what stops the project appearing
+   * under "No client", which would be a lie about where the work was filed.
+   */
+  const chosenProject = projectId === null ? null : (project?.id ?? null)
+  const visibleClients = clients.filter(
+    (owner) =>
+      !owner.archived ||
+      (chosenProject !== null &&
+        projects.some((row) => row.id === chosenProject && row.clientId === owner.id)),
+  )
+
+  // A project whose client has been removed still has to be selectable, or an existing
+  // entry becomes unsaveable the moment a client goes.
+  const orphanedProjects = visibleProjects.filter(
+    (row) => row.clientId === null || visibleClients.every((row2) => row2.id !== row.clientId),
   )
 
   // Both chains come from the domain, in the order the spec writes them down. This hint
@@ -377,8 +404,8 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
           */}
           <option value="">No project — uncategorised</option>
           {!taxonomyLoading &&
-            clients.map((owner) => {
-              const owned = projects.filter((row) => row.clientId === owner.id)
+            visibleClients.map((owner) => {
+              const owned = visibleProjects.filter((row) => row.clientId === owner.id)
               if (owned.length === 0) return null
               return (
                 // N2: projects and clients appear together here, so the client is named in

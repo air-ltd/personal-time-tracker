@@ -25,7 +25,14 @@ import type { Mergeable, Snapshot } from '../domain/merge'
  * written today remains a complete document rather than one missing sections.
  */
 
-const TABLES = ['entries', 'projects', 'clients', 'tags'] as const
+/*
+ * The tables that travel in a sync payload or a backup.
+ *
+ * `settings` is here (SPECS/todo.md item 46) and `meta` is not, which is the whole point of
+ * having split them: `meta` holds `lastRev` and `lastSyncAt`, which belong to the device
+ * doing the syncing and would make two devices fight over them forever.
+ */
+const TABLES = ['entries', 'projects', 'clients', 'tags', 'settings'] as const
 
 export async function readSnapshot(): Promise<Snapshot> {
   const db = getDb()
@@ -40,8 +47,10 @@ export async function readSnapshot(): Promise<Snapshot> {
   }
 
   // `meta` and `secrets` are deliberately absent from TABLES: credentials must never
-  // travel in a sync payload or a backup file (0012 AU6, 0008 S2), and `meta` is sync
-  // bookkeeping rather than user data.
+  // travel in a sync payload or a backup file (0012 AU6, 0008 S2), and what is left in
+  // `meta` is sync bookkeeping rather than user data. Settings live in their own table so
+  // this exclusion is a property of the schema rather than a filter someone has to
+  // remember.
   return { schemaVersion: SCHEMA_VERSION, entities }
 }
 

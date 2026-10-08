@@ -24,6 +24,38 @@ import { CURRENCY_CODES } from '../domain/taxonomy/currencies'
  * a phase about projects and clients. Recorded in `todo.md`.
  */
 
+/*
+ * Settings, as rows in the `settings` table rather than `meta` (SPECS/todo.md item 46).
+ *
+ * `meta` mixes this device's sync bookkeeping with the user's preferences, and only the
+ * second kind should travel. Sharing one table would mean every sync deciding which half to
+ * send; separating them makes it structural instead — `snapshotRepo` includes `settings` and
+ * still leaves `meta` out, so a credential or a revision number cannot leak into a sync
+ * payload or a backup file by being forgotten (0012 AU6, 0008 S2).
+ *
+ * Every write stamps `updatedAt`, which is what lets these merge through the existing
+ * union-by-id, last-write-wins path: a setting is one value under a stable key, so
+ * "whichever device changed it most recently wins" is both the rule and the correct one.
+ *
+ * Two settings are deliberately absent. The theme stays in localStorage because 0002 TH4
+ * needs it readable before first paint, which IndexedDB cannot do. The Dropbox app key is
+ * chosen by host, so syncing it would let a local build inherit the deployed app's identity.
+ */
+/**
+ * Writes one setting, stamping the merge identity.
+ *
+ * `updatedAt` is what the sync merge orders by, and `deletedAt` is what makes the row the
+ * same shape as every other mergeable table — so a setting needs no merge rule of its own.
+ */
+async function putSetting(id: string, value: unknown): Promise<void> {
+  await getDb().settings.put({
+    id,
+    value,
+    updatedAt: new Date().toISOString(),
+    deletedAt: null,
+  })
+}
+
 const DEFAULT_CURRENCY_KEY = 'app-default-currency'
 const VISIBLE_CURRENCIES_KEY = 'visible-currencies'
 const ENTRY_PERIOD_KEY = 'entry-period'
@@ -37,7 +69,7 @@ const ENTRY_PERIOD_KEY = 'entry-period'
  * deliberately set to the fallback value.
  */
 export async function readDefaultCurrency(): Promise<string | null> {
-  const record = await getDb().meta.get(DEFAULT_CURRENCY_KEY)
+  const record = await getDb().settings.get(DEFAULT_CURRENCY_KEY)
   const value = record?.value
   if (typeof value !== 'string') return null
   const upper = value.trim().toUpperCase()
@@ -50,12 +82,12 @@ export async function readDefaultCurrency(): Promise<string | null> {
 /** Set or clear the default. An empty value clears it, which is how "inherit" is set. */
 export async function writeDefaultCurrency(code: string | null): Promise<void> {
   if (code === null || code.trim() === '') {
-    await getDb().meta.delete(DEFAULT_CURRENCY_KEY)
+    await getDb().settings.delete(DEFAULT_CURRENCY_KEY)
     bumpRevision()
     return
   }
   const upper = code.trim().toUpperCase()
-  await getDb().meta.put({ key: DEFAULT_CURRENCY_KEY, value: upper })
+  await putSetting(DEFAULT_CURRENCY_KEY, upper)
   bumpRevision()
 }
 
@@ -79,7 +111,7 @@ export async function writeDefaultCurrency(code: string | null): Promise<void> {
  * user cannot re-select is a trap.
  */
 export async function readVisibleCurrencies(): Promise<string[] | null> {
-  const record = await getDb().meta.get(VISIBLE_CURRENCIES_KEY)
+  const record = await getDb().settings.get(VISIBLE_CURRENCIES_KEY)
   const value = record?.value
   if (!Array.isArray(value)) return null
   const codes = value
@@ -94,11 +126,11 @@ export async function readVisibleCurrencies(): Promise<string[] | null> {
 /** Narrow the offered currencies, or pass null to offer all of them again. */
 export async function writeVisibleCurrencies(codes: readonly string[] | null): Promise<void> {
   if (codes === null) {
-    await getDb().meta.delete(VISIBLE_CURRENCIES_KEY)
+    await getDb().settings.delete(VISIBLE_CURRENCIES_KEY)
     bumpRevision()
     return
   }
-  await getDb().meta.put({ key: VISIBLE_CURRENCIES_KEY, value: [...codes] })
+  await putSetting(VISIBLE_CURRENCIES_KEY, [...codes])
   bumpRevision()
 }
 
@@ -115,13 +147,13 @@ export async function writeVisibleCurrencies(codes: readonly string[] | null): P
  * can get out of.
  */
 export async function readEntryPeriod(): Promise<'day' | 'week' | 'all'> {
-  const record = await getDb().meta.get(ENTRY_PERIOD_KEY)
+  const record = await getDb().settings.get(ENTRY_PERIOD_KEY)
   const value = record?.value
   return value === 'day' || value === 'week' || value === 'all' ? value : 'all'
 }
 
 /** Remember the chosen period. */
 export async function writeEntryPeriod(period: 'day' | 'week' | 'all'): Promise<void> {
-  await getDb().meta.put({ key: ENTRY_PERIOD_KEY, value: period })
+  await putSetting(ENTRY_PERIOD_KEY, period)
   bumpRevision()
 }

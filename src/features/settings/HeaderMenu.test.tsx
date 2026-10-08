@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { HeaderMenu } from './HeaderMenu'
@@ -114,5 +114,20 @@ describe('the header menu', () => {
     // every page load, which is the thing item 26 moved the panel out of.
     expect(screen.queryByTestId('header-menu-panel')).not.toBeInTheDocument()
     expect(screen.getByTestId('header-menu-toggle')).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('closes when the hash changes without a click', async () => {
+    render(<HeaderMenu settingsHref="#/settings" aboutHref="#/about" />)
+    // The two menu links close themselves on click, which covers every route the menu
+    // offers and nothing else. Back, forward, or a typed URL change the hash with no click,
+    // and the panel used to survive — an absolutely-positioned overlay on the page the user
+    // just went to, swallowing the clicks meant for it. Found by the browser suite, which
+    // navigates the way a browser does rather than the way a test usually does.
+    await user.click(screen.getByTestId('header-menu-toggle'))
+    expect(screen.getByTestId('header-menu-panel')).toBeInTheDocument()
+
+    window.location.hash = '#/settings'
+
+    await waitFor(() => expect(screen.queryByTestId('header-menu-panel')).toBeNull())
   })
 })

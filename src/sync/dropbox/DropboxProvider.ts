@@ -19,11 +19,18 @@ import type { TokenStore } from '../../storage/secretsRepo'
 /**
  * The stored credential.
  *
- * Only what the app actually uses. A refresh token is deliberately absent: Dropbox issues
- * one to confidential clients, and this is a public PKCE client with no secret, so there
- * is nothing to refresh with — and even if one arrived, there is no refresh flow. An
- * expired token is recovered by asking the user to authorise again, which the scheduler
- * triggers by discarding the token it cannot use.
+ * Only what the app actually uses.
+ *
+ * **Revised twice.** This used to say a refresh token was deliberately absent, on the
+ * reasoning that Dropbox issues one to confidential clients and this is a public PKCE client
+ * with no secret. Wrong: Dropbox issues one to a PKCE client, and the token response was
+ * already being parsed with the field thrown away.
+ *
+ * Correcting that was still not enough. Dropbox requires `token_access_type=offline` on the
+ * *authorisation URL* before it will return a refresh token at all, and the URL did not send
+ * it — so the field being parsed was never present. Both halves had to be right, and only
+ * the first was found by reading the code; the second needed the provider's documentation.
+ * A test that asserts the parameter is on the URL is what keeps it there.
  *
  * `displayName` went for the same reason in the other direction: reading an account name
  * needs the `account_info.read` scope, and requesting a third permission purely to show a
@@ -34,6 +41,16 @@ export interface DropboxTokens {
   /** Absent when the provider did not return an expiry. */
   expiresAt?: number
   accountId?: string
+  /**
+   * Long-lived credential for minting a new access token without the user (SPECS/todo.md
+   * item 47).
+   *
+   * Stored beside the access token in `secrets`, so it is excluded from sync payloads and
+   * backups by the table's structure rather than by a filter someone has to remember
+   * (0011 R3). Dropbox's own guidance is that this value is sensitive in the same way the
+   * access token is.
+   */
+  refreshToken?: string
 }
 
 export interface DropboxProviderOptions {
@@ -67,6 +84,11 @@ function toTokens(value: unknown): DropboxTokens | null {
     accessToken: candidate.accessToken,
     ...(typeof candidate.expiresAt === 'number' ? { expiresAt: candidate.expiresAt } : {}),
     ...(typeof candidate.accountId === 'string' ? { accountId: candidate.accountId } : {}),
+    // Absent on a credential written before this field existed, which is fine: the
+    // refresh path checks for it and reports `token-lost` when there is none.
+    ...(typeof candidate.refreshToken === 'string' && candidate.refreshToken !== ''
+      ? { refreshToken: candidate.refreshToken }
+      : {}),
   }
 }
 
@@ -102,6 +124,20 @@ export class DropboxProvider implements SyncProvider {
   private readonly storage: TokenStore
   private readonly fetchImpl: typeof fetch
   private readonly randomBytes: (length: number) => Uint8Array
+  /**
+   * The refresh state for this session (SPECS/todo.md item 47).
+   *
+   * Three states, and the difference between the first two is the whole reason this is
+   * not a boolean:
+   *
+   * - `undefined` — not attempted yet. Worth attempting.
+   * - a promise — in flight, shared, so two requests failing at once make one exchange
+   *   instead of both minting a token and racing each other's credential write.
+   * - `null` — attempted and failed, so the refresh token is dead. Never worth attempting
+   *   again this session; without this a tab left open would spend a token exchange per
+   *   cycle against a credential that will never work.
+   */
+  private refreshTokens: Promise<RefreshResult> | null | undefined = undefined
   private readonly now: () => number
   /**
    * The pending PKCE verifier, cached for the duration of the round trip.
@@ -129,10 +165,27 @@ export class DropboxProvider implements SyncProvider {
    * expiry, which is usually silent because the user's approval persists. Being
    * strict here would prompt unnecessarily.
    */
+  /**
+   * Whether there is a credential worth using — which is not the same as an access token
+   * that has not expired yet (SPECS/todo.md item 47).
+   *
+   * This used to answer "is the access token current?", which made the *user-visible* answer
+   * to "how often do I have to reconnect" still be the access token's lifetime — about four
+   * hours — no matter what else the app could do. Worse, it was checked *before* the refresh
+   * path: `ensureAuth()` threw, the engine skipped the cycle, the scheduler read that as a
+   * dead credential and discarded it. So the refresh could only ever help for a token that
+   * was unexpired but rejected, which is the rare case.
+   *
+   * A credential with a refresh token is usable, because the first thing any request does
+   * with it is make it current. Deliberately answered from local state with no network
+   * call, since `status()` reads it to render the connection state.
+   */
   async hasUsableToken(): Promise<boolean> {
     const tokens = toTokens(await this.storage.read())
     if (!tokens?.accessToken) return false
-    if (tokens.expiresAt !== undefined && tokens.expiresAt <= this.now()) return false
+    if (tokens.expiresAt !== undefined && tokens.expiresAt <= this.now()) {
+      return tokens.refreshToken !== undefined
+    }
     return true
   }
 
@@ -156,6 +209,23 @@ export class DropboxProvider implements SyncProvider {
     url.searchParams.set('code_challenge_method', 'S256')
     url.searchParams.set('code_challenge', base64Url(await sha256(verifier)))
     url.searchParams.set('state', state)
+    /*
+     * `token_access_type=offline`, and it has to be here explicitly.
+     *
+     * Dropbox documents it as a requirement, not a default: without this parameter no
+     * `refresh_token` is returned in the token payload, whatever else is asked for. This
+     * URL did not send it, on the reasoning recorded below — that offline was the default
+     * for an app intending to keep the credential — which is wrong. Without it the whole of
+     * the refresh path was dead in production: no refresh token stored, `expires_in` absent
+     * so the 4h fallback applied, and the user was asked to reconnect every four hours
+     * exactly as before. The alternative to sending this is setting "Access token expiration"
+     * to Short-lived in the app console, which is a toggle that can be changed by anyone and
+     * is not visible from here.
+     *
+     * It is safe to send now that the scopes are granted: with it, Dropbox grants exactly
+     * what the Permissions tab lists.
+     */
+    url.searchParams.set('token_access_type', 'offline')
     // Deliberately no `scope` parameter. Dropbox documents that omitting it requests
     // exactly the scopes selected on the app's Permissions tab, which makes the
     // console the single source of truth for what the app may access.
@@ -227,6 +297,11 @@ export class DropboxProvider implements SyncProvider {
         ? { expiresAt: this.now() + json.expires_in * 1000 }
         : { expiresAt: this.now() + TOKEN_TTL_FALLBACK_MS }),
       ...(json.account_id ? { accountId: json.account_id } : {}),
+      // Kept rather than discarded. An access token lasts hours; without this the only way
+      // past expiry was to send the user back through Dropbox's consent screen, which is
+      // why "Sync failed, please reconnect" used to be a routine event rather than a
+      // signal that something was wrong.
+      ...(json.refresh_token ? { refreshToken: json.refresh_token } : {}),
     })
     this.verifier = null
     this.inMemoryState = null
@@ -289,11 +364,54 @@ export class DropboxProvider implements SyncProvider {
   }
 
   async ensureAuth(): Promise<void> {
-    if (await this.hasUsableToken()) return
-    // No usable token and no interactive sign-in available from here, so the caller
-    // must prompt the user. Signalling this as an auth error lets the engine skip
-    // the cycle quietly (0012 C4 step 1) rather than reporting a failure.
-    throw new SyncError('auth', 'Not connected to Dropbox.')
+    const tokens = toTokens(await this.storage.read())
+    if (!tokens?.accessToken) {
+      // No usable token and no interactive sign-in available from here, so the caller
+      // must prompt the user. Signalling this as an auth error lets the engine skip
+      // the cycle quietly (0012 C4 step 1) rather than reporting a failure.
+      throw new SyncError('auth', 'Not connected to Dropbox.')
+    }
+
+    if (tokens.expiresAt !== undefined && tokens.expiresAt <= this.now()) {
+      // Expired, but refreshable — so make it current rather than reporting a dead
+      // credential the user would have to sign in for.
+      if (tokens.refreshToken === undefined)
+        throw new SyncError('auth', 'Not connected to Dropbox.')
+      const outcome = await this.runRefresh()
+      if (outcome.ok) return
+      throw this.refreshFailure(outcome.reason)
+    }
+  }
+
+  /** The shared, in-flight refresh, started on first use. */
+  private async runRefresh(): Promise<RefreshResult> {
+    if (this.refreshTokens === undefined) this.refreshTokens = this.refreshAccessToken()
+    // The memo may already be `null` — a refresh this session already found to be
+    // rejected — so it is not always something to await. Asked again and reported as
+    // rejected, which is what it is.
+    return this.refreshTokens ?? { ok: false, reason: 'rejected' }
+  }
+
+  /**
+   * Refresh if there is anything to refresh with, sharing any exchange already in flight.
+   *
+   * Returns the new access token, or `null` when there was nothing to do or the refresh
+   * failed — in which case the caller has to treat the credential as spent.
+   */
+
+  /**
+   * Turn a failed refresh into the error the engine should see.
+   *
+   * `rejected` is `auth`, which the scheduler recovers from by discarding the credential
+   * and offering Connect. `unreachable` is `network`, which it does **not** — it backs off
+   * and tries again. That single choice is what keeps a dropped connection from signing
+   * someone out, and it is why the distinction in `RefreshResult` exists rather than being
+   * collapsed into "it failed".
+   */
+  private refreshFailure(reason: 'rejected' | 'unreachable'): SyncError {
+    return reason === 'rejected'
+      ? new SyncError('auth', 'Not connected to Dropbox.')
+      : new SyncError('network', 'Could not reach Dropbox to renew the connection.')
   }
 
   async signOut(): Promise<void> {
@@ -309,16 +427,19 @@ export class DropboxProvider implements SyncProvider {
   }
 
   async pull(path: string): Promise<RemoteFile | null> {
-    const tokens = await this.requireToken()
+    const arg = { path: normalizePath(path) }
+
     // POST with the argument in the header: `download` is `style = "download"` with a
     // DownloadArg struct, so the path does not belong in the URL.
-    const response = await this.fetchImpl(DROPBOX.downloadUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-        'Dropbox-API-Arg': JSON.stringify({ path: normalizePath(path) }),
-      },
-    })
+    const response = await this.authenticated((accessToken) =>
+      this.fetchImpl(DROPBOX.downloadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Dropbox-API-Arg': JSON.stringify(arg),
+        },
+      }),
+    )
 
     if (response.ok) {
       const rev = response.headers.get('dropbox-api-result')
@@ -327,15 +448,14 @@ export class DropboxProvider implements SyncProvider {
     }
 
     const detail = await describeFailure(response, {
-      op: `download ${normalizePath(path)}`,
-      args: { path: normalizePath(path) },
+      op: `download ${arg.path}`,
+      args: arg,
     })
     if (detail.kind === 'not-found') return null
     throw detail.error
   }
 
   async push(path: string, body: string, expectedRev: string | null): Promise<{ rev: string }> {
-    const tokens = await this.requireToken()
     const args = {
       path: normalizePath(path),
       mode: expectedRev ? DROPBOX.updateMode(expectedRev) : DROPBOX.overwriteMode,
@@ -344,15 +464,17 @@ export class DropboxProvider implements SyncProvider {
       strict_conflict: STRICT_CONFLICT,
     }
 
-    const response = await this.fetchImpl(DROPBOX.uploadUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${tokens.accessToken}`,
-        'Content-Type': 'application/octet-stream',
-        'Dropbox-API-Arg': JSON.stringify(args),
-      },
-      body,
-    })
+    const response = await this.authenticated((accessToken) =>
+      this.fetchImpl(DROPBOX.uploadUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/octet-stream',
+          'Dropbox-API-Arg': JSON.stringify(args),
+        },
+        body,
+      }),
+    )
 
     if (response.ok) {
       const json = (await response.json()) as { rev?: string }
@@ -370,6 +492,121 @@ export class DropboxProvider implements SyncProvider {
     const tokens = toTokens(await this.storage.read())
     if (!tokens?.accessToken) throw new SyncError('auth', 'Not connected to Dropbox.')
     return tokens
+  }
+
+  /**
+   * Make an authenticated request, refreshing once if the token has expired.
+   *
+   * An access token lasts hours. Before this, the only recovery was to send the user back
+   * through Dropbox's consent screen — so "Sync failed, reconnect" was a routine event that
+   * happened on a timer, and a user who had connected Dropbox once would keep being asked
+   * to prove it (SPECS/todo.md item 47).
+   *
+   * **Once, and only on an auth failure.** Two bounds, both load-bearing:
+   *
+   * - Only a 401/403 triggers it. Refreshing on any failure would spend a round trip on
+   *   every rate limit and every offline attempt, and would make a network problem look
+   *   like a credential problem.
+   * - Only one retry. A refresh token that is itself dead returns `invalid_grant`, and an
+   *   unbounded retry against one is a loop that looks like syncing. `refreshTokens` is
+   *   held for the duration and cleared by a concurrent refresh, so two requests failing
+   *   at once cannot both mint a token and race each other's write.
+   *
+   * A refresh that fails is reported as `auth`, which is what the scheduler already knows
+   * how to recover from: discard the credential and ask the user once.
+   */
+  private async authenticated(
+    send: (accessToken: string) => Promise<Response>,
+  ): Promise<Response> {
+    const tokens = await this.requireToken()
+    const response = await send(tokens.accessToken)
+    if (!isAuthFailure(response.status)) return response
+    if (tokens.refreshToken === undefined) return response
+
+    const outcome = await this.runRefresh()
+    if (!outcome.ok) {
+      /*
+       * Throwing rather than returning the original 401.
+       *
+       * Returning it made every refresh failure look like a revoked credential: the 401 was
+       * re-classified as `auth`, and the scheduler's response to `auth` is to discard the
+       * stored token and ask the user to sign in. So a 502 from the token endpoint cost
+       * someone their connection. Throwing here lets the reason through instead.
+       */
+      throw this.refreshFailure(outcome.reason)
+    }
+    return await send(outcome.accessToken)
+  }
+
+  /**
+   * Mints a new access token, or `null` when there is nothing to mint one with.
+   *
+   * Memoised in `refreshTokens` for the life of the provider so concurrent failures share
+   * one exchange. Cleared to `null` — not left rejected — when the exchange fails, so a
+   * revoked refresh token is not retried for every subsequent request in the session.
+   */
+  private async refreshAccessToken(): Promise<RefreshResult> {
+    const stored = toTokens(await this.storage.read())
+    const refreshToken = stored?.refreshToken
+    if (refreshToken === undefined) return { ok: false, reason: 'rejected' }
+
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken,
+      client_id: this.clientId,
+    })
+
+    try {
+      const response = await this.fetchImpl(DROPBOX.tokenUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      })
+      if (!response.ok) {
+        /*
+         * Dropbox answered, and the answer was no. That is the credential being rejected.
+         *
+         * 4xx is Dropbox refusing this token; 5xx and 429 are Dropbox being unavailable or
+         * throttling us, which says nothing about the token. Conflating them is what made a
+         * transient outage destroy a working connection.
+         */
+        const refused =
+          response.status >= 400 && response.status < 500 && response.status !== 429
+        if (refused) this.refreshTokens = null
+        return { ok: false, reason: refused ? 'rejected' : 'unreachable' }
+      }
+
+      const json = (await response.json()) as {
+        access_token?: string
+        expires_in?: number
+      }
+      if (typeof json.access_token !== 'string' || json.access_token === '') {
+        // A 200 with no token is not a credential we can use, and there is nothing to
+        // retry — but it is still not Dropbox refusing the token, so keep it for a later
+        // attempt rather than signing the user out over a malformed response.
+        this.refreshTokens = null
+        return { ok: false, reason: 'unreachable' }
+      }
+
+      await this.storage.write({
+        // Spread the existing credential rather than assembling one, so a field added to
+        // `DropboxTokens` later is not silently dropped on the first refresh — which is
+        // how the refresh token itself was nearly lost.
+        ...stored,
+        accessToken: json.access_token,
+        expiresAt:
+          this.now() +
+          (typeof json.expires_in === 'number'
+            ? json.expires_in
+            : TOKEN_TTL_FALLBACK_MS / 1000) *
+            1000,
+      })
+      return { ok: true, accessToken: json.access_token }
+    } catch {
+      // The request never completed: offline, DNS failure, a blocked request. The token is
+      // untouched and unquestioned.
+      return { ok: false, reason: 'unreachable' }
+    }
   }
 }
 
@@ -389,6 +626,30 @@ function normalizePath(path: string): string {
   // extra slashes still addresses the intended file rather than a differently-named
   // one.
   return `/${path.trim().replace(/^\/+/, '')}`
+}
+
+/**
+ * The outcome of trying to mint a new access token.
+ *
+ * The distinction is `rejected` against `unreachable`, and it is the difference between a
+ * credential worth keeping and one worth throwing away. A dropped connection while
+ * refreshing says nothing about whether the refresh token still works, and treating it as
+ * though it did meant one network blip permanently signed the user out — the precise
+ * opposite of retaining a connection.
+ */
+type RefreshResult =
+  { ok: true; accessToken: string } | { ok: false; reason: 'rejected' | 'unreachable' }
+
+/**
+ * The HTTP statuses that mean "this credential is no longer valid".
+ *
+ * Status-based rather than body-based on purpose: the body has to be read to be understood,
+ * and by the time it has been parsed the request has already failed for a reason that may
+ * not be the credential. Refreshing on a 404 or a 409 would spend a round trip to fix
+ * nothing.
+ */
+function isAuthFailure(status: number): boolean {
+  return status === 401 || status === 403
 }
 
 interface FailureDetail {

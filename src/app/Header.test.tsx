@@ -3,6 +3,7 @@ import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
 import { SyncProvider } from '../features/sync/SyncProvider'
+import { environmentForHost } from '../sync/appKey'
 import { SyncIndicator, SyncIndicatorView } from '../features/sync/SyncIndicator'
 import { installTestDb } from '../test/harness'
 
@@ -32,12 +33,42 @@ function indicatorWith(state: Partial<Parameters<typeof SyncIndicatorView>[0]>) 
           hasKey
           busy={false}
           connect={() => {}}
+          syncNow={() => {}}
           {...state}
         />
       </li>
     </ul>
   )
 }
+
+/**
+ * The dev badge (SPECS/todo.md item 40).
+ *
+ * Worth a test of its own because the marker and the sync target read the same function:
+ * if either ever grew its own notion of "production", the dangerous case is a build that
+ * says dev while writing to production Dropbox, and a wrong badge is worse than none.
+ */
+describe('the dev badge (item 40)', () => {
+  it('marks a non-production origin', () => {
+    // jsdom serves on localhost, which `environmentForHost` treats as development.
+    render(<App />)
+    expect(screen.getByText('dev')).toBeInTheDocument()
+  })
+
+  it('reads the same answer as the Dropbox app selection', () => {
+    render(<App />)
+    const expected = environmentForHost(window.location.hostname) === 'development'
+    // One assertion about the relationship, rather than a second copy of the rule.
+    expect(screen.queryByText('dev') !== null).toBe(expected)
+  })
+
+  it('does not change the accessible name of the home link', () => {
+    // The badge sits inside the heading, so if it leaked into the name the existing
+    // "Time Tracker, home" queries would stop matching — which is the point of asserting.
+    render(<App />)
+    expect(screen.getByRole('link', { name: 'Time Tracker, home' })).toBeInTheDocument()
+  })
+})
 
 describe('the title link (items 11 and 15)', () => {
   it('points at the app’s own home, not the deployed host', () => {
@@ -63,7 +94,7 @@ describe('the title link (items 11 and 15)', () => {
 })
 
 describe('the sync indicator (item 10)', () => {
-  it('offers a button that connects when disconnected', async () => {
+  it('does not navigate to settings from the checking state', async () => {
     // The state lives in the provider, so this asserts the wiring rather than reaching
     // into it: without a key configured the indicator says setup is needed, and that is
     // the same "not connected, and here is what to do" shape.
@@ -73,11 +104,16 @@ describe('the sync indicator (item 10)', () => {
     const indicator = screen.getByTestId('sync-indicator')
     // "Checking sync…" is the honest first paint: it has asked Dropbox nothing yet, and
     // claiming connected or disconnected before the answer would be a guess.
-    expect(indicator).toHaveTextContent(/checking sync/i)
+    expect(indicator.getAttribute('aria-label')).toMatch(/checking sync/i)
 
-    // Where it goes matters as much as what it says.
+    /*
+     * Inert, and clicking it goes nowhere (item 62). It used to be a link to settings, so
+     * a user who tapped the indicator to read the sync state was taken off the page they
+     * were on. The detail is still there, reached from the menu.
+     */
+    expect(indicator).toBeDisabled()
     await user.click(indicator)
-    expect(window.location.hash).toBe('#/settings')
+    expect(window.location.hash).toBe('')
   })
 
   it('is on every screen, not just settings', () => {
@@ -120,7 +156,11 @@ describe('the indicator by state (item 10)', () => {
     it(`says "${state.label}" when ${state.connection}`, () => {
       render(indicatorWith({ connection: state.connection }))
       const indicator = screen.getByTestId('sync-indicator')
-      expect(indicator).toHaveTextContent(new RegExp(state.label, 'i'))
+      // The words are the accessible name now (item 65); the mark is the visible part.
+      expect(indicator.getAttribute('aria-label')).toMatch(
+        new RegExp(state.label.replace('…', ''), 'i'),
+      )
+      expect(indicator.querySelector('svg')).not.toBeNull()
       expect(indicator.className).toContain(`sync-indicator-${state.tone}`)
     })
   }
@@ -137,7 +177,10 @@ describe('the indicator by state (item 10)', () => {
 
   it('says so when no Dropbox key is configured at all', () => {
     render(indicatorWith({ hasKey: false }))
-    expect(screen.getByTestId('sync-indicator')).toHaveTextContent(/sync not set up/i)
+    expect(screen.getByTestId('sync-indicator')).toHaveAttribute(
+      'aria-label',
+      expect.stringMatching(/sync not set up/i),
+    )
   })
 
   it('flags a failed sync rather than reporting success', () => {
@@ -156,19 +199,25 @@ describe('the indicator by state (item 10)', () => {
       }),
     )
     const indicator = screen.getByTestId('sync-indicator')
-    expect(indicator).toHaveTextContent(/sync failed/i)
+    expect(indicator.getAttribute('aria-label')).toMatch(/sync failed/i)
     expect(indicator.className).toContain('sync-indicator-error')
+    // The sentence moves to the tooltip, since the visible word is gone (item 65).
+    expect(indicator.getAttribute('title')).toMatch(/nope/)
   })
 
-  it('does not offer the action while connected', async () => {
+  it('syncs rather than navigating, while connected', async () => {
     const user = userEvent.setup()
     const connect = vi.fn()
-    render(indicatorWith({ connection: 'connected', connect }))
+    const syncNow = vi.fn()
+    render(indicatorWith({ connection: 'connected', connect, syncNow }))
 
+    // Not the connect action: there is nothing to connect.
     expect(screen.queryByRole('button', { name: /connect dropbox/i })).toBeNull()
     await user.click(screen.getByTestId('sync-indicator'))
     expect(connect).not.toHaveBeenCalled()
-    expect(window.location.hash).toBe('#/settings')
+    expect(syncNow).toHaveBeenCalled()
+    // And it stays on the page (item 62).
+    expect(window.location.hash).not.toBe('#/settings')
   })
 })
 

@@ -71,6 +71,28 @@ const entityTables = {
   tags: deferredTable,
   contractPeriods: deferredTable,
   nonWorkingDays: deferredTable,
+  /*
+   * Settings, as mergeable rows (SPECS/todo.md item 46).
+   *
+   * `deferredTable`'s shape is exactly right for these — `id`, `updatedAt`, `deletedAt` —
+   * because that is what makes a setting mergeable by the same union-by-id,
+   * last-write-wins rule as everything else. `value` is `unknown` because the three settings
+   * have three different value shapes, and `looseObject` passes it through rather than
+   * stripping a shape this build does not recognise.
+   *
+   * `optional()` and not `default([])`: an older backup that predates this has no `settings`
+   * key at all, and reading "absent" as "the user has no settings" would silently reset
+   * them on restore. Absent means absent, and the local values are left alone.
+   */
+  settings: z
+    .array(
+      z.looseObject({
+        id: z.string().min(1),
+        updatedAt: isoInstant,
+        deletedAt: nullableIsoInstant,
+      }),
+    )
+    .optional(),
 }
 
 export const envelopeSchema = z.object({
@@ -165,7 +187,13 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     }
   }
 
-  const entities: Record<string, Mergeable[]> = parsed.data.data
+  // `settings` is optional in the schema and therefore possibly `undefined` here. Dropped
+  // rather than defaulted to `[]`: an empty array is a real assertion that the user has no
+  // settings, and treating a file that never mentioned them as making that assertion is how
+  // a restore quietly resets someone's preferences.
+  const { settings, ...rest } = parsed.data.data
+  const entities: Record<string, Mergeable[]> = rest
+  if (settings !== undefined) entities['settings'] = settings
   return { ok: true, snapshot: { schemaVersion: parsed.data.schemaVersion, entities } }
 }
 
@@ -180,12 +208,21 @@ export function toEnvelope(snapshot: Snapshot, exportedAt: Date): Envelope {
       []) as Envelope['data']['contractPeriods'],
     nonWorkingDays: (snapshot.entities['nonWorkingDays'] ??
       []) as Envelope['data']['nonWorkingDays'],
+    // Omitted when there are none, rather than written as an empty array, so a file written
+    // by this build is indistinguishable from one written before settings existed. Either
+    // way the reader treats absent as "no opinion".
+    ...(snapshot.entities['settings'] === undefined
+      ? {}
+      : { settings: snapshot.entities['settings'] as Envelope['data']['settings'] }),
   }
 
   // J5: counts let the importer confirm nothing was truncated in transit.
   const counts: Record<string, number> = {}
   for (const [name, table] of Object.entries(data)) {
-    counts[name] = table.length
+    // Only tables that are actually present are counted. `settings` is optional, so
+    // iterating the shape of `data` rather than its keys would count `undefined` and
+    // report a table the file never had.
+    if (Array.isArray(table)) counts[name] = table.length
   }
 
   return {

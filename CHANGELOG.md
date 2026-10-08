@@ -16,6 +16,135 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-13
+
+Settings rebuilt around one list, the timer card reduced to one control per client,
+and the Dropbox state carried by a mark rather than a word. Phases 1 to 4 are
+otherwise unchanged; reports, capacity planning and invoicing are still to come
+(Phases 5 and 6, in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md)).
+
+### Changed — the settings page
+
+- **Clients and their projects are one list.** Each client is a single row that carries its
+  own actions _and_ reveals the projects underneath, collapsed by default. It used to be two
+  stacked lists, which asked you to hold a client in your head while scrolling past every
+  other client's projects to reach one — and the projects belonging to a client were only
+  findable by reading past everyone else's.
+- **A project is added from the list it will join.** Each client has a **New project** button
+  underneath its projects, with that client already filled in. There is no page-level button
+  any more, because its position already said which client the new project belongs to. A
+  project with no client is still created from a client's list with the client changed to
+  "No client — internal work"; there is no empty "No client" group to click.
+- **Selecting a client shows its projects, each with its own timer.** Start against a
+  specific project rather than only the client's default. A project's line then carries its
+  own count-up, stop and discard, instead of the timer only being stoppable from the client
+  row above it.
+- **One archived control, not two.** "Show archived clients and projects" is one checkbox,
+  because seeing archived records is one decision rather than two. It used to be two labelled
+  checkboxes bound to one value, so each reported the other's state.
+- **A client's projects hide while the client is archived,** and come back with it. Work under
+  a client you have finished with is not something you are working on. The project itself is
+  not archived — it comes back intact, with its client.
+- **No add-project button under an archived client,** and no empty "No client" group.
+- An archived client's name is struck through. The word "archived" beside it is not: a line
+  through the badge would argue with itself.
+- Tags have their own card rather than being the third section of a panel headed "Settings".
+- The sync card no longer says "non-production" on a development build — the title and the
+  header already say so, and on that card it was the same fact a third time. "production" is
+  still shown, because that is the half worth knowing.
+
+### Changed — the timer card
+
+- **One control per client row.** The Edit button is gone from this card; editing a client is
+  a Settings job, and it was a second, quieter action on the card you touch most often.
+- **Start, Stop and Discard are icons** — a play triangle, a square, and a wastebasket — each
+  with a tooltip and an accessible name saying what it does. A square rather than two bars:
+  pause says "hold this here", which is not what stopping a timer does to a clock. The space
+  the discard button needs is held open while idle, so starting and stopping does not resize
+  the row or move the control under your pointer.
+- **The header stays put while the page scrolls**, rather than taking the way home, the sync
+  state and the menu off the top of a long list.
+
+### Changed — Dropbox
+
+- **The header's sync indicator is one cloud carrying the state inside it** — a tick, a bang,
+  a clock, or chasing arrows — tinted green, amber, red or grey. The words moved to the
+  tooltip and to the control's accessible name; the Sync panel on Settings still states it in
+  prose. The status is still conveyed in the header, which is what it is for; what moved is
+  where the words are.
+- **It no longer opens the settings page when you click it**, in any state. Reading the sync
+  state used to take you off the page you were on. It does the one thing its own state calls
+  for instead: connect when disconnected, sync now when connected, and nothing at all when
+  there is nothing to do.
+- Every add, Dropbox and discard button carries a tooltip saying what the press will do
+  rather than repeating the label.
+
+### Changed — privacy
+
+- **The policy says who serves the page.** It is a static site on GitHub Pages, so what
+  arrives when you load it is a matter of GitHub's policy rather than this app's — so the
+  page now points at GitHub's privacy statement and its GitHub Pages section instead of
+  restating them, and qualifies what remains with "at the time of writing". A summary of
+  another company's data practices goes out of date quietly, which is the failure a privacy
+  policy exists to prevent.
+- **The source is public,** so the app's own claims — no analytics, no telemetry, no
+  third-party requests — can be read rather than taken on trust.
+
+### Changed — the About page
+
+- **The privacy policy and each release are collapsible, and start closed.** Both are
+  reference material a reader arrives at deliberately, and expanded they pushed everything
+  below them down the page. The text has not changed and is still one click away; the
+  disclosure carries its state properly, and a closed section is genuinely off the page
+  rather than collapsed to zero height — so it is unreachable by screen reader and by
+  find-in-page, as it should be.
+- Version headings render inside the heading itself rather than replacing it, so each release
+  keeps its place in the page outline.
+
+### Fixed
+
+- **Stopping a timer said it had been saved uncategorised when it had not.** Every timer
+  started from the timer card goes against the client's default project, so the notice was
+  wrong for essentially all of them: it told you to classify an entry the entries list was
+  already naming a client and project for. It now says "Saved." for a categorised entry, and
+  only offers the form when there is genuinely no project.
+- **Adding a project could leave Start filing against the wrong one.** Between a project being
+  created and the card re-reading which project is the client's default, every Start button on
+  the card was starting the timer against the project that _used_ to be the default — with no
+  wrong entry afterwards to notice it by. Start is now briefly disabled while that read is
+  stale.
+- **A project deleted in 0.1.0 stays deleted.** This release cannot delete a project, so it
+  can neither create nor clear the tombstone an older build left behind. It is covered by a
+  test that fails if the merge ever drops one.
+- **Preferences survive the upgrade from 0.1.0**, and a backup or sync file written by 0.1.0
+  — which has no settings in it at all — no longer reads as saying you have none. Previously
+  the code did the right thing and nothing tested it, including the one database upgrade that
+  moves a row.
+
+### Before you update a second device
+
+- **Update every device at once.** This release is data schema 4; 0.1.0 was schema 3. Sync
+  takes the higher of the two, so once one device is on 0.2.0 the file in Dropbox is schema
+  4 — and a device still on 0.1.0 will **refuse to sync** rather than guess, saying that it
+  does not understand the schema.
+
+  That refusal is deliberate (0012 M9): reading a file whose shape you cannot interpret is
+  how data gets corrupted. The cost is a rollout one, and it is the only thing in this release
+  that a user can hit through no action of their own. If you have two devices, bring both up
+  to date before relying on sync again. Your data is not at risk — nothing is written by the
+  device that refuses — but it will stop moving until it is updated.
+
+### Known limitations
+
+- Items 43 and 45 in [`SPECS/todo.md`](SPECS/todo.md) — further work on the About page and on
+  what shows by default — remain open and were not addressed by this release.
+- The two-device sync test in [`docs/UAT.md`](docs/UAT.md) §15 has not been run against the
+  rewritten sync path.
+- Inherited from 0.1.0 and still true: the taxonomy undo window closes if you leave the
+  settings view; `npm run dev` is not covered by the Content Security Policy, because the
+  build injects it; and the policy cannot prevent clickjacking, since `frame-ancestors` is
+  ignored in a `<meta>` policy and GitHub Pages cannot set response headers.
+
 ## [0.1.0] - 2026-10-05
 
 First release. Phases 1 to 4: a timer that survives a reload, duration-first entry
@@ -119,7 +248,52 @@ and 6, listed in [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.
   sync, the currency resolution chain, the empty currency selection and the running-entry
   edit — making it 18/18.
 
+### Changed
+
+- **Your preferences now follow you across devices.** The default currency, the currencies you
+  work in, and the entries period were stored per browser, so a second device started from
+  scratch and a restore did not bring them back. They now travel in the sync payload and in
+  backups, merged by whichever device changed them most recently.
+
+  Your theme stays on each device, because it has to be read before the page paints.
+
+- **Clients and projects can no longer be deleted — they are archived instead.** Retiring a
+  project is usually not a rare destructive act; it is a project that has finished. Offering
+  both "archive" and "delete" meant the safe option got used less than it should have, because
+  the destructive one looked like the official answer. Archiving changes nothing else: entries
+  keep their project, projects keep their client, and nothing is removed. It asks for no
+  confirmation, because there is nothing to warn about any more.
+- An archived client or project is no longer offered as a choice — not on the timer card, not
+  in the project picker, not as a client filter. An entry already filed under one still names
+  it, marked archived, so historic work is not made to look uncategorised.
+- Tags keep **Delete**, because deleting a tag moves entries (they lose the tag) rather than
+  hiding one, so the affected count and the undo are still warranted.
+
+### Changed
+
+- The title carries a **dev** badge on any non-production origin, so a local build is not
+  mistaken for the deployed one. It reflects the same check that decides which Dropbox app
+  the origin talks to, so the badge and the sync target cannot disagree.
+
 ### Fixed
+
+- **Your Dropbox connection no longer lapses.** An expired access token is exchanged for a
+  new one silently, using the refresh token Dropbox was already sending and this app was
+  discarding — so the header no longer says "not connected" every few hours and you are not
+  asked to sign in again. There is no time limit: the connection lasts until you remove the
+  app or disconnect, not for a fixed period.
+- **A dropped connection no longer signs you out.** If Dropbox's token endpoint was briefly
+  unreachable, the app treated it as a rejected token and threw away a perfectly good
+  connection. Only Dropbox actually refusing the token ends it now; a network problem is
+  waited out.
+- A cycle that fails because the network dropped is retried a few times, backing off, rather
+  than waiting for you to reopen the tab. A stopped scheduler no longer keeps syncing.
+- **Stopping a timer no longer takes the screen away.** It used to jump straight to the
+  entry form, which made one action — pressing Stop — look like three. The entry is written
+  either way, so the offer to classify it is now a line on the timer panel with a link to the
+  form, and it disappears when you start the next timer.
+
+### Changed
 
 - **A tag typed and then saved was silently lost.** Pressing Save moved focus off the tag
   field, which committed the name, and the form saved the entry before that commit finished —

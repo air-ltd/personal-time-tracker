@@ -12,6 +12,9 @@ import { getDb } from './db'
 import { resolveCurrency } from '../domain/taxonomy/money'
 import type { Client } from '../domain/taxonomy/types'
 
+/** Any stamp will do: these rows are seeded corrupt, so nothing merges them. */
+const SEEDED_AT = new Date('2026-10-13T18:00:00.000Z')
+
 /**
  * App-wide default currency (0003 CU4, CU7).
  *
@@ -52,10 +55,15 @@ describe('default currency', () => {
   })
 
   it('ignores a value that is not a string', async () => {
-    // `meta` is untyped by design, so a record written by another build can hold
+    // The value column is untyped by design, so a record written by another build can hold
     // anything. Reading it must not hand a number to `Intl` as if it were a code.
     const db = installTestDb()
-    await db.meta.put({ key: 'app-default-currency', value: 42 })
+    await db.settings.put({
+      id: 'app-default-currency',
+      value: 42,
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
     expect(await readDefaultCurrency()).toBeNull()
   })
 
@@ -63,7 +71,12 @@ describe('default currency', () => {
     // Display tolerates an unknown code; offering it as a choice the user could not
     // re-select would not be.
     const db = installTestDb()
-    await db.meta.put({ key: 'app-default-currency', value: 'ZZZ' })
+    await db.settings.put({
+      id: 'app-default-currency',
+      value: 'ZZZ',
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
     expect(await readDefaultCurrency()).toBeNull()
   })
 
@@ -109,7 +122,12 @@ describe('entry period (item 28)', () => {
     // A preference that cannot be read must not be able to leave the list in a state
     // nothing can get out of.
     await writeEntryPeriod('day')
-    await getDb().meta.put({ key: 'entry-period', value: 'fortnightly' })
+    await getDb().settings.put({
+      id: 'entry-period',
+      value: 'fortnightly',
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
 
     expect(await readEntryPeriod()).toBe('all')
   })
@@ -140,7 +158,12 @@ describe('visible currencies', () => {
     // Written directly, as an older build or a hand-edited database would leave it.
     // Taken literally it leaves every picker in the app offering only the currency each
     // record already had, and the panel gives the user no way to describe that.
-    await getDb().meta.put({ key: 'visible-currencies', value: [] })
+    await getDb().settings.put({
+      id: 'visible-currencies',
+      value: [],
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
 
     expect(await readVisibleCurrencies()).toBeNull()
   })
@@ -148,13 +171,23 @@ describe('visible currencies', () => {
   it('normalises a selection whose codes are all unrecognised', async () => {
     // Every code was dropped, so what remains says nothing — the same case as an empty
     // list, reached a different way.
-    await getDb().meta.put({ key: 'visible-currencies', value: ['ZZZ', 'QQQ'] })
+    await getDb().settings.put({
+      id: 'visible-currencies',
+      value: ['ZZZ', 'QQQ'],
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
 
     expect(await readVisibleCurrencies()).toBeNull()
   })
 
   it('still narrows when only some codes are unrecognised', async () => {
-    await getDb().meta.put({ key: 'visible-currencies', value: ['GBP', 'ZZZ'] })
+    await getDb().settings.put({
+      id: 'visible-currencies',
+      value: ['GBP', 'ZZZ'],
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
 
     expect(await readVisibleCurrencies()).toEqual(['GBP'])
   })
@@ -163,6 +196,6 @@ describe('visible currencies', () => {
     await writeVisibleCurrencies(['GBP'])
     await writeVisibleCurrencies(null)
 
-    expect(await getDb().meta.get('visible-currencies')).toBeUndefined()
+    expect(await getDb().settings.get('visible-currencies')).toBeUndefined()
   })
 })

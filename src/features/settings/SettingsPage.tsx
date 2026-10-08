@@ -3,7 +3,7 @@ import type { ThemePreference } from '../../app/theme'
 import { SyncPanel } from '../sync/SyncPanel'
 import { BackupPanel } from '../backup/BackupPanel'
 import { TaxonomySettings } from '../taxonomy/TaxonomySettings'
-import { CurrencyPreferences } from '../taxonomy/CurrencyPreferences'
+import { CurrenciesPanel } from './CurrenciesPanel'
 
 /**
  * The settings page (items 9, 10 and 13 of `SPECS/todo.md`).
@@ -41,14 +41,14 @@ export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
       <TaxonomySettings now={now} />
 
       {/*
-        Named with `aria-label` rather than a visually-hidden `<h2>`: the panel already
-        contains a visible heading of its own, and a second one in the accessibility tree
-        — also called "Currencies", one level up — gives a screen-reader user two
-        identical headings in the same card and no way to tell them apart.
+        A real `<h2>` like every other panel on this page.
+
+        This was `aria-label="Currencies"` with a comment explaining that a second heading
+        for the same region would be worse — and then `CurrencyPreferences` was given a
+        visible `<h3>Currencies</h3>`, which is exactly the duplication the comment was
+        avoiding. The comment described a problem the code had.
       */}
-      <section className="panel" aria-label="Currencies">
-        <CurrencyPreferences />
-      </section>
+      <CurrenciesPanel />
 
       <SyncPanel />
 

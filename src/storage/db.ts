@@ -1,4 +1,4 @@
-import Dexie from 'dexie'
+import Dexie, { type Table } from 'dexie'
 import type { TimeEntry } from '../domain/entries/types'
 import type { Client, Project, Tag } from '../domain/taxonomy/types'
 
@@ -15,12 +15,13 @@ import type { Client, Project, Tag } from '../domain/taxonomy/types'
  *   1 — entries, meta
  *   2 — secrets, for sync credentials (Phase 2B)
  *   3 — projects, clients, tags, for the taxonomy (Phase 4)
+ *   4 — settings, so preferences follow the user across devices (SPECS/todo.md item 46)
  *
  * Adding a store needs no backfill: absent rows correctly mean "no contract
  * configured" and "not connected", so there is no data to invent (0003 V2).
  */
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 export interface MetaRecord {
   key: string
@@ -40,6 +41,32 @@ export interface SecretRecord {
   value: unknown
 }
 
+/**
+ * A user preference, as one row per setting.
+ *
+ * Separate from `meta` because `meta` holds two things that must never travel together:
+ * sync bookkeeping, which is this device's own (`lastRev`, `lastSyncAt`), and settings,
+ * which are the user's and should reach their other devices (item 46). One table containing
+ * both would mean every sync decided which half to send.
+ *
+ * Shaped as a `Mergeable` — `id`, `updatedAt`, `deletedAt` — so settings sync through the
+ * existing union-by-id, last-write-wins merge with no rule of their own to get wrong. A
+ * setting is a single value under a stable key, which is exactly what that merge already
+ * handles correctly.
+ *
+ * The theme is deliberately absent: 0002 TH4 requires it in localStorage, readable before
+ * first paint, which IndexedDB cannot serve. The Dropbox app key is absent for a different
+ * reason — it is chosen by host, so syncing it would let a local build inherit the deployed
+ * app's identity.
+ */
+export interface SettingRecord {
+  /** The setting's name, and its primary key. Stable, so it is the merge identity. */
+  id: string
+  value: unknown
+  updatedAt: string
+  deletedAt: string | null
+}
+
 export class AppDb extends Dexie {
   entries!: Dexie.Table<TimeEntry, string>
   meta!: Dexie.Table<MetaRecord, string>
@@ -47,6 +74,7 @@ export class AppDb extends Dexie {
   projects!: Dexie.Table<Project, string>
   clients!: Dexie.Table<Client, string>
   tags!: Dexie.Table<Tag, string>
+  settings!: Dexie.Table<SettingRecord, string>
 
   constructor(name = 'personal-time-tracker') {
     super(name)
@@ -79,6 +107,45 @@ export class AppDb extends Dexie {
       clients: 'id, archived, deletedAt',
       tags: 'id, deletedAt',
     })
+    /*
+     * v4: additive plus a migration, because it is the first version that moves a row
+     * rather than only adding a table.
+     *
+     * `meta` already held the three settings, written by `settingsRepo` before this
+     * version existed. They are copied into `settings` with an `updatedAt` so they merge
+     * like everything else, and left in `meta` rather than deleted: removing them would
+     * make the downgrade path lossy, and a row nobody reads costs nothing. The bookkeeping
+     * keys stay in `meta` alone, which is what makes "send the settings, never the
+     * bookkeeping" structural rather than a remembered filter (0012 AU6, 0008 S2).
+     */
+    this.version(4)
+      .stores({
+        entries: 'id, start, projectId, end, deletedAt',
+        meta: 'key',
+        secrets: 'key',
+        projects: 'id, clientId, archived, deletedAt',
+        clients: 'id, archived, deletedAt',
+        tags: 'id, deletedAt',
+        settings: 'id, updatedAt',
+      })
+      .upgrade(async (tx) => {
+        // Typed rather than `tx.table(...)`, whose rows are `any`. The value column is
+        // genuinely untyped — that is the point of it — but the *envelope* around it is not,
+        // and an untyped upgrade is where a mistyped key silently becomes a data loss.
+        const settings = tx.table('settings') as Table<SettingRecord, string>
+        const meta = tx.table('meta') as Table<MetaRecord, string>
+        const carried: readonly string[] = [
+          'app-default-currency',
+          'visible-currencies',
+          'entry-period',
+        ]
+        const now = new Date().toISOString()
+        for (const key of carried) {
+          const row = await meta.get(key)
+          if (row === undefined) continue
+          await settings.put({ id: key, value: row.value, updatedAt: now, deletedAt: null })
+        }
+      })
   }
 }
 

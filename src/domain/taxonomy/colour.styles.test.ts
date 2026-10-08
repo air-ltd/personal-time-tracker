@@ -98,9 +98,14 @@ describe('sync status colours', () => {
   it('resolves through tokens rather than literals (0002 TH3)', () => {
     // A component must not hard-code a colour. The previous version passed every check
     // above while being three hex literals, because a literal needs no token to break.
-    expect(stylesheet).toContain('background: var(--sync-ok);')
-    expect(stylesheet).toContain('background: var(--sync-warn);')
-    expect(stylesheet).toContain('background: var(--sync-error);')
+    //
+    // `color`, not `background`: item 65 replaced the status dot with an icon that is
+    // stroked in `currentColor`, so the token now drives `color` on the state class. The
+    // property is named rather than matched loosely so a token applied to the wrong one
+    // would fail here instead of passing on a substring.
+    expect(stylesheet).toContain('color: var(--sync-ok);')
+    expect(stylesheet).toContain('color: var(--sync-warn);')
+    expect(stylesheet).toContain('color: var(--sync-error);')
   })
 })
 
