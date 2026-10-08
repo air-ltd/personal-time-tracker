@@ -393,6 +393,25 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     on the project's own line, not only on the client's.
 67. [x] tooltips on the "new client", Dropbox and discard buttons, each saying what the press
     will do rather than repeating the label.
+69. [x] **About page: each release is a collapsible section, closed by default.** The card is
+    the first thing under the header and was holding every release expanded. Sections are cut
+    on the `##` headings only — cutting on every heading looked equivalent and left each
+    version's body stopping at its first `###` subsection, with the subsections becoming
+    sections of their own.
+70. [x] **About page: the privacy policy is collapsible too, closed by default.**
+71. [x] **`Collapsible` extracted** (`src/app/Collapsible.tsx`) once there were two
+    disclosures, rather than the markup being written twice. The button sits *inside* the
+    heading, so the section keeps its place in the page outline and the panel's
+    `aria-labelledby` still resolves — a bare button styled like a heading looks the same and
+    vanishes from the outline.
+72. [x] **found and fixed a false claim in my own migration test.** It asserted a 0.1.0 device
+    could read what we publish, while checking only `schemaVersion >= 3` — which 4 satisfies.
+    Probed it properly: we publish schema 4, and a 0.1.0 build **refuses** it, per 0012 M9.
+    That is correct behaviour and a real rollout consequence: once one device is on 0.2.0,
+    another still on 0.1.0 stops syncing until it is updated. Nothing is corrupted and nothing
+    is written by the device that refuses, but it is the one thing in this release a user can
+    hit through no action of their own, so it is now stated in the release notes and asserted
+    as what it is.
 68. [x] **cover the path from the released 0.1.0 to this build** — three suites, because the
     three things it touches were each individually tested and jointly untested.
 

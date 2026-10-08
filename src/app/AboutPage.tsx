@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react'
-import { ChevronIcon } from './Icons'
+import { Collapsible } from './Collapsible'
 import changelog from '../../CHANGELOG.md?raw'
 import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 
@@ -63,38 +63,51 @@ export function AboutPage() {
         privacy policy behind a link is a privacy policy nobody opens, and the facts it has to
         state — what is stored, where, and what a stolen account would expose — are the same
         facts a user is already on this page to check.
+
+        Collapsed by default (item 70), and that cuts both ways. It is reference material a
+        reader arrives at deliberately, and expanding it pushed everything below it — the
+        feedback link, and then "What's new" — down a card that is a wall of prose. The
+        disclosure *state* is unchanged either way: the claims are still on the page and still
+        assertable, they are just one click away rather than always on screen.
       */}
       <section className="panel" aria-labelledby="privacy-heading">
-        <h2 id="privacy-heading">Privacy</h2>
+        <Collapsible
+          level={2}
+          title="Privacy"
+          id="privacy-heading"
+          className="about-privacy"
+          toggleClassName="about-privacy-toggle"
+        >
+          <p className="hint">
+            This app has no interest in your data, and the shortest way to show that is to say
+            what it cannot do.
+          </p>
 
-        <p className="hint">
-          This app has no interest in your data, and the shortest way to show that is to say
-          what it cannot do.
-        </p>
+          <h3>What this app does not do</h3>
+          <ul>
+            <li>
+              <strong>
+                No analytics, no telemetry, no crash reporting, no session replay.
+              </strong>{' '}
+              There is no code path in it that sends usage data. If a page view were interesting
+              enough to record, it would have somewhere to go — it does not.
+            </li>
+            <li>
+              <strong>No cookies</strong>, and no third-party cookies. Nothing on this page sets
+              one.
+            </li>
+            <li>
+              <strong>No third-party assets.</strong> No CDN scripts, no hosted fonts, no
+              analytics tags. Fonts are your operating system&rsquo;s, so loading this page does
+              not tell anyone else you visited it.
+            </li>
+            <li>
+              <strong>No accounts and no server.</strong> The app is a static site. It cannot
+              see who you are because it has nobody to tell.
+            </li>
+          </ul>
 
-        <h3>What this app does not do</h3>
-        <ul>
-          <li>
-            <strong>No analytics, no telemetry, no crash reporting, no session replay.</strong>{' '}
-            There is no code path in it that sends usage data. If a page view were interesting
-            enough to record, it would have somewhere to go — it does not.
-          </li>
-          <li>
-            <strong>No cookies</strong>, and no third-party cookies. Nothing on this page sets
-            one.
-          </li>
-          <li>
-            <strong>No third-party assets.</strong> No CDN scripts, no hosted fonts, no
-            analytics tags. Fonts are your operating system&rsquo;s, so loading this page does
-            not tell anyone else you visited it.
-          </li>
-          <li>
-            <strong>No accounts and no server.</strong> The app is a static site. It cannot see
-            who you are because it has nobody to tell.
-          </li>
-        </ul>
-
-        {/*
+          {/*
           The host, named rather than described (item 65).
 
           Everything above is about this project's code. Somebody asking whether their data
@@ -109,97 +122,99 @@ export function AboutPage() {
           policy is a copy that goes stale without anyone noticing, which is the failure this
           whole section exists to avoid.
         */}
-        <h3>Who serves this page</h3>
-        <ul>
-          <li>
-            This is a <strong>static site served by GitHub Pages</strong>, built from a public{' '}
-            <a href={REPOSITORY_URL}>GitHub repository</a>. There is no application server
-            behind it: the page you are reading is files, and nothing you type is sent to one.
-          </li>
-          <li>
-            <strong>GitHub, not this project, handles the connection</strong> — so what GitHub
-            receives when you load this page is a matter of GitHub&rsquo;s policy rather than
-            this app&rsquo;s.{' '}
-            <span className="privacy-at-the-time">At the time of writing</span>, GitHub sets
-            that out in its{' '}
-            <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">
-              privacy statement
-            </a>{' '}
-            and, for hosted sites specifically, its{' '}
-            <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement#github-pages">
-              GitHub Pages section
-            </a>
-            . Read those for what is collected and on what basis; this page will not restate it,
-            because a summary of someone else&rsquo;s policy goes out of date quietly.
-          </li>
-          <li>
-            <strong>What this app does is still knowable, and it is the list above.</strong> No
-            analytics, no telemetry, no third-party requests, nothing sent anywhere but Dropbox.
-            That is a claim about code in this repository, which you can read — and where the
-            app is silent on what happens at the edges, the links above are where the answer
-            lives.
-          </li>
-          <li>
-            <strong>The source is public.</strong> It is an open repository, so anyone can read
-            the code that makes all of these claims — including this page. If you are checking
-            whether a claim is true, you do not have to take the word of whoever wrote it.
-          </li>
-        </ul>
+          <h3>Who serves this page</h3>
+          <ul>
+            <li>
+              This is a <strong>static site served by GitHub Pages</strong>, built from a public{' '}
+              <a href={REPOSITORY_URL}>GitHub repository</a>. There is no application server
+              behind it: the page you are reading is files, and nothing you type is sent to one.
+            </li>
+            <li>
+              <strong>GitHub, not this project, handles the connection</strong> — so what GitHub
+              receives when you load this page is a matter of GitHub&rsquo;s policy rather than
+              this app&rsquo;s.{' '}
+              <span className="privacy-at-the-time">At the time of writing</span>, GitHub sets
+              that out in its{' '}
+              <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement">
+                privacy statement
+              </a>{' '}
+              and, for hosted sites specifically, its{' '}
+              <a href="https://docs.github.com/en/site-policy/privacy-policies/github-privacy-statement#github-pages">
+                GitHub Pages section
+              </a>
+              . Read those for what is collected and on what basis; this page will not restate
+              it, because a summary of someone else&rsquo;s policy goes out of date quietly.
+            </li>
+            <li>
+              <strong>What this app does is still knowable, and it is the list above.</strong>{' '}
+              No analytics, no telemetry, no third-party requests, nothing sent anywhere but
+              Dropbox. That is a claim about code in this repository, which you can read — and
+              where the app is silent on what happens at the edges, the links above are where
+              the answer lives.
+            </li>
+            <li>
+              <strong>The source is public.</strong> It is an open repository, so anyone can
+              read the code that makes all of these claims — including this page. If you are
+              checking whether a claim is true, you do not have to take the word of whoever
+              wrote it.
+            </li>
+          </ul>
 
-        <h3>Where your data lives</h3>
-        <ul>
-          <li>
-            Your entries, projects, clients and tags, and your Dropbox token, are in this
-            browser&rsquo;s <strong>IndexedDB</strong>. They are not encrypted by this app —
-            they are as protected as the browser profile they sit in.
-          </li>
-          <li>
-            Your theme choice and the Dropbox app id are in <code>localStorage</code>. Neither
-            is personal data, and neither is a credential: the app id is a public identifier
-            that ships in the JavaScript anyway.
-          </li>
-          <li>
-            While you are signing in to Dropbox, a piece of pending OAuth state sits in{' '}
-            <code>sessionStorage</code> and is cleared when the redirect finishes.
-          </li>
-          <li>
-            A Content Security Policy restricts what this page is allowed to load and connect
-            to. The only external origins it permits are Dropbox&rsquo;s two APIs, and nothing
-            works without that permission.
-          </li>
-        </ul>
+          <h3>Where your data lives</h3>
+          <ul>
+            <li>
+              Your entries, projects, clients and tags, and your Dropbox token, are in this
+              browser&rsquo;s <strong>IndexedDB</strong>. They are not encrypted by this app —
+              they are as protected as the browser profile they sit in.
+            </li>
+            <li>
+              Your theme choice and the Dropbox app id are in <code>localStorage</code>. Neither
+              is personal data, and neither is a credential: the app id is a public identifier
+              that ships in the JavaScript anyway.
+            </li>
+            <li>
+              While you are signing in to Dropbox, a piece of pending OAuth state sits in{' '}
+              <code>sessionStorage</code> and is cleared when the redirect finishes.
+            </li>
+            <li>
+              A Content Security Policy restricts what this page is allowed to load and connect
+              to. The only external origins it permits are Dropbox&rsquo;s two APIs, and nothing
+              works without that permission.
+            </li>
+          </ul>
 
-        <h3>If you connect Dropbox</h3>
-        <ul>
-          <li>
-            Syncing writes <strong>one JSON file</strong> to your own Dropbox account, and
-            nothing is written anywhere else.
-          </li>
-          <li>
-            <strong>That file is not encrypted by this app.</strong> It is ordinary JSON, in
-            readable text, in your Dropbox account. Dropbox encrypts it at rest and controls who
-            can read it, but there is no passphrase from this app on top. Anyone with access to
-            the file can read your work history, and so can Dropbox under a court order or a
-            service change. That was a deliberate choice over client-side encryption, not an
-            oversight — see 0011 &sect;Accepted risks.
-          </li>
-          <li>
-            So the protection on that account is entirely your account&rsquo;s: a strong unique
-            password, two-factor authentication, and app-specific authorisation where Dropbox
-            offers it.
-          </li>
-          <li>
-            Disconnecting stops syncing and deletes the stored token. It does not touch what is
-            already in your Dropbox, and it does not touch this browser either.
-          </li>
-        </ul>
+          <h3>If you connect Dropbox</h3>
+          <ul>
+            <li>
+              Syncing writes <strong>one JSON file</strong> to your own Dropbox account, and
+              nothing is written anywhere else.
+            </li>
+            <li>
+              <strong>That file is not encrypted by this app.</strong> It is ordinary JSON, in
+              readable text, in your Dropbox account. Dropbox encrypts it at rest and controls
+              who can read it, but there is no passphrase from this app on top. Anyone with
+              access to the file can read your work history, and so can Dropbox under a court
+              order or a service change. That was a deliberate choice over client-side
+              encryption, not an oversight — see 0011 &sect;Accepted risks.
+            </li>
+            <li>
+              So the protection on that account is entirely your account&rsquo;s: a strong
+              unique password, two-factor authentication, and app-specific authorisation where
+              Dropbox offers it.
+            </li>
+            <li>
+              Disconnecting stops syncing and deletes the stored token. It does not touch what
+              is already in your Dropbox, and it does not touch this browser either.
+            </li>
+          </ul>
 
-        <h3>If you want it gone</h3>
-        <p>
-          Clearing this site&rsquo;s data in your browser removes everything, including the
-          running timer. Deleting the file from your Dropbox removes the copy that left this
-          device. There is nothing else, because there is nowhere else.
-        </p>
+          <h3>If you want it gone</h3>
+          <p>
+            Clearing this site&rsquo;s data in your browser removes everything, including the
+            running timer. Deleting the file from your Dropbox removes the copy that left this
+            device. There is nothing else, because there is nowhere else.
+          </p>
+        </Collapsible>
       </section>
 
       <section className="panel" aria-labelledby="feedback-heading">
@@ -246,14 +261,22 @@ export function AboutPage() {
  */
 function Changelog({ source }: { source: string }): ReactNode {
   /*
-   * Which version sections are open (item 69).
+   * Which versions are open (item 69).
    *
-   * A `Set` of indices rather than one flag, because the changelog holds several versions and
-   * a reader who opens 0.2.0 did not ask for 0.1.0 as well.
+   * A `Set` of version strings rather than one flag, because a reader who opens 0.2.0 did not
+   * ask for 0.1.0 as well.
+   *
+   * Keyed on the version rather than its position, because position is not an identity: the
+   * releases sit at whatever indices the preamble, the `Versioning` section and any empty
+   * sections leave them at, so adding a section to the file would silently renumber them —
+   * and a toggle whose identity shifted could end up controlling a different release's body.
    *
    * Default is *nothing* open. The newest release is the one a reader came for, and it is
-   * also the longest — a page that opened with every version expanded put the oldest notes
-   * at the bottom of a wall, and the "What's new" card is the first thing under the header.
+   * also the longest — a page that opened with every version expanded put the oldest notes at
+   * the bottom of a wall, and the "What's new" card is the first thing under the header.
+   *
+   * Held here rather than inside each `Collapsible`, because the versions share one expansion
+   * and each section is therefore told whether *it* is open.
    */
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set<string>())
 
@@ -429,37 +452,35 @@ function Changelog({ source }: { source: string }): ReactNode {
         }
 
         /*
-         * The id is derived from the version too, so `aria-controls` names something that
-         * belongs to this release rather than to a position in a list.
+         * The id is derived from the version, so `aria-controls` names something belonging
+         * to this release rather than to a position in a list.
+         *
+         * Open state is held here rather than inside `Collapsible` because these versions
+         * share one expansion: a reader who opened 0.2.0 did not ask for 0.1.0 as well, which
+         * means each component has to be told whether *this* one is open.
          */
         const bodyId = `changelog-version-${key.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
         const isOpen = expanded.has(key)
         return (
           <div key={key} className="changelog-version">
-            {/*
-              A button rather than a heading, because the heading is now the control: pressing
-              it is how you see this version. `aria-expanded` carries the state for anything
-              that cannot see the disclosure, and `aria-controls` ties it to what it reveals.
-            */}
-            <button
-              type="button"
-              className="changelog-version-toggle"
-              aria-expanded={isOpen}
-              aria-controls={bodyId}
-              onClick={() => {
+            <Collapsible
+              level={3}
+              title={key}
+              id={bodyId}
+              bodyClassName="changelog-version-body"
+              toggleClassName="changelog-version-toggle"
+              open={isOpen}
+              onOpenChange={(next) => {
                 setExpanded((previous) => {
-                  const next = new Set(previous)
-                  if (!next.delete(key)) next.add(key)
-                  return next
+                  const updated = new Set(previous)
+                  if (next) updated.add(key)
+                  else updated.delete(key)
+                  return updated
                 })
               }}
             >
-              <ChevronIcon />
-              <span>{inline(section.heading)}</span>
-            </button>
-            <div className="changelog-version-body" id={bodyId} hidden={!isOpen}>
               {section.body}
-            </div>
+            </Collapsible>
           </div>
         )
       })}

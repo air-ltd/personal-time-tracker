@@ -90,6 +90,17 @@ otherwise unchanged; reports, capacity planning and invoicing are still to come
 - **The source is public,** so the app's own claims — no analytics, no telemetry, no
   third-party requests — can be read rather than taken on trust.
 
+### Changed — the About page
+
+- **The privacy policy and each release are collapsible, and start closed.** Both are
+  reference material a reader arrives at deliberately, and expanded they pushed everything
+  below them down the page. The text has not changed and is still one click away; the
+  disclosure carries its state properly, and a closed section is genuinely off the page
+  rather than collapsed to zero height — so it is unreachable by screen reader and by
+  find-in-page, as it should be.
+- Version headings render inside the heading itself rather than replacing it, so each release
+  keeps its place in the page outline.
+
 ### Fixed
 
 - **Stopping a timer said it had been saved uncategorised when it had not.** Every timer
@@ -109,6 +120,19 @@ otherwise unchanged; reports, capacity planning and invoicing are still to come
   — which has no settings in it at all — no longer reads as saying you have none. Previously
   the code did the right thing and nothing tested it, including the one database upgrade that
   moves a row.
+
+### Before you update a second device
+
+- **Update every device at once.** This release is data schema 4; 0.1.0 was schema 3. Sync
+  takes the higher of the two, so once one device is on 0.2.0 the file in Dropbox is schema
+  4 — and a device still on 0.1.0 will **refuse to sync** rather than guess, saying that it
+  does not understand the schema.
+
+  That refusal is deliberate (0012 M9): reading a file whose shape you cannot interpret is
+  how data gets corrupted. The cost is a rollout one, and it is the only thing in this release
+  that a user can hit through no action of their own. If you have two devices, bring both up
+  to date before relying on sync again. Your data is not at risk — nothing is written by the
+  device that refuses — but it will stop moving until it is updated.
 
 ### Known limitations
 

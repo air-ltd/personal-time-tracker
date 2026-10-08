@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { runSync, type SyncDeps, type SyncLogEntry } from './engine'
 import { SyncError, type ProviderStatus, type RemoteFile, type SyncProvider } from './provider'
 import type { Mergeable, Snapshot } from '../domain/merge'
-import { FORMAT, FORMAT_VERSION } from '../export/envelope'
+import { FORMAT, FORMAT_VERSION, parseEnvelope } from '../export/envelope'
 
 /**
  * A device meeting the file a previous release left in Dropbox (SPECS/todo.md item 68).
@@ -256,23 +256,49 @@ describe('syncing against a file left by 0.1.0', () => {
     expect(ids).toEqual(['app-default-currency', 'visible-currencies'])
   })
 
-  it('publishes a file the old build could still read', async () => {
+  it('publishes at the current schema, so a 0.1.0 build will refuse it', async () => {
+    /*
+     * Correct as designed, and worth stating plainly because it is a rollout consequence
+     * rather than a defect.
+     *
+     * This build is schema 4 (0.1.0 was 3), and merging takes the maximum, so the file we
+     * publish is 4. A device still running 0.1.0 parses that, sees a schema it does not
+     * understand, and refuses — by 0012 M9, because importing a file you cannot interpret is
+     * how data gets corrupted.
+     *
+     * So the answer to "can a 0.1.0 device read what we publish?" is **no**, and an earlier
+     * version of this test asserted the opposite while checking only `>= 3` — which 4
+     * satisfies. A comment claiming a guarantee the assertion did not test is worse than no
+     * comment, because it is read and believed.
+     *
+     * The fix is operational rather than technical: both devices have to be updated. Which is
+     * why the 0.2.0 notes say so.
+     */
     const provider = new FakeProvider()
     provider.remote = { body: fileFrom010(), rev: 'rev-1' }
-    const h = harness(provider, { schemaVersion: SUPPORTED, entities: { entries: [] } })
+    const h = harness(provider, {
+      schemaVersion: SUPPORTED,
+      entities: { entries: [], settings: localSettings() },
+    })
 
     await runSync(h.deps)
 
-    // The push is the other half of the migration: a device still on 0.1.0 will read this
-    // file next, so it must not gain a table it cannot parse.
+    const published = provider.remote?.body ?? '{}'
     // Typed rather than indexed blind: `JSON.parse` is `any`, and an untyped read here would
     // pass on a file that was missing the very fields being asserted.
-    const written = JSON.parse(provider.remote?.body ?? '{}') as {
+    const written = JSON.parse(published) as {
       schemaVersion?: number
-      data?: { entries?: unknown[]; settings?: unknown }
+      data?: { entries?: unknown[] }
     }
-    expect(written.schemaVersion).toBeGreaterThanOrEqual(3)
+    expect(written.schemaVersion).toBe(SUPPORTED)
     expect(written.data?.entries).toHaveLength(1)
+
+    // And the refusal is real, checked against the version 0.1.0 actually understood.
+    const asOldBuild = parseEnvelope(JSON.parse(published), 3)
+    expect(asOldBuild.ok).toBe(false)
+    if (!asOldBuild.ok) {
+      expect(asOldBuild.error.message).toMatch(/understands 3/)
+    }
   })
 
   it('merges both ways: the old file’s records and this device’s own', async () => {

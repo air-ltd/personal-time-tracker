@@ -95,6 +95,24 @@ describe('About', () => {
  * change that invalidates one breaks a test rather than shipping a stale promise.
  */
 describe('the privacy policy', () => {
+  /**
+   * Opens the privacy disclosure and returns it.
+   *
+   * The section is collapsed by default (item 70), and every assertion below is about
+   * something *inside* it — so each test opens it first, the way a reader who wants to check
+   * a claim does. Doing it per test rather than in `beforeEach` keeps each one honest about
+   * what it needs, and means a test that did not open it cannot pass on a stale render.
+   */
+  async function openPrivacy(): Promise<HTMLElement> {
+    const toggle = screen.getByRole('button', { name: 'Privacy' })
+    if (toggle.getAttribute('aria-expanded') !== 'true') {
+      await userEvent.setup().click(toggle)
+    }
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+    if (!body) throw new Error('the privacy toggle points at nothing')
+    return body
+  }
+
   it('claims no analytics, telemetry or crash reporting', () => {
     render(<AboutPage />)
     // `getAllByText` because the host section repeats the claim: GitHub serves the page, and
@@ -108,8 +126,9 @@ describe('the privacy policy', () => {
     // "analytics" would pass while a differently-named beacon shipped.
   })
 
-  it('names the host and points at GitHub&rsquo;s own policy (item 65)', () => {
+  it('names the host and points at GitHub&rsquo;s own policy (item 65)', async () => {
     render(<AboutPage />)
+    await openPrivacy()
     // A privacy policy that stops at the app's own code answers half the question:
     // somebody asking whether their data is private also needs to know who serves the page.
     expect(screen.getByText(/served by GitHub Pages/i)).toBeInTheDocument()
@@ -143,8 +162,9 @@ describe('the privacy policy', () => {
     expect(privacy?.textContent).toMatch(/source is public/i)
   })
 
-  it('claims no cookies and no third-party assets', () => {
+  it('claims no cookies and no third-party assets', async () => {
     render(<AboutPage />)
+    await openPrivacy()
     expect(screen.getByText(/No cookies/i)).toBeInTheDocument()
     expect(screen.getByText(/No third-party assets/i)).toBeInTheDocument()
   })
@@ -469,5 +489,74 @@ describe('collapsible versions under "What’s new" (item 69)', () => {
       // hides unlabelled SVGs — so the name is the text.
       expect(toggle).toHaveAccessibleName(/\d+\.\d+\.\d+/)
     }
+  })
+})
+
+describe('the privacy disclosure (item 70)', () => {
+  it('starts closed, with the panel still named by its heading', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+
+    // Collapsed, because the policy is reference material a reader arrives at deliberately,
+    // and expanded it pushed the feedback link and "What's new" below a wall of prose.
+    const toggle = screen.getByRole('button', { name: 'Privacy' })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    // Collapsed does not mean unlabelled: the panel is still named for assistive technology,
+    // or a screen reader would announce it as an anonymous region.
+    const heading = document.getElementById('privacy-heading')
+    expect(heading).not.toBeNull()
+    expect(heading?.closest('section')?.getAttribute('aria-labelledby')).toBe('privacy-heading')
+    await user.click(toggle)
+  })
+
+  it('reveals the policy when pressed, and hides it again', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+    const toggle = screen.getByRole('button', { name: 'Privacy' })
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(/No cookies/i)).toBeVisible()
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByText(/No cookies/i)).not.toBeVisible()
+  })
+
+  it('leaves the policy out of find-in-page while closed', async () => {
+    // `hidden`, not a collapsed height: the text is genuinely not on the page, so find-in-page
+    // should not offer it.
+    const user = userEvent.setup()
+    render(<AboutPage />)
+    const toggle = screen.getByRole('button', { name: 'Privacy' })
+
+    const body = document.getElementById(toggle.getAttribute('aria-controls') ?? '')
+    expect(body?.hidden).toBe(true)
+    await user.click(toggle)
+    expect(body?.hidden).toBe(false)
+  })
+
+  it('does not disturb the changelog disclosures', async () => {
+    const user = userEvent.setup()
+    render(<AboutPage />)
+
+    // Opening one disclosure says nothing about the others — the privacy policy expanding is
+    // not consent to scroll through every release too.
+    await user.click(screen.getByRole('button', { name: 'Privacy' }))
+    for (const version of document.querySelectorAll('.changelog-version-toggle')) {
+      expect(version.getAttribute('aria-expanded')).toBe('false')
+    }
+  })
+
+  it('keeps the heading level the panel had', () => {
+    render(<AboutPage />)
+    /*
+     * The button sits inside the heading rather than replacing it, which is what keeps this
+     * true. An h3 inside a panel of h2s would put the privacy policy *below* the other panels
+     * in the outline — the opposite of where it belongs — and a bare button styled like a
+     * heading would leave it out of the outline entirely.
+     */
+    expect(screen.getByRole('heading', { name: 'Privacy', level: 2 })).toBeInTheDocument()
   })
 })

@@ -1008,54 +1008,94 @@ code {
 }
 
 /*
- * A version of the changelog, folded away by default (item 69).
+ * The shared disclosure: a heading whose button reveals the content under it (items 69, 70).
  *
- * The heading is the control, so it is a button rather than a heading element — pressing it is
- * how you see this version, and a heading that is also a control is not a thing a screen
- * reader can be told about. `aria-expanded` carries the state and `aria-controls` ties it to
- * the body it reveals.
+ * The button sits *inside* the heading rather than replacing it, so the section keeps its
+ * place in the page outline and `aria-labelledby` on the surrounding panel still resolves.
+ * The heading itself carries no styling beyond unpinning the button's box, so a caller styles
+ * the button and the heading inherits the panel's.
  *
  * The chevron is drawn pointing down, which is the open state, so it rotates shut when the
- * version is collapsed. Decorative: the state is on the button, and the shared icon wrapper
- * hides unlabelled SVGs from the accessibility tree.
+ * section is collapsed. Decorative: the state is on the button, and the shared icon wrapper
+ * hides unlabelled SVGs from the accessibility tree, so it is not announced twice.
  */
-.changelog-version {
-  border-top: 1px dotted var(--border);
+.collapsible-heading {
+  margin: 0;
 }
 
-.changelog-version-toggle {
+.collapsible-toggle,
+.changelog-version-toggle,
+.about-privacy-toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   width: 100%;
-  padding: 0.5rem 0;
+  padding: 0;
   background: none;
   border: 0;
   color: inherit;
   font: inherit;
-  font-size: 1rem;
-  font-weight: 600;
   text-align: start;
   cursor: pointer;
 }
 
-.changelog-version-toggle:hover {
+.collapsible-toggle:hover,
+.changelog-version-toggle:hover,
+.about-privacy-toggle:hover {
   color: var(--accent);
 }
 
-.changelog-version-toggle svg {
+.collapsible-toggle svg,
+.changelog-version-toggle svg,
+.about-privacy-toggle svg {
   flex: none;
   transform: rotate(-90deg);
   transition: transform 120ms ease;
 }
 
-.changelog-version-toggle[aria-expanded='true'] svg {
+.collapsible-toggle[aria-expanded='true'] svg,
+.changelog-version-toggle[aria-expanded='true'] svg,
+.about-privacy-toggle[aria-expanded='true'] svg {
   transform: rotate(0deg);
+}
+
+/* A version of the changelog: one rule above it, its own notes indented under the line. */
+.changelog-version {
+  border-top: 1px dotted var(--border);
+}
+
+.changelog-version-toggle {
+  padding: 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 /* Indented under its toggle, so a version's body reads as belonging to the line above it. */
 .changelog-version-body {
   padding-bottom: 0.75rem;
+}
+
+/*
+ * The privacy disclosure. Inherits the panel's uppercase, muted heading treatment — it is
+ * the same kind of thing as the other panel headings — and only overrides the padding the
+ * button's box needs, since a full-width button inside a heading would otherwise be flush
+ * with the panel edge.
+ */
+.about-privacy-toggle {
+  padding: 0.25rem 0;
+  font-size: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+.about-privacy-toggle:hover {
+  color: var(--accent);
+}
+
+/* Room for the content under a closed panel heading, matching the other panels. */
+.about-privacy > div {
+  padding-top: 0.75rem;
 }
 
 /*
