@@ -100,13 +100,27 @@ value, before attempting to parse `data`.
 **J12** — Import MUST reject a `formatVersion` greater than it supports, and
 SHOULD handle older versions via explicit migrations.
 
-**J13** — Import MUST validate every reference before writing, per 0003
-§Referential integrity. A record whose reference cannot be resolved is handled by
-the rule for that reference, not by a blanket rejection of the file: an entry
-naming a missing project becomes uncategorised (0003 F1), while a contract period
-naming a missing client is dropped (0003 F7). Every dropped or altered record MUST
-be reported in the import summary (0007 F-EXPORT-7), because a contract that
-silently disappears is a client's expected hours quietly becoming unknown.
+**J13** — Import MUST validate every record before writing, per 0003
+§Referential integrity and the domain's own rules. A record whose reference cannot
+be resolved is handled by the rule for that reference, not by a blanket rejection
+of the file: an entry naming a missing project becomes uncategorised (0003 F1),
+while a contract period naming a missing client is dropped (0003 F7).
+
+**A record that breaks the app's own rules MUST be dropped, and the drop MUST be
+reported** (0007 F-EXPORT-7). The rules are the ones the app enforces on itself:
+an entry cannot be longer than a day (0004 V2), a note has a length limit (0004 V4),
+a name has a length limit (0003 Client), and a client or tag name is unique (0005
+P2 for projects, which are unique within a client).
+
+**The file is validated as a whole; a record inside a valid file is not.** A file
+that is not a valid document is not applied at all (0007 F-EXPORT-4), but a single
+record that breaks a rule MUST NOT cost the user the rest of their backup. Refusing
+the whole file because one record is wrong is the worst possible answer to somebody
+trying to recover their work.
+
+**Records MUST NOT be repaired.** A restore is a recovery action, and silently
+rewriting somebody's backup while recovering it is a modification they did not ask
+for and cannot see. A record that cannot be brought in is left out and reported.
 
 ## CSV report
 
