@@ -45,6 +45,16 @@ const DIMENSION_LABELS: Record<Dimension, string> = {
   tag: 'By tag',
 }
 
+/** The groups' shares, added up, or a dash when one of them is unknown. */
+function breakdownShare(groups: readonly { percentage: number | null }[]): string {
+  let total = 0
+  for (const group of groups) {
+    if (group.percentage === null) return '—'
+    total += group.percentage
+  }
+  return `${total.toFixed(1)}%`
+}
+
 export function EntryReports({ prepared, durations, mode, onModeChange }: EntryReportsProps) {
   const [dimension, setDimension] = useState<Dimension>('project')
 
@@ -75,6 +85,12 @@ export function EntryReports({ prepared, durations, mode, onModeChange }: EntryR
   const days = useMemo(() => dailyTotals(kept.entries, kept.durations), [kept])
   const billable = useMemo(() => billableSummary(kept.entries, kept.durations), [kept])
   const unbilled = useMemo(() => unbilledWork(kept.entries), [kept])
+
+  /** Whether rounding changed the billable figure (0006 RD5). */
+  const rawDiffers =
+    billable.billableMs !== null &&
+    billable.rawBillableMs !== null &&
+    billable.billableMs !== billable.rawBillableMs
 
   return (
     <section className="panel" aria-labelledby="entry-reports-heading">
@@ -147,7 +163,14 @@ export function EntryReports({ prepared, durations, mode, onModeChange }: EntryR
                     ? '—'
                     : formatMinutes(Math.round(breakdown.totalMs / 60_000))}
                 </td>
-                <td>100.0%</td>
+                {/*
+                  The sum of the groups' own percentages, rather than a hard-coded
+                  hundred. The groups partition the entries, so they add to a hundred —
+                  unless one of them has an unreadable duration, in which case its
+                  share is unknown and the total has to say so rather than claim a
+                  number that is not the sum of anything.
+                */}
+                <td>{breakdownShare(breakdown.groups)}</td>
                 <td>{kept.entries.length}</td>
               </tr>
             </tfoot>
@@ -166,6 +189,18 @@ export function EntryReports({ prepared, durations, mode, onModeChange }: EntryR
               <span>Billable time</span>
               <span>
                 {billable.billableMs === null ? '—' : formatMinutes(billable.billableMs)}
+                {/*
+                  0006 RD5: where the rounded figure and the raw one differ, both are
+                  shown. A billable number that quietly differs from the time actually
+                  worked is the kind of number that makes an invoice look wrong, and
+                  the only way to settle it is to see both.
+                */}
+                {rawDiffers && billable.rawBillableMs !== null && (
+                  <span className="capacity-raw">
+                    {' '}
+                    ({formatMinutes(billable.rawBillableMs)} unrounded)
+                  </span>
+                )}
               </span>
             </li>
             <li>

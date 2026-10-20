@@ -339,6 +339,15 @@ export interface BillableSummary {
   billableMs: number | null
   nonBillableMs: number | null
   totalMs: number | null
+  /**
+   * The billable time *before* rounding, in milliseconds.
+   *
+   * 0006 RD5 requires the app to show both the raw duration and the rounded one
+   * wherever they differ, so the raw figure has to be carried as well as the rounded
+   * one. It is not a second policy: it is the same time, unrounded, so a reader can
+   * see what the rounding changed.
+   */
+  rawBillableMs: number | null
   /** The total monetary value, per currency. Never summed across currencies. */
   amountByCurrency: Map<string, number>
 }
@@ -348,6 +357,7 @@ export function billableSummary(
   durations: readonly (number | null)[],
 ): BillableSummary {
   let billable = 0
+  let rawBillable = 0
   let nonBillable = 0
   let total = 0
   let unknown = false
@@ -360,8 +370,10 @@ export function billableSummary(
       return
     }
     total += duration
-    if (item.entry.billable) billable += item.billableMs ?? duration
-    else nonBillable += duration
+    if (item.entry.billable) {
+      billable += item.billableMs ?? duration
+      rawBillable += duration
+    } else nonBillable += duration
 
     if (item.amountMinor !== null && item.currency !== null) {
       amountByCurrency.set(
@@ -375,6 +387,7 @@ export function billableSummary(
     billableMs: unknown ? null : billable,
     nonBillableMs: unknown ? null : nonBillable,
     totalMs: unknown ? null : total,
+    rawBillableMs: unknown ? null : rawBillable,
     amountByCurrency,
   }
 }

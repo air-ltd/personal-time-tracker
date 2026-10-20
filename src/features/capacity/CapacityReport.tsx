@@ -1,7 +1,11 @@
 import { useMemo } from 'react'
 import { useContracts } from './useContracts'
 import { expectedMinutesByWeek } from '../../domain/capacity/expected'
-import { formatUtilisation, utilisation } from '../../domain/capacity/utilisation'
+import {
+  billableUtilisation,
+  formatUtilisation,
+  utilisation,
+} from '../../domain/capacity/utilisation'
 import { formatMinutes } from '../../domain/time/duration'
 import type { ReportEntry } from '../../domain/reports/report'
 import type { DateRange } from '../../domain/reports/ranges'
@@ -38,9 +42,20 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
   const { periods, loading } = useContracts()
 
   const rows = useMemo(() => {
+    /*
+     * Every client that has either a contract or some time tracked.
+     *
+     * The union, not just the clients with entries. A client you expect to spend
+     * twenty hours a week on, and have spent nothing on, is exactly the row the
+     * report exists to show — and leaving it out makes "no time tracked" look
+     * identical to "no expectation set".
+     */
     const clientIds = new Set<string>()
     for (const item of prepared) {
       if (item.clientId !== null) clientIds.add(item.clientId)
+    }
+    for (const period of periods) {
+      if (period.deletedAt === null) clientIds.add(period.clientId)
     }
 
     return [...clientIds].map((clientId) => {
@@ -60,11 +75,16 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
        * number an invoice line would show rather than a second, differently-rounded
        * version of the hours worked (0006 RD3).
        */
-      const figure = utilisation(range.from, range.to, clientId, periods, {
+      const worked = {
         minutes: Math.round(workedMs / 60_000),
         billableMinutes: Math.round(billableMs / 60_000),
-      })
-      return { clientId, figure }
+      }
+      const figure = utilisation(range.from, range.to, clientId, periods, worked)
+      // 0013 CR3 asks for hour *and* billable utilisation. The billable one is a
+      // different question — it is the share of the expected hours that was billable
+      // — and it is the one that answers "was the billable work enough?".
+      const billable = billableUtilisation(range.from, range.to, clientId, periods, worked)
+      return { clientId, figure, billable }
     })
   }, [range, prepared, periods])
 
@@ -104,16 +124,18 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
             <th scope="col">Tracked</th>
             <th scope="col">Difference</th>
             <th scope="col">Utilisation</th>
+            <th scope="col">Billable</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ clientId, figure }) => (
+          {rows.map(({ clientId, figure, billable }) => (
             <tr key={clientId}>
               <th scope="row">{nameOf(clientId)}</th>
               <td>{figure.expected === null ? '—' : formatMinutes(figure.expected)}</td>
               <td>{formatMinutes(figure.worked)}</td>
               <td>{figure.delta === null ? '—' : formatMinutes(figure.delta)}</td>
               <td>{formatUtilisation(figure.percent)}</td>
+              <td>{formatUtilisation(billable.percent)}</td>
             </tr>
           ))}
         </tbody>

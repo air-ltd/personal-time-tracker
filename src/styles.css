@@ -2081,3 +2081,9 @@ code {
 .chart-hidden {
   display: none;
 }
+
+/* The unrounded figure beside the rounded one (0006 RD5). */
+.capacity-raw {
+  color: var(--fg-muted);
+  font-size: 0.85em;
+}

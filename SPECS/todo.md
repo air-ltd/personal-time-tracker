@@ -567,6 +567,34 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     This also corrects a false claim: `SPECS/README.md` said the rounding increment was
     "stored as a setting now", and it was not — `settingsRepo.ts` held three keys and none
     of them was the increment. The same class of defect as item 72.
+83. [x] **a test coverage review of the Phase 5 and 6 work.** Written up in
+    `review/test_coverage_phase6.md`. Coverage went from 84.52% of statements to
+    89.18%, and from 78.22% of branches to 81.75% — but the numbers are the least
+    interesting part of it.
+
+    **The review found two requirements that were implemented in the domain and
+    never shown to the user.** 0013 CR3 asks for billable utilisation as well as
+    hour utilisation, and `billableUtilisation` had no caller anywhere — the
+    coverage report showed it as 0% covered, and the reason was that it was dead
+    code. 0006 RD5 asks for the raw duration beside the rounded one, and
+    `roundingDifference` had no caller either. Both are now surfaced: the capacity
+    report has a *Billable* column, and the billable summary shows the unrounded
+    figure where it differs from the rounded one.
+
+    **And the new component tests found two defects the arithmetic tests could
+    not**, because the arithmetic was right and the screen was not. A client with
+    a budget and no time tracked did not appear in the capacity report at all —
+    so "no time tracked" looked exactly like "no expectation set", and the report
+    hid its own most interesting row. And the breakdown's total percentage was a
+    hard-coded `100.0%` rather than the sum of the groups' own shares, which is a
+    claim rather than a calculation.
+
+    0010 Q5 asks for coverage to be *measured*, and it is; 0010 Q6 rejects a
+    numeric target, and there is none. What is automated is the thing a percentage
+    cannot express: the silent-failure gate introduces 26 specific bugs and
+    requires the suite to fail, and five of them were added in this phase because
+    the arithmetic they break now exists.
+
 82. [x] **a security review, and the two things it found that are still open.**
     A review of the whole app against `0011` was carried out, and the fixes it turned up
     are in this branch. Most of what it confirmed is worth recording, because it is the
