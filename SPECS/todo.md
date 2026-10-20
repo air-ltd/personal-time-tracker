@@ -660,8 +660,13 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    worked over SSH all along — it was never blocked on a token, only undone — and 30-odd
    commits of `phase-4` did sit on one machine until the release, so the cost of leaving it
    was measured and paid.
-2. [ ] **`phase-2b` is still local only.** It reached `main` via `phase-4`, so nothing is
-   lost by leaving it, but it is the one branch in this list with no remote copy at all.
+2. [x] **`phase-2b` was still local only.** Now pushed, so every branch in this list
+   has a remote copy. It reached `main` via `phase-4`, so nothing was lost by leaving
+   it — but it was the one branch with no remote at all, and a branch with no remote
+   is a branch that exists only on the machine it was built on.
+
+   `phase-6` is also pushed, and is now redundant: `phase-7` contains all of it. It can
+   be deleted from the remote whenever that stops being confusing.
 3. [ ] **Partly verified against real Dropbox.** The scopes are granted — re-verified
    5 October 2026 against the live authorize endpoint, where both apps now reach consent for
    both content scopes and previously answered `scope_not_granted`. Recorded in
