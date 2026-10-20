@@ -3,11 +3,10 @@ import {
   billableSummary,
   breakdownBy,
   dailyTotals,
-  durationInRange,
   unbilledWork,
   type ReportEntry,
 } from '../../domain/reports/report'
-import type { DateRange, RangeMode } from '../../domain/reports/ranges'
+import type { RangeMode } from '../../domain/reports/ranges'
 import { formatMinutes } from '../../domain/time/duration'
 import { PALETTE } from '../../domain/taxonomy/colour'
 import { ChartFrame } from './charts/ChartFrame'
@@ -25,9 +24,17 @@ import { ShareBar } from './charts/ShareBar'
  * checked afterwards (0006 RP2).
  */
 export interface EntryReportsProps {
-  now: Date
-  range: DateRange
   prepared: readonly ReportEntry[]
+  /**
+   * How much each entry contributes to the range, already clipped.
+   *
+   * Passed in rather than computed here, because the invoice needs the same
+   * durations — and two reports over different periods would be two answers to one
+   * question.
+   */
+  durations: readonly (number | null)[]
+  mode: RangeMode
+  onModeChange: (mode: RangeMode) => void
 }
 
 type Dimension = 'project' | 'client' | 'tag'
@@ -38,23 +45,8 @@ const DIMENSION_LABELS: Record<Dimension, string> = {
   tag: 'By tag',
 }
 
-export function EntryReports({ now, range, prepared }: EntryReportsProps) {
+export function EntryReports({ prepared, durations, mode, onModeChange }: EntryReportsProps) {
   const [dimension, setDimension] = useState<Dimension>('project')
-  const [mode, setMode] = useState<RangeMode>('clipped')
-
-  /*
-   * The durations each entry contributes to this range.
-   *
-   * `clipped` counts only the time inside the range; `overlap` counts the whole entry
-   * when any part of it touches the range (0006 DR5). They are different questions —
-   * "how much time did I work in this week" against "which entries touched this week" —
-   * and the default is the first, because a total that includes time from outside the
-   * range is not a total of the range.
-   */
-  const durations = useMemo(
-    () => prepared.map((item) => durationInRange(item, range, mode, now)),
-    [prepared, range, mode, now],
-  )
 
   /*
    * The entries that count, and the duration each one contributes.
@@ -93,7 +85,7 @@ export function EntryReports({ now, range, prepared }: EntryReportsProps) {
         <select
           id="report-mode"
           value={mode}
-          onChange={(event) => setMode(event.target.value as RangeMode)}
+          onChange={(event) => onModeChange(event.target.value as RangeMode)}
         >
           <option value="clipped">Only the time inside the period</option>
           <option value="overlap">Whole entries that overlap the period</option>

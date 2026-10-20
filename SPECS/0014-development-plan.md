@@ -347,10 +347,10 @@ Notes from implementation:
 
 ### Phase 5 — Reports and charts
 
-*Partly built, in `phase-6` and `phase-7`.* The arithmetic, the filtering and the
-rounding are done and tested; the charts and the report screens are not. The list
-below says what is in each state, because a phase that is "half done" and a phase
-that is "done" look identical in a plan.
+*Mostly built, in `phase-6` and `phase-7`.* The arithmetic, the filtering, the
+rounding, the charts and the report screens are done and tested; the invoice view
+is not. The list below says what is in each state, because a phase that is "half
+done" and a phase that is "done" look identical in a plan.
 
 - **Built.** Range presets and calendar week/month (0006 DR1–DR5, with the
   clipping/overlap choice exposed). Entry-only reports: daily totals, breakdown
@@ -360,14 +360,13 @@ that is "done" look identical in a plan.
   because filtering the list and breaking down a report are the same query, and
   building one without the other means writing it twice. Overlap marking in the
   entry list (0004 O3, a SHOULD). Billable rounding at 15 minutes, with raw and
-  rounded both shown (0006 RD1–RD5, RD2.1).
-- **Not built.** Hand-rolled SVG chart primitives, shared palette (0002 CH1–CH4).
-  Tabular equivalent for every chart, keyboard reachable (0006 C3, 0010 AC4–AC5).
-  The report *screens* — the arithmetic exists and is tested, but only the
-  expected-against-actual view has a UI; the breakdowns, trends and charts do not.
-  Theme: light, dark, system, with the pre-paint bootstrap mirror (0002 TH1–TH6,
-  0011 R5) — the theme is done; this bullet is here because the plan listed it
-  and the plan should not lose track of what it promised.
+  rounded both shown (0006 RD1–RD5, RD2.1). Hand-rolled SVG chart primitives on
+  the shared palette (0002 CH1–CH4), each with a keyboard-reachable table
+  equivalent (0006 C3, 0010 AC4–AC5). The report screens, on one page over one
+  range so two figures can never cover different periods.
+- **Not built.** Theme: light, dark, system, with the pre-paint bootstrap mirror
+  (0002 TH1–TH6, 0011 R5) — the theme is done; this bullet is here because the
+  plan listed it and the plan should not lose track of what it promised.
 
 **Gate**
 - Every breakdown sums exactly to its total, with no unallocated remainder

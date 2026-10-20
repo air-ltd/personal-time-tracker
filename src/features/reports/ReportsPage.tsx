@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CapacityReport } from '../capacity/CapacityReport'
 import { EntryReports } from '../reports/EntryReports'
-import { resolveRange, type RangePreset } from '../../domain/reports/ranges'
+import { InvoiceView } from '../reports/InvoiceView'
+import { resolveRange, type RangeMode, type RangePreset } from '../../domain/reports/ranges'
 import { readRoundingIncrementMinutes, readWeekStart } from '../../storage/settingsRepo'
 import { useRevision } from '../../storage/useRevision'
 import { useEntries } from '../entries/useEntries'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
-import { prepareEntries } from '../../domain/reports/report'
+import { durationInRange, prepareEntries } from '../../domain/reports/report'
 import type { ReportEntry } from '../../domain/reports/report'
 
 /**
@@ -30,6 +31,11 @@ export function ReportsPage({ now }: ReportsPageProps) {
   const revision = useRevision()
 
   const [preset, setPreset] = useState<RangePreset>('this-week')
+  const [invoiceClientId, setInvoiceClientId] = useState<string | null>(null)
+  // The clipping/overlap choice (0006 DR5), held here rather than in the report
+  // panel, because the invoice needs the same durations the breakdown used — and two
+  // reports over different periods would be two answers to one question.
+  const [mode, setMode] = useState<RangeMode>('clipped')
   const [weekStart, setWeekStart] = useState<'monday' | 'sunday'>('monday')
   const [increment, setIncrement] = useState(15)
   const [loaded, setLoaded] = useState(false)
@@ -68,6 +74,12 @@ export function ReportsPage({ now }: ReportsPageProps) {
     [entries, projects, clients, now, increment],
   )
 
+  const durations = useMemo(
+    () =>
+      prepared.map((item) => durationInRange(item, range ?? { from: '', to: '' }, mode, now)),
+    [prepared, range, mode, now],
+  )
+
   if (entriesLoading || taxonomyLoading || !loaded) {
     return <p className="hint">Loading reports…</p>
   }
@@ -102,7 +114,49 @@ export function ReportsPage({ now }: ReportsPageProps) {
       {range !== null && (
         <>
           <CapacityReport range={range} prepared={prepared} clients={clients} />
-          <EntryReports now={now} range={range} prepared={prepared} />
+          <EntryReports
+            prepared={prepared}
+            durations={durations}
+            mode={mode}
+            onModeChange={setMode}
+          />
+
+          {/*
+            The invoice, for one client at a time.
+
+            A client is chosen rather than every client's invoice shown at once,
+            because an invoice is a statement about a single client and putting three
+            of them on one page invites the reader to compare them and read the
+            comparison as a total.
+          */}
+          <section className="panel" aria-labelledby="invoice-client-heading">
+            <h2 id="invoice-client-heading">Invoice</h2>
+            <div className="field">
+              <label htmlFor="invoice-client">Client</label>
+              <select
+                id="invoice-client"
+                value={invoiceClientId ?? ''}
+                onChange={(event) => setInvoiceClientId(event.target.value || null)}
+              >
+                <option value="">Choose a client…</option>
+                {clients
+                  .filter((client) => !client.archived)
+                  .map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </section>
+
+          <InvoiceView
+            clientId={invoiceClientId}
+            clientName={clients.find((client) => client.id === invoiceClientId)?.name ?? ''}
+            entries={prepared}
+            durations={durations}
+            incrementMinutes={increment}
+          />
         </>
       )}
     </>

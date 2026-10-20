@@ -39,6 +39,29 @@ change what the feature is.
   tag, billable state, source and free text, and overlapping entries are marked so a
   deliberate double-booking is distinguishable from a mistake.
 
+### Added — charts
+
+- **A bar chart of time by day, and a share bar for the breakdown.** Hand-rolled SVG
+  rather than a charting library, because the data is a handful of numbers and a
+  charting library would be the largest dependency in the project for no benefit.
+- **Every chart has a table with the same figures, and a button to switch between
+  them.** A chart alone fails a reader who cannot see it, and fails a screen reader
+  outright — so the table is a real sibling of the chart rather than a description of
+  it.
+- **The bars can be reached with the keyboard and say what they are.** Each bar's
+  accessible name is its label and its value, so the figure is not hidden behind a
+  hover that a keyboard user cannot make.
+- **The colours are the app's own.** A project or client has the same colour in a
+  chart as it has in a list.
+
+- **An invoice, for one client at a time.** The line items are your billable work
+  grouped by project, with the rate that actually applied — an entry with its own
+  rate bills at that rate, and the line shows it. The line totals add up to the
+  total exactly, which holds because the duration is rounded once, before the rate
+  is multiplied. Nothing is stored: the invoice is worked out from your entries
+  each time, so it can be regenerated later and compared, and changing a rate
+  changes an old invoice.
+
 ### Changed — the schema
 
 - **Schema 5** adds a store for the expected hours. The upgrade is additive: no row

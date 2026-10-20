@@ -10,6 +10,7 @@ import {
 } from './report'
 import type { ReportEntry } from './report'
 import { billableAmountMinor, roundDurationToIncrement } from './rounding'
+import { buildInvoice } from './invoice'
 import { precedingRange, resolveRange } from './ranges'
 import { filterEntries, findOverlaps, NO_FILTER } from './filters'
 import type { TimeEntry } from '../entries/types'
@@ -441,5 +442,78 @@ describe('findOverlaps (0004 O3)', () => {
 
     // Touching at an endpoint is not overlapping: one ends exactly when the other starts.
     expect(findOverlaps(entries, NOW).entryIds.size).toBe(0)
+  })
+})
+
+/**
+ * The invoice (0006 I1–I6).
+ *
+ * The load-bearing property is that the line totals sum to the invoice total exactly
+ * (0006 I2). It holds because the rounding is applied to the duration once, before
+ * the rate is multiplied (0006 RD4) — rounding per line after the multiplication is
+ * what breaks it.
+ */
+describe('the invoice (0006 I1–I6)', () => {
+  it('sums its line totals to the total exactly', () => {
+    const entries = [
+      entry({ id: 'e1', projectId: 'p1', rateOverrideMinor: 10000 }),
+      entry({ id: 'e2', projectId: 'p1', rateOverrideMinor: 10000 }),
+      entry({ id: 'e3', projectId: 'p2', rateOverrideMinor: 10000 }),
+    ]
+    const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
+    const durations = prepared.map((item) => item.durationMs)
+
+    const invoice = buildInvoice('Acme Ltd', prepared, durations, 15)
+    const lineSum = invoice.lines.reduce((total, line) => total + line.totalMinor, 0)
+    const subtotalSum = invoice.subtotals.reduce((total, row) => total + row.totalMinor, 0)
+    expect(lineSum).toBe(subtotalSum)
+  })
+
+  it('shows the rate actually applied, not the project default (0006 I3)', () => {
+    const entries = [
+      // p1's client bills at £100/h; this entry overrides to £75/h.
+      entry({ id: 'e1', projectId: 'p1', rateOverrideMinor: 7500 }),
+    ]
+    const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
+    const durations = prepared.map((item) => item.durationMs)
+
+    const invoice = buildInvoice('Acme Ltd', prepared, durations, 15)
+    expect(invoice.lines[0]?.rateMinorPerHour).toBe(7500)
+  })
+
+  it('leaves out work that is not billable, and work with no rate', () => {
+    const entries = [
+      entry({ id: 'e1', projectId: 'p1', rateOverrideMinor: 10000 }),
+      entry({ id: 'e2', projectId: 'p1', billable: false, rateOverrideMinor: 10000 }),
+      // p3's client has no rate, so this is billable with no money in it.
+      entry({ id: 'e3', projectId: 'p3', rateOverrideMinor: null }),
+    ]
+    const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
+    const durations = prepared.map((item) => item.durationMs)
+
+    const invoice = buildInvoice('Acme Ltd', prepared, durations, 15)
+    expect(invoice.entryCount).toBe(1)
+  })
+
+  it('keeps currencies apart rather than summing them (0006 I4, 0003 CU2)', () => {
+    const entries = [
+      entry({ id: 'e1', projectId: 'p1', rateOverrideMinor: 10000 }),
+      entry({ id: 'e2', projectId: 'p2', rateOverrideMinor: 5000 }),
+    ]
+    const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
+    const durations = prepared.map((item) => item.durationMs)
+
+    const invoice = buildInvoice('Acme Ltd', prepared, durations, 15)
+    expect(invoice.subtotals.length).toBe(2)
+  })
+
+  it('is reproducible: the same data yields the same invoice (0006 I5)', () => {
+    const entries = [entry({ id: 'e1', projectId: 'p1', rateOverrideMinor: 10000 })]
+    const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
+    const durations = prepared.map((item) => item.durationMs)
+
+    const first = buildInvoice('Acme Ltd', prepared, durations, 15)
+    const second = buildInvoice('Acme Ltd', prepared, durations, 15)
+    expect(second).toEqual(first)
   })
 })

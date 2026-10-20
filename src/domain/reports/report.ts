@@ -47,6 +47,14 @@ export interface ReportEntry {
   amountMinor: number | null
   /** The currency the amount is in, or null when there is no amount. */
   currency: string | null
+  /**
+   * The rate that actually applies, in minor units per hour, or null when none does.
+   *
+   * The *resolved* rate rather than the project's default: an entry with an override
+   * bills at the override, and an invoice that showed the default would be claiming a
+   * rate that was never charged (0006 I3).
+   */
+  rateMinorPerHour: number | null
 }
 
 /** The placeholder for work with no client (0005 R3, U1). */
@@ -99,6 +107,7 @@ export function prepareEntries(
       billableMs,
       amountMinor,
       currency,
+      rateMinorPerHour: rateMinor,
     }
   })
 }

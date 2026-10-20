@@ -41,7 +41,7 @@ below use it.
 | 0003 Data model | `Implemented` | Phases 1–4. All entity invariants hold. **Amended in Phase 6**: `ContractPeriod` is scoped to a client (CT9), the `NonWorkingDay` entity is deferred, and the `Setting` entity is now specified. |
 | 0004 Timer and entries | `Implemented` | Phase 2A, plus M4 and ED1 closed in review. O3/L3/W2 remain (see §Known limitations). L3 lands in Phase 6. |
 | 0005 Taxonomy | `Implemented` | Phase 4. |
-| 0006 Reporting and billing | `Draft` | Phase 5. The aggregation is built and tested (R1–R7, DR1–DR5, RD1–RD5, L3, O3); the charts and the report screens are not. |
+| 0006 Reporting and billing | `Draft` | Phase 5. The aggregation, the charts, the report screens and the invoice are built and tested (R1–R7, I1–I6, DR1–DR5, RD1–RD5, L3, O3). |
 | 0007 Persistence and data safety | `Accepted` | Phases 2B–3. F-EXPORT-5 amended to merge-only. **E-ERASE-1–4 is a MUST, is not built, and is assigned to Phase 8** (0014) — see §Known limitations. |
 | 0008 Export formats | `Accepted` | JSON envelope shipped (Phase 2B). CSV writers are Phase 7. |
 | 0009 Deployment | `Implemented` | Phase 1. |
