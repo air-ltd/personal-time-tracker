@@ -41,15 +41,15 @@ below use it.
 | 0003 Data model | `Implemented` | Phases 1–4. All entity invariants hold. **Amended in Phase 6**: `ContractPeriod` is scoped to a client (CT9), the `NonWorkingDay` entity is deferred, and the `Setting` entity is now specified. |
 | 0004 Timer and entries | `Implemented` | Phase 2A, plus M4 and ED1 closed in review. O3/L3/W2 remain (see §Known limitations). L3 lands in Phase 6. |
 | 0005 Taxonomy | `Implemented` | Phase 4. |
-| 0006 Reporting and billing | `Draft` | Phase 6. Not started. The pure aggregation half exists because `0003`/`0004` need day totals; the view half does not. |
+| 0006 Reporting and billing | `Draft` | Phase 5. The aggregation is built and tested (R1–R7, DR1–DR5, RD1–RD5, L3, O3); the charts and the report screens are not. |
 | 0007 Persistence and data safety | `Accepted` | Phases 2B–3. F-EXPORT-5 amended to merge-only. **E-ERASE-1–4 is a MUST, is not built, and is assigned to Phase 8** (0014) — see §Known limitations. |
 | 0008 Export formats | `Accepted` | JSON envelope shipped (Phase 2B). CSV writers are Phase 7. |
 | 0009 Deployment | `Implemented` | Phase 1. |
 | 0010 Testing and quality | `Accepted` | Cross-cutting. Q5 (coverage thresholds), Q6 and Q10 (pre-commit hook) are open — see §Known limitations. |
 | 0011 Privacy and security | `Accepted` | Phases 2B and 8. N5 (Content Security Policy) now ships. |
 | 0012 Cross-device sync | `Implemented` | Phase 2B. SY6 amended (see in-file). M2.3 amended in Phase 6 to judge overlap within a client. |
-| 0013 Capacity | `Draft` | Phase 6. Not started. **Amended in Phase 6**: scoped to a client, and the non-working-day entity is deferred. |
-| 0014 Development plan | `Implemented` | Phases 1–4 complete, plus a Phase 5 that was delivered as review remediation rather than as the plan's reports phase. |
+| 0013 Capacity | `Draft` | Phase 6. **Built**, with the scope narrowed while it was built: scoped to a client, and the non-working-day entity deferred. |
+| 0014 Development plan | `Implemented` | Phases 1–4 complete. Phases 5 and 6 are partly built — the plan says which parts, so a half-built phase does not look like a whole one. |
 
 
 ## Index

@@ -347,21 +347,27 @@ Notes from implementation:
 
 ### Phase 5 — Reports and charts
 
-- Range presets, calendar week/month, custom range (0006 DR1–DR5)
-- Entry-only reports: daily totals, breakdown by project/client/tag, trends,
-  week-over-week, billable summary, unbilled work (0006 R1–R7)
-- Entry-list filtering by project, client, tag, billable, source and free-text
-  note (0004 L3) — a MUST that had no phase until now. It belongs here because
-  filtering the list and breaking down a report are the same query, and building
-  one without the other means writing it twice.
-- Overlap marking in the entry list (0004 O3, a SHOULD) — alongside L3, since
-  both are list presentation over the same loaded set
-- Hand-rolled SVG chart primitives, shared palette (0002 CH1–CH4)
-- Tabular equivalent for every chart, keyboard reachable (0006 C3, 0010 AC4–AC5)
-- Billable rounding at 15 minutes, with raw and rounded both shown
-  (0006 RD1–RD5, RD2.1)
-- Theme: light, dark, system, with the pre-paint bootstrap mirror
-  (0002 TH1–TH6, 0011 R5)
+*Partly built, in `phase-6` and `phase-7`.* The arithmetic, the filtering and the
+rounding are done and tested; the charts and the report screens are not. The list
+below says what is in each state, because a phase that is "half done" and a phase
+that is "done" look identical in a plan.
+
+- **Built.** Range presets and calendar week/month (0006 DR1–DR5, with the
+  clipping/overlap choice exposed). Entry-only reports: daily totals, breakdown
+  by project/client/tag, trends, week-over-week, billable summary, unbilled work
+  (0006 R1–R7). Entry-list filtering by project, client, tag, billable, source and
+  free-text note (0004 L3) — a MUST that had no phase until now. It belongs here
+  because filtering the list and breaking down a report are the same query, and
+  building one without the other means writing it twice. Overlap marking in the
+  entry list (0004 O3, a SHOULD). Billable rounding at 15 minutes, with raw and
+  rounded both shown (0006 RD1–RD5, RD2.1).
+- **Not built.** Hand-rolled SVG chart primitives, shared palette (0002 CH1–CH4).
+  Tabular equivalent for every chart, keyboard reachable (0006 C3, 0010 AC4–AC5).
+  The report *screens* — the arithmetic exists and is tested, but only the
+  expected-against-actual view has a UI; the breakdowns, trends and charts do not.
+  Theme: light, dark, system, with the pre-paint bootstrap mirror (0002 TH1–TH6,
+  0011 R5) — the theme is done; this bullet is here because the plan listed it
+  and the plan should not lose track of what it promised.
 
 **Gate**
 - Every breakdown sums exactly to its total, with no unallocated remainder
@@ -371,6 +377,11 @@ Notes from implementation:
 ---
 
 ### Phase 6 — Capacity
+
+*Built, in `phase-6` and `phase-7`*, with the scope narrowed while it was being
+built: the scope is the client rather than the project, and the non-working-day
+entity is deferred. Both decisions are recorded in 0013 and in `SPECS/todo.md`
+items 79 and 80, and both change what the phase is rather than how it is built.
 
 - `ContractPeriod` CRUD, effective-dated, non-overlapping, **scoped to a client**
   (0003 CT1, CT9, 0013 K1–K4)
@@ -382,7 +393,8 @@ Notes from implementation:
 - Utilisation, expected vs actual, per client, per week (0013 CR1–CR3, CR5–CR6)
 - Reports: range presets, entry-only reports and breakdowns, list filtering
   (0004 L3), chart primitives with a keyboard-reachable table equivalent
-  (0006 C1–C7, 0010 AC4–AC5)
+  (0006 C1–C7, 0010 AC4–AC5) — the arithmetic and the filtering are built; the
+  charts are not, and are listed under Phase 5
 
 **Not in this phase**, and recorded so the gap is deliberate rather than
 accidental:
