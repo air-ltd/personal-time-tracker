@@ -49,6 +49,15 @@ export type SyncOutcome =
   | { status: 'pushed'; rev: string; merged: boolean }
   | { status: 'up-to-date' }
   | { status: 'blocked'; reason: 'unsupported-schema'; message: string }
+  /**
+   * The remote file is not valid JSON.
+   *
+   * Distinct from `unsupported-schema` because the advice is different: a schema
+   * mismatch is fixed by updating the app, and a corrupt file is not. It is also
+   * distinct because a corrupt remote is not overwritten — pushing over it would
+   * destroy whatever is really there.
+   */
+  | { status: 'blocked'; reason: 'corrupt-remote'; message: string }
   | { status: 'failed'; message: string; kind: SyncError['kind'] }
 
 const MAX_ATTEMPTS = 3
@@ -97,7 +106,32 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
       return { status: 'pushed', rev, merged: false }
     }
 
-    const parsed = parseEnvelope(JSON.parse(remote.body), deps.supportedSchemaVersion)
+    /*
+     * Parsed in two steps, so a file that is not JSON at all is reported as what it
+     * is rather than as a parser error.
+     *
+     * `JSON.parse` throws on malformed input, and the message it throws names a
+     * character offset in a file the user has never seen — "Unexpected token '}' in
+     * JSON at position 412". That says nothing about what happened, nothing about
+     * where the file came from, and nothing the user can act on.
+     *
+     * The file is not overwritten either: a corrupt remote is pushed over only by
+     * the user, deliberately, through a restore.
+     */
+    let decoded: unknown
+    try {
+      decoded = JSON.parse(remote.body)
+    } catch {
+      const message =
+        'The file in Dropbox could not be read, so it may have been corrupted. Nothing has ' +
+        'been changed. Restore from a local backup if you have one.'
+      log(deps, 'error', message)
+      return { status: 'blocked', reason: 'corrupt-remote', message }
+    }
+
+    // The source is the sync path, so the messages name the file in Dropbox rather
+    // than a backup the user never downloaded.
+    const parsed = parseEnvelope(decoded, deps.supportedSchemaVersion, 'sync')
     if (!parsed.ok) {
       // Refuse rather than interpret. Pushing over the top would destroy whatever
       // is actually on the remote (0012 M9).
@@ -161,8 +195,22 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
     return { status: 'pushed', rev, merged: true }
   } catch (error) {
     const kind = error instanceof SyncError ? error.kind : 'unknown'
-    const message = error instanceof Error ? error.message : String(error)
-    log(deps, 'error', message)
+    /*
+     * A `SyncError`'s message is written for the user. Anything else is an internal
+     * failure, and its text names a function, a type or a line of code — forwarding
+     * that verbatim tells the user nothing they can act on, and sometimes quotes
+     * their own data back at them. This was how a corrupt remote file reached the
+     * screen as "Unexpected token '}' in JSON at position 412".
+     *
+     * The detail still goes to the log, where it is useful and where nobody has to
+     * read it.
+     */
+    const detail = error instanceof Error ? error.message : String(error)
+    const message =
+      error instanceof SyncError
+        ? detail
+        : 'Sync failed for an unexpected reason. Nothing has been changed — try again, and check the sync log if it keeps happening.'
+    log(deps, 'error', error instanceof SyncError ? message : `${message} (${detail})`)
     // Local data is untouched on every path here, which is the point of local-first.
     return { status: 'failed', message, kind }
   }
@@ -201,7 +249,16 @@ async function pushWithRetry(
         log(deps, 'warn', 'Remote changed during sync; re-reading and retrying.')
         const fresh = await deps.provider.pull(deps.path)
         if (fresh) {
-          const parsed = parseEnvelope(JSON.parse(fresh.body), deps.supportedSchemaVersion)
+          // The same two steps as the first read: a body that is not JSON is reported
+          // as what it is rather than as a parser error.
+          let freshDecoded: unknown
+          try {
+            freshDecoded = JSON.parse(fresh.body)
+          } catch {
+            log(deps, 'warn', 'Remote file is not valid JSON; leaving it alone.')
+            throw new SyncError('network', 'The file in Dropbox could not be read.')
+          }
+          const parsed = parseEnvelope(freshDecoded, deps.supportedSchemaVersion, 'sync')
           if (parsed.ok) {
             /*
              * Read local *again*, not the snapshot this cycle started with.

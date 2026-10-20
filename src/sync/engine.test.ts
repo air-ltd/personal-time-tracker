@@ -279,6 +279,55 @@ describe('runSync — schema safety (0012 M9, C4)', () => {
     expect(result).toMatchObject({ status: 'blocked' })
     expect(h.provider.pushCount).toBe(0)
   })
+
+  /*
+   * A syncing user must never be told about a backup.
+   *
+   * The same envelope format serves the backup file and the sync wire format, so the
+   * same parse produced the same message for both — and a user whose other device had
+   * published a newer schema was told "Backup uses data schema 5", sending them
+   * looking for a file they had never downloaded. The refusal itself was correct; only
+   * the wording was wrong.
+   */
+  it('names the file in Dropbox, not a backup, when the schema is too new (item 73)', async () => {
+    const h = harness(snapshotOf([entry('a')]))
+    h.provider.remote = {
+      body: serialiseEnvelope(toEnvelope(snapshotOf([entry('x')], 99), T0)),
+      rev: 'rev-future',
+    }
+
+    const result = await runSync(h.deps)
+    expect(result).toMatchObject({ status: 'blocked', reason: 'unsupported-schema' })
+    const message = result.status === 'blocked' ? result.message : ''
+    expect(message).toContain('Dropbox')
+    expect(message).not.toContain('Backup')
+    expect(message).toContain('99')
+  })
+
+  /*
+   * A corrupt remote is reported as what it is.
+   *
+   * `JSON.parse` throws on malformed input, and the message it throws names a
+   * character offset in a file the user has never seen. That says nothing about what
+   * happened, nothing about where the file came from, and nothing the user can act on.
+   */
+  it('reports a corrupt remote file without a raw parser error (item 74)', async () => {
+    const h = harness(snapshotOf([entry('a')]))
+    h.provider.remote = { body: '{"entries": [}', rev: 'rev-broken' }
+    const before = h.local
+
+    const result = await runSync(h.deps)
+    expect(result).toMatchObject({ status: 'blocked', reason: 'corrupt-remote' })
+    const message = result.status === 'blocked' ? result.message : ''
+    expect(message).toMatch(/could not be read/i)
+    // The parser's own text must not reach the user.
+    expect(message).not.toMatch(/JSON/i)
+    expect(message).not.toMatch(/position \d+/)
+
+    // And nothing is written or published: the file may hold something recoverable.
+    expect(h.local).toBe(before)
+    expect(h.provider.pushCount).toBe(0)
+  })
 })
 
 describe('runSync — concurrency (0012 C5)', () => {

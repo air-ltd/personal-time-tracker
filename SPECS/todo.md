@@ -404,7 +404,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     heading, so the section keeps its place in the page outline and the panel's
     `aria-labelledby` still resolves — a bare button styled like a heading looks the same and
     vanishes from the outline.
-73. [ ] **a sync user hitting a newer schema is told about a *backup* they never had.**
+73. [x] **a sync user hitting a newer schema is told about a *backup* they never had.**
     Deferred deliberately, so 0.2.0 can ship: the sync fixes are worth more to a user than
     this wording is worth delaying them by. Traced end to end while validating the version
     bump — a 0.2.0 device pulling a file published by a future schema-5 build gets:
@@ -422,20 +422,31 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     `"Remote data uses schema 5; this build understands 4. Not syncing."` on the merge
     branch, but `parseEnvelope` refuses first.
 
-    *Fix, when it is worth doing:* give `parseEnvelope` a source label — "Backup" for a
-    restore, "The file in Dropbox" for a sync — or have the engine rewrite the message it
-    forwards. Add a regression test asserting a syncing user is never told about a backup,
-    since that is the shape which would have caught it.
+    *Done.* `parseEnvelope` now takes the source it is parsing for, and the message
+    names it: "Backup" for a restore, "The file in Dropbox" for a sync. The refusal is
+    unchanged — the same file, the same refusal, the same advice to update the app.
 
-74. [ ] **a corrupt sync file surfaces a raw JSON parse error.** Same deferral, same reason.
+    The regression test asserts a syncing user is never told about a backup, which is
+    the shape that would have caught it.
+
+74. [x] **a corrupt sync file surfaces a raw JSON parse error.** Same deferral, same reason.
     If the remote body is not valid JSON, `JSON.parse` throws and the catch-all in
     `src/sync/engine.ts` forwards `error.message` unedited, so the user sees something like
     `Unexpected token '}' in JSON at position 412` — an internal parser error naming neither
     Dropbox, nor their data, nor anything they could act on. Should say what happened and
     what it means for their work, in the same place the schema message is rendered.
 
-    Note when fixing: this path is also reachable with a *non-schema* parse failure, so it
-    is wider than the schema case above and worth covering separately.
+    *Done.* The remote body is parsed in its own step, so a file that is not JSON at
+    all is reported as what it is: "The file in Dropbox could not be read, so it may have
+    been corrupted. Nothing has been changed." The outcome is `corrupt-remote`, which is
+    distinct from `unsupported-schema` because the advice is different — a schema
+    mismatch is fixed by updating the app, and a corrupt file is not — and because a
+    corrupt remote is not overwritten.
+
+    The wider case is covered too: the catch-all no longer forwards an internal error's
+    message to the user at all. A `SyncError`'s message is written for the user; anything
+    else gets a sentence the user can act on, with the detail going to the log where it
+    is useful and nobody has to read it.
 
 72. [x] **found and fixed a false claim in my own migration test.** It asserted a 0.1.0 device
     could read what we publish, while checking only `schemaVersion >= 3` — which 4 satisfies.

@@ -18,6 +18,25 @@ export const FORMAT = 'personal-time-tracker-backup'
 /** Bumped only on a breaking layout change (0008 J3). */
 export const FORMAT_VERSION = 1
 
+/**
+ * Where an envelope came from.
+ *
+ * The same format is the backup format and the sync wire format, so the same parse
+ * serves both — and the message it produces has to name the right thing. A syncing
+ * user told "Backup uses data schema 5" goes looking for a backup they never
+ * downloaded, and the artefact is not the problem: the file in Dropbox is.
+ *
+ * `'backup'` is the default, so a caller that does not say which it is gets the
+ * restore wording, which is the path that has a file picker in front of it.
+ */
+export type EnvelopeSource = 'backup' | 'sync'
+
+/** How each source is named in a message the user reads. */
+const SOURCE_LABELS: Record<EnvelopeSource, string> = {
+  backup: 'Backup',
+  sync: 'The file in Dropbox',
+}
+
 const isoInstant = z
   .string()
   .refine((v) => !Number.isNaN(Date.parse(v)), 'must be an ISO instant')
@@ -194,7 +213,13 @@ export type ParseResult = { ok: true; snapshot: Snapshot } | { ok: false; error:
  * payload is never partially applied: validation completes or nothing happens
  * (0007 F-EXPORT-4).
  */
-export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): ParseResult {
+export function parseEnvelope(
+  raw: unknown,
+  supportedSchemaVersion: number,
+  source: EnvelopeSource = 'backup',
+): ParseResult {
+  const label = SOURCE_LABELS[source]
+
   const format = (raw as { format?: unknown } | null)?.format
   if (format !== FORMAT) {
     return {
@@ -208,7 +233,7 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     return {
       ok: false,
       error: new EnvelopeError(
-        `Backup format version ${version} is newer than this build supports (${FORMAT_VERSION}). Update the app before importing.`,
+        `${label} format version ${version} is newer than this build supports (${FORMAT_VERSION}). Update the app before importing.`,
       ),
     }
   }
@@ -218,7 +243,7 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     const issues = parsed.error.issues.map(
       (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
     )
-    return { ok: false, error: new EnvelopeError('Backup is not valid.', issues) }
+    return { ok: false, error: new EnvelopeError(`${label} is not valid.`, issues) }
   }
 
   // M9: refuse rather than interpret a newer data schema.
@@ -226,7 +251,7 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     return {
       ok: false,
       error: new EnvelopeError(
-        `Backup uses data schema ${parsed.data.schemaVersion}, but this build understands ${supportedSchemaVersion}. Update the app.`,
+        `${label} uses data schema ${parsed.data.schemaVersion}, but this build understands ${supportedSchemaVersion}. Update the app.`,
       ),
     }
   }
