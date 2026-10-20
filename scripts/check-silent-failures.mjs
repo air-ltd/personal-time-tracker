@@ -116,8 +116,8 @@ const MUTATIONS = [
     // forgotten, and `entries` missing would be caught by a hundred other tests while
     // `settings` missing is exactly the item-46 regression — settings quietly reverting to
     // per-device, which is the bug that change existed to fix.
-    find: "const TABLES = ['entries', 'projects', 'clients', 'tags', 'settings'] as const",
-    replace: "const TABLES = ['entries', 'projects', 'clients', 'tags'] as const",
+    find: "  'settings',\n  'contractPeriods',\n] as const",
+    replace: "  'settings',\n] as const",
     test: 'src/storage/snapshotRepo.test.ts',
   },
   {
@@ -229,28 +229,115 @@ const MUTATIONS = [
     replace: '--sync-warn: #c98a12;',
     test: 'src/domain/taxonomy/colour.styles.test.ts',
   },
+  {
+    id: 'rounding-before-multiply',
+    failure: 'Rounding applied before multiplying by rate (0006 RD4)',
+    file: 'src/domain/reports/rounding.ts',
+    /*
+     * The order of operations, reversed: the money is rounded and the duration is not.
+     *
+     * This is the mutation 0006 RD4 exists to prevent, and it is subtle because the
+     * wrong answer is still a plausible number — 22.5 minutes at £100/h is £37.50
+     * rather than £50.00, and an invoice whose lines do not sum to its total.
+     */
+    find: `  const roundedMs = billableDurationMs(ms, incrementMinutes)
+  // Milliseconds to hours, as a fraction. The rate is per hour, so the duration has to
+  // be converted before the multiplication, and the conversion has to keep its
+  // fraction: 1,800,000 ms is exactly 0.5 hours, and \`1800000 / 3600000\` is 0.5
+  // exactly in binary floating point, so this does not drift.
+  return Math.round((roundedMs / 3_600_000) * rateMinorPerHour)`,
+    replace: `  return Math.round((ms / 3_600_000) * rateMinorPerHour)`,
+    test: 'src/domain/reports/reports.test.ts',
+  },
+  {
+    id: 'float-drift',
+    failure: 'Float drift in money (0003 P3)',
+    file: 'src/domain/reports/rounding.ts',
+    /*
+     * The rounding of the final amount replaced with a truncation, and the rate
+     * applied as a float multiplier rather than as an integer amount.
+     *
+     * 0003 P3 requires money to be integer minor units, because floating-point money
+     * accumulates error across many additions and produces totals that do not match
+     * the sum of the lines. Truncating instead of rounding is the same class of
+     * defect one step earlier: the figure is not an integer, and it is not the right
+     * integer.
+     */
+    find: 'return Math.round((roundedMs / 3_600_000) * rateMinorPerHour)',
+    replace: 'return Math.floor((roundedMs / 3_600_000) * rateMinorPerHour * 100) / 100',
+    test: 'src/domain/reports/reports.test.ts',
+  },
+  {
+    id: 'utilisation-divide-by-zero',
+    failure: 'Utilisation divide-by-zero (0013 CP-A6)',
+    file: 'src/domain/capacity/utilisation.ts',
+    /*
+     * The unknown-and-zero guard removed, so the ratio is computed whatever the
+     * denominator is.
+     *
+     * 0013 CP-A6 requires `—` when the expectation is unknown or zero. Without the
+     * guard this is `NaN` or `Infinity`, and the panel renders it as a number because
+     * the number is what it is.
+     */
+    find: `  if (available === null || available === 0) {
+    return {
+      percent: null,
+      expected: available,
+      worked: worked.minutes,
+      delta: null,
+      unknownDays: expected.unknownDays,
+    }
+  }
+
+  return {
+    percent: roundToOneDecimal((worked.minutes / available) * 100),`,
+    replace: `  return {
+    percent: roundToOneDecimal((worked.minutes / (available ?? 0)) * 100),`,
+    test: 'src/domain/capacity/capacity.test.ts',
+  },
+  {
+    id: 'weekday-off-by-one',
+    failure: 'Weekday off-by-one (0013 K3)',
+    file: 'src/domain/time/days.ts',
+    /*
+     * The Monday-first conversion replaced with the raw `getDay()`.
+     *
+     * `getDay()` is 0 for Sunday, so every Sunday lands eight days early and every
+     * week is one day too long. 0013 K3 requires the conversion to be handled in
+     * exactly one place in `domain/` and never inline — this mutation is what that
+     * rule is protecting against.
+     */
+    find: `  const sundayFirst = value.getDay()
+  return sundayFirst === 0 ? 6 : sundayFirst - 1`,
+    replace: '  return value.getDay()',
+    test: 'src/domain/capacity/capacity.test.ts',
+  },
+  {
+    id: 'breakdown-reconciliation',
+    failure: 'Breakdown does not reconcile to total (0006 RP2)',
+    file: 'src/domain/reports/report.ts',
+    /*
+     * One group excluded from the total, so the breakdown no longer sums to the
+     * headline figure.
+     *
+     * 0006 RP2 requires a breakdown's groups to sum to the total with no unallocated
+     * remainder. A group that is counted in the breakdown but not in the total is
+     * exactly the kind of remainder RP2 is about, and it is the kind that shows up as
+     * a percentage that does not add to a hundred.
+     */
+    find: `  const groups = [...buckets.entries()].map(([key, bucket]) => ({`,
+    replace: `  const groups = [...buckets.entries()].filter(([key]) => key !== UNASSIGNED).map(([key, bucket]) => ({`,
+    test: 'src/domain/reports/reports.test.ts',
+  },
 ]
 
 /** Failures whose code does not exist yet, so they cannot be checked. */
 const PENDING = [
   {
-    id: 'rounding-before-multiply',
-    failure: 'Rounding applied before multiplying by rate (0006 RD4)',
-    phase: '6',
+    id: 'csv-quoting',
+    failure: 'CSV quoting missed (0008 C2)',
+    phase: '7 — the CSV writers are Phase 7, and there is no code to break yet',
   },
-  { id: 'float-drift', failure: 'Float drift in money (0003 P3)', phase: '6' },
-  {
-    id: 'utilisation-divide-by-zero',
-    failure: 'Utilisation divide-by-zero (0013 CP-A6)',
-    phase: '6',
-  },
-  { id: 'weekday-off-by-one', failure: 'Weekday off-by-one (0013 K3)', phase: '6' },
-  {
-    id: 'breakdown-reconciliation',
-    failure: 'Breakdown does not reconcile to total (0006 RP2)',
-    phase: '6',
-  },
-  { id: 'csv-quoting', failure: 'CSV quoting missed (0008 C2)', phase: '6' },
   {
     id: 'base-path',
     failure: 'Base path wrong (0002 R1)',

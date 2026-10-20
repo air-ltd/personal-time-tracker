@@ -538,7 +538,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     - **There is no global scope.** Every contract belongs to a client, so "expected hours"
       is always "expected hours for that client". Client scopes are disjoint, which is what
       makes a range total across clients well defined.
-80. [ ] **the `NonWorkingDay` entity is deferred.** Leave and public holidays were to be
+80. [x] **the `NonWorkingDay` entity is deferred.** Leave and public holidays were to be
     records that reduce a contracted day's expected minutes to zero. The user has chosen to
     carry absence as an ordinary project instead — a client-less project named for leave or
     non-work hours, with the time recorded against it as usual.
@@ -549,14 +549,14 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     expectation went unmet.
     A day's absence is therefore indistinguishable from a day's idleness. That is the
     trade, and it was chosen.
-81. [ ] **`week-start` and the billable rounding increment ship with schema 5.** Both are
+81. [x] **`week-start` and the billable rounding increment ship with schema 5.** Both are
     values written once and then never needing another migration (0006 DR3, RD2.1), so
     they are written in the same increment as the contract period rather than in the one
     that first needs them.
     This also corrects a false claim: `SPECS/README.md` said the rounding increment was
     "stored as a setting now", and it was not — `settingsRepo.ts` held three keys and none
     of them was the increment. The same class of defect as item 72.
-82. [ ] **a security review, and the two things it found that are still open.**
+82. [x] **a security review, and the two things it found that are still open.**
     A review of the whole app against `0011` was carried out, and the fixes it turned up
     are in this branch. Most of what it confirmed is worth recording, because it is the
     answer to "is this safe?" and the answer is mostly yes: no HTML injection sink exists
@@ -660,11 +660,26 @@ Per `0014-development-plan.md`. Not started.
 
 ## Notes worth keeping
 
-1. [ ] The six silent failures that cannot be checked yet — rounding, float drift,
-   utilisation divide-by-zero, weekday off-by-one, breakdown reconciliation and CSV
-   quoting — all need Phase 6 arithmetic that does not exist. `scripts/check-silent-failures.mjs`
-   lists them as pending with the phase that introduces them. Run
-   `npm run check:silent` after touching anything in `domain/`, `storage/` or `sync/`.
+1. [x] **The six silent failures that could not be checked yet.** Five of the six are
+   checked now, because the Phase 6 arithmetic they were waiting for exists:
+   rounding applied before multiplying by the rate, float drift in money, utilisation
+   divide-by-zero, weekday off-by-one, and a breakdown that does not reconcile to its
+   total. `scripts/check-silent-failures.mjs` introduces each bug deliberately and
+   requires the suite to fail; all five are caught.
+
+   **The sixth is still pending** — CSV quoting — because the CSV writers are Phase 7
+   and there is no code to break yet. It is the only one left on that list.
+
+   Two things came out of writing the mutations. The float-drift mutation was **not**
+   caught at first, which is the gate doing its job: with a 15-minute increment and a
+   round rate the amount is always a whole number of minor units, so no test had ever
+   exercised a fractional one. There is one now, at a rate that is not a multiple of
+   four. And the `entity-table-forgotten` mutation had gone stale, because the
+   bridge's table list is no longer on one line — which is the gate's own warning
+   that the code moved and the script had not.
+
+   Run `npm run check:silent` after touching anything in `domain/`, `storage/` or
+   `sync/`.
 2. [x] `npm run test:e2e` is still **not** part of `npm run verify` — it needs a browser, so
    it stays a deliberate step. Playwright's browsers need installing once with
    `npx playwright install chromium`. It now really does build first, rather than only

@@ -104,6 +104,14 @@ describe('rounding (0006 RD2, RD4)', () => {
     expect(billableAmountMinor(ms, 15, 10000)).toBe(5000)
   })
 
+  it('rounds the money to whole minor units, not to a fraction (0003 P3)', () => {
+    // A rate that is not a multiple of four makes the amount fractional: a quarter of
+    // an hour at 3,333 minor units is 833.25. Money is integer minor units, because a
+    // float accumulates error across many additions and stops matching the sum of the
+    // lines (0003 P3).
+    expect(billableAmountMinor(15 * 60_000, 15, 3333)).toBe(833)
+  })
+
   it('would give a different answer if the money were rounded instead', () => {
     // This is the failure RD4 exists to prevent: 22.5 min x 100/hr = 37.50, and
     // rounding that to whole pence gives 3750, which does not reconcile with a line
