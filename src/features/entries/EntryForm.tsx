@@ -358,6 +358,11 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
         <input
           id="entry-start"
           type="datetime-local"
+          // `step="1"` is what makes the browser offer a seconds field at all. The
+          // default step is 60, so the control has no seconds to type — and an entry
+          // whose seconds cannot be typed cannot be saved, because the end truncates
+          // to the same minute as the start.
+          step={1}
           value={startValue}
           onChange={(e) => setStartValue(e.target.value)}
           required
@@ -419,6 +424,8 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
           <input
             id="entry-end"
             type="datetime-local"
+            // Seconds, for the same reason as the start field.
+            step={1}
             value={endValue}
             onChange={(e) => {
               setEndValue(e.target.value)

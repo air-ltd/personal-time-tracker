@@ -116,12 +116,27 @@ export function formatClock(value: Date): string {
   }).format(value)
 }
 
-/** `YYYY-MM-DDTHH:mm` in local time, the value format `datetime-local` expects. */
+/**
+ * `YYYY-MM-DDTHH:mm:ss` in local time, the value format `datetime-local` expects.
+ *
+ * **Seconds are included**, and that is not a preference.
+ *
+ * A `datetime-local` value truncated to the minute loses the seconds of any entry
+ * that has them, and an entry that lost its seconds cannot be saved at all: the
+ * start and the end truncate to the same minute, the end is no longer after the
+ * start, and the form reports "Enter how long this took" for a form that is already
+ * full. A 25-second entry — which is what stopping a timer after a glance produces
+ * — was unsaveable on the edit screen.
+ *
+ * The input needs `step="1"` to show the seconds at all, and the value needs them
+ * to carry them. Both halves are required: a seconds field that is not in the value
+ * is a field that cannot be filled in.
+ */
 export function toLocalInputValue(value: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return (
     `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}` +
-    `T${pad(value.getHours())}:${pad(value.getMinutes())}`
+    `T${pad(value.getHours())}:${pad(value.getMinutes())}:${pad(value.getSeconds())}`
   )
 }
 
