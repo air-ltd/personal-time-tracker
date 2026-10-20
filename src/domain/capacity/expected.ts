@@ -10,7 +10,13 @@
  * by seven is wrong for every individual day (0013 CP-A1, K2).
  */
 
-import { addLocalDays, localDayBounds, mondayFirstWeekday, type WeekStart } from '../time/days'
+import {
+  addLocalDays,
+  localDayBounds,
+  localWeekBounds,
+  mondayFirstWeekday,
+  type WeekStart,
+} from '../time/days'
 import { contractPeriodContaining, localDateKey } from './contract'
 import type { ContractPeriod } from './types'
 
@@ -122,14 +128,13 @@ export function expectedMinutesByWeek(
  * The week a day belongs to, as a day key for that week's first day.
  *
  * Delegated to `domain/time/days.ts` so the week boundary is computed in exactly one
- * place (0013 K3).
+ * place (0013 K3). A second copy of the Monday-first conversion here would be a
+ * second chance to disagree with the first — and the two would disagree the moment
+ * the week start setting changed.
  */
 export function weekKeyFor(day: string, weekStart: WeekStart = 'monday'): string {
-  const { start } = localDayBounds(day)
-  const index = mondayFirstWeekday(start)
-  const firstIndex = weekStart === 'sunday' ? 6 : 0
-  const offset = (index - firstIndex + 7) % 7
-  return localDateKey(addLocalDays(start, -offset))
+  const { start } = localWeekBounds(day, weekStart)
+  return localDateKey(start)
 }
 
 /**
