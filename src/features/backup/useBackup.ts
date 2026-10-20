@@ -21,6 +21,14 @@ export type BackupState =
   | { kind: 'working' }
   | { kind: 'done'; message: string }
   | { kind: 'error'; message: string; issues: string[] }
+  /**
+   * A successful restore.
+   *
+   * `issues` carries what was *left out* — the records that broke the rules the app
+   * holds itself to. They are not errors: the restore worked, and this is what it
+   * could not bring in.
+   */
+  | { kind: 'done'; message: string; issues?: string[] }
 
 export interface Backup {
   state: BackupState
@@ -127,9 +135,22 @@ export function useBackup({
           const when = result.exportedAt
             ? ` It was taken ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(result.exportedAt))}.`
             : ''
+          /*
+           * What was left out, and why.
+           *
+           * Reported rather than dropped silently: a record that disappears during a
+           * recovery is exactly the thing a person needs to be told about, and saying
+           * how many went is more honest than a message that might be wrong about it.
+           */
+          const dropped = result.dropped
+          const droppedNote =
+            dropped.length === 0
+              ? ''
+              : ` ${dropped.length} ${dropped.length === 1 ? 'record was' : 'records were'} left out because they broke the rules the app holds itself to.`
           setState({
             kind: 'done',
-            message: `Restored. This device now holds ${count} ${count === 1 ? 'entry' : 'entries'}.${when}`,
+            message: `Restored. This device now holds ${count} ${count === 1 ? 'entry' : 'entries'}.${when}${droppedNote}`,
+            issues: dropped.map((record) => `${record.table}: ${record.reason}`),
           })
         })
         .catch((error: unknown) => {

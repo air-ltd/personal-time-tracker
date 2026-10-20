@@ -1,4 +1,5 @@
 import { dropUnusableContractPeriods, mergeSnapshots, type Snapshot } from '../domain/merge'
+import { checkImportedSnapshot } from '../domain/reports/importCheck'
 import { MINUTE } from '../domain/time/duration'
 import { parseEnvelope, serialiseEnvelope, toEnvelope } from './envelope'
 
@@ -48,6 +49,14 @@ export type RestoreOutcome =
        * more honest than a message that might be wrong about how many.
        */
       droppedContracts: number
+      /**
+       * The records left out of the restore, and why.
+       *
+       * Reported rather than dropped silently. A record that disappears during a
+       * recovery is exactly the thing a person needs to be told about, and a count is
+       * more honest than a message that might be wrong about how many.
+       */
+      dropped: { table: string; id: string; reason: string }[]
     }
   | { status: 'rejected'; message: string; issues: string[] }
 
@@ -131,7 +140,8 @@ export async function restoreBackup(deps: BackupDeps, raw: string): Promise<Rest
    * the remote file.
    */
   const before = outcome.merged.entities['contractPeriods']?.length ?? 0
-  const merged = dropUnusableContractPeriods(outcome.merged)
+  const checked = checkImportedSnapshot(dropUnusableContractPeriods(outcome.merged))
+  const merged = checked.snapshot
   const droppedContracts = before - (merged.entities['contractPeriods']?.length ?? 0)
   await deps.writeLocal(merged)
 
@@ -144,5 +154,6 @@ export async function restoreBackup(deps: BackupDeps, raw: string): Promise<Rest
     counts,
     exportedAt: typeof exportedAt === 'string' ? exportedAt : null,
     droppedContracts,
+    dropped: checked.dropped,
   }
 }

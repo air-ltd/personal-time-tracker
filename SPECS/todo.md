@@ -621,13 +621,23 @@ Numbered, not bulleted. Ordered roughly by when they came up.
       both accounts. A guard that stopped every sync because it could not read an
       account id would be the worse of the two failures, so an account that cannot be
       identified is not treated as a different one.
-    - **The import path bypasses the domain's own rules.** A restored file's entries are
-      not checked against the 24-hour cap, names are not checked for length or
-      uniqueness, and colours were not checked at all. The colour case is now fixed at
-      the point where a colour becomes CSS, and contract periods are now checked for the
-      two ways they can be unusable. The entry and name cases are not, and fixing them
-      means deciding what a restore should do with a file that breaks the app's own
-      invariants: refuse it, repair it, or accept it and let the domain cope.
+    - ~~**The import path bypasses the domain's own rules.**~~ **Fixed.** The app
+      enforces its rules when you type something — an entry cannot be longer than a day
+      (0004 V2), a note has a length limit (0004 V4), a client's name has one too
+      (0003 Client), two clients cannot share a name — and enforced none of them when a
+      *file* said so. So a restored backup could contain a three-day entry, a note of
+      fifty thousand characters, or two clients with the same name, and the app would
+      accept all of it and then behave oddly.
+
+      The split follows the spec's own two rules. The **file** is validated as a whole
+      (0007 F-EXPORT-4): a file that is not a valid document is not applied at all. A
+      **record inside a valid file** that breaks the rules is dropped, and the drop is
+      reported (0008 J13) — refusing the whole file because one record is wrong would
+      be the worst possible answer to somebody trying to recover their work.
+
+      Repairing the records was considered and not done: a restore is a recovery
+      action, and silently rewriting somebody's backup while recovering it is a
+      modification they did not ask for and cannot see.
 
 
 # Where the branches are
