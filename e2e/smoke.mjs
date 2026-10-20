@@ -1680,6 +1680,40 @@ async function main() {
      * the unit tests prove the arithmetic, and this proves the arithmetic reached the
      * screen.
      */
+    /*
+     * The charts, and their table equivalents (0006 C3, 0010 AC4–AC5).
+     *
+     * Checked in a browser because the whole point is what a browser does: a
+     * focusable mark, a keyboard-reachable toggle, and a table that holds the same
+     * figures. jsdom has no layout, no focus ring and no accessibility tree, so it
+     * could not tell a chart that works from one that is a picture of a chart.
+     */
+    const chartToggle = page.getByRole('button', { name: 'Show table' }).first()
+    await chartToggle.waitFor()
+    check('a chart offers a table equivalent', true)
+
+    // The toggle is a real button, so it is reachable and activatable by keyboard.
+    await chartToggle.focus()
+    const focused = await page.evaluate(
+      () => document.activeElement?.tagName.toLowerCase() ?? '',
+    )
+    check('the chart/table toggle can take focus', focused === 'button', focused)
+
+    // The bars are focusable and carry their value, rather than hiding it in a
+    // hover tooltip (0002 CH4, 0006 C4, 0010 AC5).
+    const barName = await page.locator('.chart-bar').first().getAttribute('aria-label')
+    check(
+      'a chart bar carries its value to assistive technology',
+      barName !== null && /\d/.test(barName),
+      String(barName),
+    )
+
+    // And the table holds the same figures.
+    await chartToggle.click()
+    const chartTableRows = await page.locator('.chart-frame table tbody tr').count()
+    check('the table equivalent has rows', chartTableRows > 0, String(chartTableRows))
+    await page.getByRole('button', { name: 'Show chart' }).first().click()
+
     const breakdownTotal = await page.locator('.capacity-table tfoot tr').first().innerText()
     const breakdownRows = await page.locator('.capacity-table tbody tr').count()
     check(

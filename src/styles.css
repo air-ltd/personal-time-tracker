@@ -2001,3 +2001,83 @@ code {
   font-variant-numeric: tabular-nums;
   color: var(--fg-muted);
 }
+
+/*
+ * Charts (0002 CH1–CH4, 0006 C1–C7).
+ *
+ * Hand-rolled SVG on a small shared set of primitives, because the data is a handful
+ * of numbers and a charting library would be the largest dependency in the project for
+ * no benefit (0002 CH1).
+ *
+ * The colours come from the shared palette rather than from here (0002 CH3), so a
+ * colour means the same thing in a chart as it does in a list.
+ */
+.chart-frame {
+  margin: 1rem 0;
+}
+
+.chart-frame-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  max-width: 40rem;
+  overflow: visible;
+}
+
+.chart-axis line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-axis text,
+.chart-share text {
+  fill: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+/*
+ * A focusable bar.
+ *
+ * The focus ring is drawn rather than left to the browser's default, because the
+ * default ring on an SVG element is a rectangle around the whole `<svg>` in some
+ * browsers and nothing at all in others. The bar is the thing being reached, so the
+ * ring goes on the bar (0010 AC5).
+ */
+.chart-bar {
+  outline: none;
+}
+
+.chart-bar:focus-visible rect {
+  stroke: var(--focus-ring);
+  stroke-width: 2;
+}
+
+.chart-bar:hover rect,
+.chart-bar:focus-visible rect {
+  filter: brightness(0.92);
+}
+
+.chart-share-track {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+/*
+ * The chart and the table are both in the document; one of them is hidden at a time.
+ *
+ * `display: none` is not used for the chart when the table is showing, because it
+ * would take the bars out of the tab order — and a reader who has tabbed to a bar
+ * that then vanishes has been dropped somewhere they cannot see. The chart is hidden
+ * from assistive technology instead, and the bars are made unfocusable by the same
+ * `aria-hidden`.
+ */
+.chart-hidden {
+  display: none;
+}

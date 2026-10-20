@@ -9,6 +9,10 @@ import {
 } from '../../domain/reports/report'
 import type { DateRange, RangeMode } from '../../domain/reports/ranges'
 import { formatMinutes } from '../../domain/time/duration'
+import { PALETTE } from '../../domain/taxonomy/colour'
+import { ChartFrame } from './charts/ChartFrame'
+import { BarChart } from './charts/BarChart'
+import { ShareBar } from './charts/ShareBar'
 
 /**
  * The entry-only reports (0006 R1–R7).
@@ -162,7 +166,7 @@ export function EntryReports({ now, range, prepared }: EntryReportsProps) {
 
             Kept apart from the breakdown above because they are different kinds of
             figure: one is a share of a total and the other is a list of things that
-            need attention (0006 IE3).
+            need attention (0013 IE3).
           */}
           <h3>Billable</h3>
           <ul className="capacity-week-list">
@@ -217,6 +221,97 @@ export function EntryReports({ now, range, prepared }: EntryReportsProps) {
               </ul>
             </>
           )}
+
+          {/*
+            The charts, each in a frame that carries a table with the same figures
+            (0006 C3). The table is not a description of the chart: it is the chart,
+            written out, and it is what a reader who cannot see the bars reads.
+          */}
+          <ChartFrame
+            title="Time by day"
+            description="How much was tracked on each day of this period."
+            empty={days.length === 0}
+            table={
+              <table className="capacity-table">
+                <caption className="visually-hidden">Time tracked per day</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Day</th>
+                    <th scope="col">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {days.map((day) => (
+                    <tr key={day.dayKey}>
+                      <th scope="row">{day.dayKey}</th>
+                      <td>
+                        {day.totalMs === null
+                          ? '—'
+                          : formatMinutes(Math.round(day.totalMs / 60_000))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+          >
+            <BarChart
+              title="Time by day"
+              format={(minutes) => formatMinutes(minutes)}
+              data={days.map((day, index) => ({
+                // The day, shortened to the month and day: a full date on an axis is
+                // too wide for the label to be read.
+                label: day.dayKey.slice(5),
+                minutes: day.totalMs === null ? 0 : Math.round(day.totalMs / 60_000),
+                // The shared palette, in order (0002 CH3). A chart that defines its own
+                // colours would mean a colour means two things.
+                colour: PALETTE[index % PALETTE.length] ?? PALETTE[0],
+              }))}
+            />
+          </ChartFrame>
+
+          <ChartFrame
+            title="Where the time went"
+            description={`How this period's time was shared between each ${dimension}.`}
+            empty={breakdown.groups.length === 0}
+            table={
+              <table className="capacity-table">
+                <caption className="visually-hidden">Time by {dimension}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Share</th>
+                    <th scope="col">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdown.groups.map((group) => (
+                    <tr key={group.key}>
+                      <th scope="row">{group.label}</th>
+                      <td>
+                        {group.percentage === null ? '—' : `${group.percentage.toFixed(1)}%`}
+                      </td>
+                      <td>
+                        {group.totalMs === null
+                          ? '—'
+                          : formatMinutes(Math.round(group.totalMs / 60_000))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            }
+          >
+            <ShareBar
+              title="Where the time went"
+              format={(percentage) => `${percentage.toFixed(1)}%`}
+              data={breakdown.groups.map((group, index) => ({
+                label: group.label,
+                percentage: group.percentage ?? 0,
+                colour: PALETTE[index % PALETTE.length] ?? PALETTE[0],
+              }))}
+            />
+          </ChartFrame>
         </>
       )}
     </section>
