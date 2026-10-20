@@ -49,7 +49,19 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
   const [startValue, setStartValue] = useState(() =>
     toLocalInputValue(entry ? new Date(entry.start) : now),
   )
-  const [mode, setMode] = useState<InputMode>('duration')
+  /*
+   * An end time by default when editing; a duration by default when adding.
+   *
+   * 0004 M3 made the duration the default input, and that is still right for a *new*
+   * entry: "about three hours, starting after lunch" is how people recall work, and
+   * asking for an end time first invites an error.
+   *
+   * It is not right for an existing entry, which already has a known end. There the
+   * question is "when did it actually end?", and a duration field asks the user to
+   * convert an end time into a length before they can change it — which is a step
+   * that has no answer and can be got wrong silently.
+   */
+  const [mode, setMode] = useState<InputMode>(entry === undefined ? 'duration' : 'end')
   const [durationValue, setDurationValue] = useState(() =>
     entry && entry.end !== null
       ? toDurationInputValue(new Date(entry.end).getTime() - new Date(entry.start).getTime())
@@ -297,6 +309,50 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
     >
       <h2 id="entry-form-heading">{entry ? 'Edit entry' : 'Add entry'}</h2>
 
+      {/*
+        Save, Cancel and Delete at the top of the card (item 77).
+
+        At the bottom, the buttons were at the end of a long scroll — and on a phone,
+        after the fields, which is the worst place to put the control the user came to
+        press. The form is short enough that the top and the bottom are both reachable
+        without scrolling, so the top is where the actions belong.
+
+        The order is deliberate: Save first, then Cancel, then Delete. Delete is last
+        because it is the only one of the three that is not undoable from here.
+      */}
+      <div className="button-row">
+        {/*
+          Item 33: editing an entry focuses Save, because the overwhelmingly common reason
+          to be on this screen is finishing the entry that was just stopped.
+
+          Not on "Add entry" for a new entry, and the difference is deliberate. A new entry
+          has no work in it yet — the times are empty — so Save would either fail
+          validation immediately or, worse, save an entry with nothing in it. Focusing a
+          control that cannot yet succeed is worse than focusing nothing.
+        */}
+        <button
+          type="submit"
+          className="button button-primary"
+          disabled={submitting}
+          autoFocus={entry !== undefined}
+          data-testid="entry-submit"
+        >
+          {entry ? 'Save changes' : 'Add entry'}
+        </button>
+        <a className="button" href="#/">
+          Cancel
+        </a>
+        {entry && onDelete && (
+          <button
+            type="button"
+            className="button button-danger"
+            onClick={() => onDelete(entry)}
+          >
+            Delete
+          </button>
+        )}
+      </div>
+
       <div className="field">
         <label htmlFor="entry-start">Start</label>
         <input
@@ -495,39 +551,6 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
           </ul>
         </div>
       )}
-
-      <div className="button-row">
-        {/*
-          Item 33: editing an entry focuses Save, because the overwhelmingly common reason
-          to be on this screen is finishing the entry that was just stopped.
-
-          Not on "Add entry" for a new entry, and the difference is deliberate. A new entry
-          has no work in it yet — the times are empty — so Save would either fail
-          validation immediately or, worse, save an entry with nothing in it. Focusing a
-          control that cannot yet succeed is worse than focusing nothing.
-        */}
-        <button
-          type="submit"
-          className="button button-primary"
-          disabled={submitting}
-          autoFocus={entry !== undefined}
-          data-testid="entry-submit"
-        >
-          {entry ? 'Save changes' : 'Add entry'}
-        </button>
-        <a className="button" href="#/">
-          Cancel
-        </a>
-        {entry && onDelete && (
-          <button
-            type="button"
-            className="button button-danger"
-            onClick={() => onDelete(entry)}
-          >
-            Delete
-          </button>
-        )}
-      </div>
     </form>
   )
 }

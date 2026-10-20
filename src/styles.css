@@ -854,22 +854,48 @@ code {
   min-width: 2.35rem;
 }
 
-/* The discard cross, in the one colour that says "this throws the work away". */
 /*
- * The discard cross, in the colour that says "this throws the work away".
+ * The edit control beside a running timer (item 78).
  *
- * Extends `.button-danger`, which already carries that colour for text buttons, rather than
- * restating the token: the hover wash is the part that had to be spelled out, because the
- * base rule has no hover of its own.
+ * Deliberately *not* the danger colour it inherited from the discard button it
+ * replaced. A pencil that opens an entry's sheet is not destructive, and painting it
+ * red says otherwise — and a red control next to the timer is the last thing that
+ * should look like a warning.
  */
-.timer-discard {
-  color: var(--danger);
-  border-color: var(--danger);
+.timer-edit:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.timer-discard:hover {
-  background: var(--danger);
-  color: var(--surface);
+/*
+ * Larger tap targets on a touch device (item 76).
+ *
+ * The timer card's start and stop controls are the ones pressed most often and most
+ * quickly, and 2.35rem is about 38px — under the 44px that is the accepted minimum for
+ * a finger, and under the size at which a tap starts landing next to the control
+ * rather than on it.
+ *
+ * Scoped to a coarse pointer rather than to a narrow viewport, because "on a phone" is
+ * not the same question as "on a narrow screen": a small window on a desktop is
+ * usually being driven by a mouse, and a touchscreen laptop is a coarse pointer
+ * whatever its size. The media query is also not a preference, so a device that
+ * reports no pointer at all keeps the smaller target rather than being guessed at.
+ *
+ * The slot has to grow with the button, because the slot exists to stop the row
+ * resizing when the timer starts (item 35) — and a slot that stayed the old size
+ * would defeat it.
+ */
+@media (pointer: coarse) {
+  .timer-client-actions .button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0.6rem 0;
+  }
+
+  .timer-action-slot {
+    width: 2.75rem;
+    min-width: 2.75rem;
+  }
 }
 
 /* The orphan row's controls, icon-sized for the same reason the client rows' are. */

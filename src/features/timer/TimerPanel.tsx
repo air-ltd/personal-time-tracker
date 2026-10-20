@@ -8,7 +8,7 @@ import { useEntries } from '../entries/useEntries'
 import type { TimerState } from '../timer/useTimer'
 import type { Client, Project } from '../../domain/taxonomy/types'
 import { AddToHeading } from '../../app/AddToHeading'
-import { PlayIcon, StopIcon, TrashIcon } from '../../app/Icons'
+import { EditIcon, PlayIcon, StopIcon } from '../../app/Icons'
 
 /**
  * Timer panel: the one thing a user touches most often.
@@ -234,7 +234,7 @@ function ClientList({
   editingId: string | null | undefined
   onEdit: (next: string | null | undefined) => void
 }) {
-  const { running, elapsedMs, start, stop, discard } = timer
+  const { running, elapsedMs, start, stop } = timer
   /*
    * Each client's default project, and the set of project ids that map was read from.
    *
@@ -515,15 +515,23 @@ function ClientList({
                         stopping does not resize the row — the defect item 35 was written for,
                         which a discard that appears and vanishes would bring straight back.
                       */}
-                        <button
-                          type="button"
-                          className="button timer-discard"
-                          onClick={discard}
-                          aria-label={`Discard the timer for ${client.name}`}
-                          title={`Discard the timer for ${client.name}. The time recorded so far is thrown away and nothing is saved.`}
+                        {/*
+                          Edit rather than discard (item 78).
+
+                          The running entry already exists, so there is something to
+                          *correct* — a project picked wrongly, a note — and a discard
+                          threw that away. The pencil opens the entry's own sheet, where
+                          the same Delete button is available for the times the entry
+                          really should not have been recorded at all.
+                        */}
+                        <a
+                          className="button timer-edit"
+                          href={`#/entries/${running.id}`}
+                          aria-label={`Edit the timer for ${client.name}`}
+                          title={`Edit the timer for ${client.name}`}
                         >
-                          <TrashIcon />
-                        </button>
+                          <EditIcon />
+                        </a>
                       </>
                     ) : (
                       <>
@@ -558,10 +566,10 @@ function ClientList({
                           <PlayIcon />
                         </button>
                         {/*
-                        The discard slot, held open while idle. An `aria-hidden` span rather
+                        The second slot, held open while idle. An `aria-hidden` span rather
                         than a disabled button: a disabled control is still in the tab order
                         and still announced as something available to press, and there is
-                        nothing to discard while nothing is running.
+                        nothing to edit while nothing is running.
                       */}
                         <span className="timer-action-slot" aria-hidden="true" />
                       </>
@@ -640,15 +648,15 @@ function ClientList({
                                 >
                                   <StopIcon />
                                 </button>
-                                <button
-                                  type="button"
-                                  className="button timer-discard"
-                                  onClick={discard}
-                                  aria-label={`Discard the timer for ${project.name}`}
-                                  title={`Discard the timer for ${project.name}. The time recorded so far is thrown away and nothing is saved.`}
+                                {/* Edit rather than discard — see the client row above. */}
+                                <a
+                                  className="button timer-edit"
+                                  href={`#/entries/${running.id}`}
+                                  aria-label={`Edit the timer for ${project.name}`}
+                                  title={`Edit the timer for ${project.name}`}
                                 >
-                                  <TrashIcon />
-                                </button>
+                                  <EditIcon />
+                                </a>
                               </>
                             ) : (
                               <>
@@ -716,15 +724,20 @@ function ClientList({
             >
               <StopIcon />
             </button>
-            <button
-              type="button"
-              className="button timer-discard"
-              onClick={discard}
-              aria-label="Discard the timer"
-              title="Discard the timer. The time recorded so far is thrown away and nothing is saved."
+            {/*
+              Edit rather than discard (item 78). The running entry is a real entry, so
+              there is something to correct rather than only to throw away — and the
+              sheet it opens has the Delete button for the times it really should not
+              have been recorded at all.
+            */}
+            <a
+              className="button timer-edit"
+              href={`#/entries/${running.id}`}
+              aria-label="Edit the timer"
+              title="Edit the timer"
             >
-              <TrashIcon />
-            </button>
+              <EditIcon />
+            </a>
           </span>
           {/* The reminder belongs with the controls whoever is watching them, whichever
               row that turned out to be. */}

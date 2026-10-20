@@ -917,24 +917,33 @@ describe('the timer row controls (item 63)', () => {
     idle.unmount()
 
     const cleanup = await renderRunning('Other Co', 'Work')
-    for (const name of ['Stop the timer for Other Co', 'Discard the timer for Other Co']) {
+    for (const name of ['Stop the timer for Other Co', 'Edit the timer for Other Co']) {
       // Matched as a prefix rather than for equality: the tooltip may add a sentence to the
       // accessible name, which is the point of it, but it must never name a *different*
       // control — so the two have to start with the same words.
-      expect(screen.getByRole('button', { name }).getAttribute('title')).toMatch(
+      //
+      // The edit control is a link (item 78) and the stop control is a button, so the
+      // role differs; the rule about the tooltip is the same for both.
+      const control = screen.getByRole(name.startsWith('Edit') ? 'link' : 'button', { name })
+      expect(control.getAttribute('title')).toMatch(
         new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`),
       )
     }
     cleanup()
   })
 
-  it('uses a wastebasket rather than a cross for discard', async () => {
-    // A cross reads as "close this". Discard throws recorded work away, and the bin says so.
+  it('uses a pencil rather than a bin, and opens the entry sheet (item 78)', async () => {
+    // A bin throws recorded work away. The running entry is a real entry, so there is
+    // something to correct rather than only to discard — and the pencil says so.
     const cleanup = await renderRunning('Acme Ltd', 'Work')
 
-    const discard = screen.getByRole('button', { name: 'Discard the timer for Acme Ltd' })
-    expect(discard.className).toContain('timer-discard')
-    expect(discard.querySelector('svg')).not.toBeNull()
+    const edit = screen.getByRole('link', { name: 'Edit the timer for Acme Ltd' })
+    expect(edit.className).toContain('timer-edit')
+    // Not the danger colour it inherited from the discard button it replaced: a pencil
+    // that opens an entry's sheet is not destructive.
+    expect(edit.className).not.toContain('timer-discard')
+    expect(edit.querySelector('svg')).not.toBeNull()
+    expect(edit.getAttribute('href')).toMatch(/^#\/entries\//)
     cleanup()
   })
 
@@ -945,7 +954,7 @@ describe('the timer row controls (item 63)', () => {
 
     const slot = (await row('Acme Ltd')).querySelector('.timer-action-slot')
     expect(slot).not.toBeNull()
-    // Hidden from assistive tech: there is nothing to discard while nothing is running, and
+    // Hidden from assistive tech: there is nothing to edit while nothing is running, and
     // a disabled control would still be announced as something to press.
     expect(slot?.getAttribute('aria-hidden')).toBe('true')
     idle.unmount()
@@ -960,9 +969,10 @@ describe('the timer row controls (item 63)', () => {
       await screen.findByRole('button', { name: 'Stop the timer for Other Co' })
     ).closest('li')
     expect(runningRow?.querySelector('.timer-action-slot')).toBeNull()
+    // The edit control is a link, not a button (item 78).
     expect(
-      within(runningRow as HTMLElement).getByRole('button', {
-        name: 'Discard the timer for Other Co',
+      within(runningRow as HTMLElement).getByRole('link', {
+        name: 'Edit the timer for Other Co',
       }),
     ).toBeInTheDocument()
     cleanup()
@@ -1027,7 +1037,7 @@ describe('a project row runs its own timer (items 61 and 63)', () => {
     }
   }
 
-  it('gives the running project its own Stop and discard', async () => {
+  it('gives the running project its own Stop and edit', async () => {
     /*
      * The bug this fixes: a timer started against a project could only be stopped from the
      * client row above it, so the project you were working on had no control of its own and
@@ -1035,14 +1045,14 @@ describe('a project row runs its own timer (items 61 and 63)', () => {
      */
     const { cleanup } = await withRunningProject('Website')
 
-    // Stop and discard live on the project's row, not only on the client's.
+    // Stop and edit live on the project's row, not only on the client's.
     const projectRow = screen
       .getByRole('button', { name: 'Stop the timer for Website' })
       .closest('li')
     expect(projectRow?.className).toContain('timer-project-row-active')
     expect(
-      within(projectRow as HTMLElement).getByRole('button', {
-        name: 'Discard the timer for Website',
+      within(projectRow as HTMLElement).getByRole('link', {
+        name: 'Edit the timer for Website',
       }),
     ).toBeInTheDocument()
     expect(
@@ -1100,13 +1110,14 @@ describe('a project row runs its own timer (items 61 and 63)', () => {
     cleanup()
   })
 
-  it('discards the timer from the project row', async () => {
+  it('edits the timer from the project row, rather than throwing it away (item 78)', async () => {
     const { discarded, cleanup } = await withRunningProject('Website')
 
-    await user.click(screen.getByRole('button', { name: 'Discard the timer for Website' }))
+    const edit = screen.getByRole('link', { name: 'Edit the timer for Website' })
+    expect(edit.getAttribute('href')).toMatch(/^#\/entries\//)
 
-    await waitFor(() => expect(discarded()).toBe(1))
-    // Discarding writes nothing, so there is no notice — and none should appear.
+    // Editing discards nothing: the running entry is still running, and still there.
+    expect(discarded()).toBe(0)
     expect(screen.queryByTestId('just-stopped')).toBeNull()
     cleanup()
   })
@@ -1116,14 +1127,15 @@ describe('a project row runs its own timer (items 61 and 63)', () => {
 
     for (const name of [
       'Stop the timer for Website',
-      'Discard the timer for Website',
+      'Edit the timer for Website',
       'Start a timer for Other Work',
     ]) {
-      const button = screen.getByRole('button', { name })
-      expect(button.querySelector('svg')).not.toBeNull()
+      // The edit control is a link; the other two are buttons (item 78).
+      const control = screen.getByRole(name.startsWith('Edit') ? 'link' : 'button', { name })
+      expect(control.querySelector('svg')).not.toBeNull()
       // The tooltip opens with the accessible name, for the same reason: a shape with a
       // tooltip that describes something else is worse than no tooltip.
-      expect(button.getAttribute('title')).toMatch(new RegExp(`^${name}`))
+      expect(control.getAttribute('title')).toMatch(new RegExp(`^${name}`))
     }
     cleanup()
   })

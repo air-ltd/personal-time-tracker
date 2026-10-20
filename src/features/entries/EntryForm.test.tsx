@@ -315,6 +315,10 @@ describe('duration in seconds (item 30)', () => {
 
     render(<EntryForm now={new Date('2026-10-13T10:00:00.000Z')} entry={stored} />)
 
+    // The edit form opens on an end time (item 77), so the duration field is one radio
+    // away rather than on the screen. The rule this test protects — that a short entry
+    // keeps its seconds — is about the field, wherever it is.
+    await user.click(await screen.findByRole('radio', { name: 'Enter a duration' }))
     expect(await screen.findByLabelText('Duration')).toHaveValue('00:00:25')
   })
 
@@ -326,6 +330,7 @@ describe('duration in seconds (item 30)', () => {
 
     render(<EntryForm now={new Date('2026-10-13T11:00:00.000Z')} entry={stored} />)
 
+    await user.click(await screen.findByRole('radio', { name: 'Enter a duration' }))
     expect(await screen.findByLabelText('Duration')).toHaveValue('01:30')
   })
 
@@ -408,6 +413,7 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     const stored = await running()
 
     render(<EntryForm now={LATER} entry={stored} />)
+    await user.click(await screen.findByRole('radio', { name: 'Enter a duration' }))
     await user.type(await screen.findByLabelText('Duration'), '30')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -421,7 +427,7 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     const stored = await running()
 
     render(<EntryForm now={LATER} entry={stored} />)
-    await user.click(await screen.findByRole('radio', { name: 'Enter an end time' }))
+    // The edit form opens on an end time (item 77), so no radio needs choosing here.
     // `user.type` is unreliable on a datetime-local input — it types characters rather
     // than filling segments — so the value is set the way a browser would.
     //

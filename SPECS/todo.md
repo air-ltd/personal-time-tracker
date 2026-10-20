@@ -475,9 +475,37 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     the app still looking healthy; a tombstone dropped by the merge resurrects a project the
     user deleted three versions ago and republishes it.
 75. [ ] dropbox sync should auto check/refresh every 5-10 seconds to ensure consistency with what is in dropbox (user likely to work with multiple devices). The rate of this polling should be configurable with default at 10s
-76. [ ] touch targets for start/stop should be larger on mobile screen.
-77. [ ] on edit screen default to enter end time rather than hours worked. Also save/cancel delete should be at the top of the edit card, not the bottom.
-78. [ ] when a timer is running, rather than having a delete option beside it, do an edit option (pencil icon) that open edit sheet.
+76. [x] **touch targets for start/stop should be larger on mobile screen.** Done. The timer
+    card's start and stop controls were 2.35rem — about 38px — and are now 2.75rem, which is
+    44px, on a coarse pointer. Scoped to `(pointer: coarse)` rather than to a narrow
+    viewport, because "on a phone" and "on a narrow screen" are different questions: a
+    small window on a desktop is usually driven by a mouse, and a touchscreen laptop is a
+    coarse pointer whatever its size.
+    The idle placeholder slot grows with them, because the slot exists to stop the row
+    resizing when the timer starts (item 35) and a slot left at the old size would
+    defeat it.
+77. [x] **on edit screen default to enter end time rather than hours worked. Also
+    save/cancel delete should be at the top of the edit card, not the bottom.** Done.
+    The end time is now the default *when editing*; a new entry still opens on a
+    duration, because "about three hours" is how people recall work and there is no
+    known end to offer. 0004 M3 is amended to say so, rather than the code quietly
+    disagreeing with it.
+    The three buttons moved to the top of the card. At the bottom they were at the end
+    of a long scroll, and on a phone that is the worst place to put the control the
+    user came to press. Save first, then Cancel, then Delete — Delete last, because it
+    is the only one of the three that is not undoable from there.
+78. [x] **when a timer is running, rather than having a delete option beside it, do an
+    edit option (pencil icon) that open edit sheet.** Done, in all three places a
+    running timer offered one: the client row, the project row, and the running-timer
+    panel.
+    The reasoning is that a running entry is a *real* entry. There is something to
+    correct — a project picked wrongly, a note to add — and a discard threw that away.
+    The pencil opens the entry's own sheet, where the same Delete button is available
+    for the times the entry really should not have been recorded at all, so nothing was
+    lost: the capability moved rather than disappeared.
+    The pencil is deliberately *not* the danger colour the bin had. A control that
+    opens a sheet is not destructive, and a red control next to the timer is the last
+    thing that should look like a warning.
 79. [x] **a concept of the number of hours expected to work.** Decided and written into the
     specs, and it is the Phase 6 capacity feature. Three decisions were made, and each one
     is a narrowing of what the spec originally said:
