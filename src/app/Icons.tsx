@@ -245,6 +245,25 @@ export function InfoIcon({ size = 16, weight = 2 }: IconProps) {
   )
 }
 
+/**
+ * A bar chart — "Reports".
+ *
+ * Three upright bars of different heights inside an implied frame. Bars rather than a
+ * line: the reports this marks are mostly totals and breakdowns, and a line reads as a
+ * trend, which is one of several things the screen offers rather than the thing it is.
+ *
+ * Drawn in the same weight and optical size as the cog and the menu mark, so the menu
+ * does not look like it contains an item from a different set.
+ */
+export function ChartIcon({ size = 16, weight = 2 }: IconProps) {
+  return (
+    <Svg size={size} weight={weight}>
+      <path d="M4 20V11M10 20V5M16 20v-6" />
+      <path d="M2.5 20.5h17" />
+    </Svg>
+  )
+}
+
 /** A chevron, for the collapsible cards (items 25, 26). */
 export function ChevronIcon({ size = 16, weight }: IconProps) {
   return (

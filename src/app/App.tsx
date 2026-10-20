@@ -17,6 +17,7 @@ import { SyncProvider } from '../features/sync/SyncProvider'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { AboutPage } from './AboutPage'
 import { HeaderMenu } from '../features/settings/HeaderMenu'
+import { CapacityReport } from '../features/capacity/CapacityReport'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
 import { appHomeUrl } from '../sync/redirect'
@@ -33,6 +34,7 @@ const ROUTES: readonly Route[] = [
   { path: '/entries/new' },
   { path: '/entries/:id' },
   { path: '/settings' },
+  { path: '/reports' },
   { path: '/about' },
 ]
 
@@ -198,7 +200,7 @@ export function App() {
                 stops growing a button for every setting and the entries get the room back.
                 0005 P1 still holds — the menu is one interaction, then the form is the
                 second. */}
-            <HeaderMenu settingsHref="#/settings" aboutHref="#/about" />
+            <HeaderMenu settingsHref="#/settings" reportsHref="#/reports" aboutHref="#/about" />
           </div>
         </header>
 
@@ -257,6 +259,8 @@ export function App() {
           {match?.route.path === '/settings' && (
             <SettingsPage now={now} theme={theme} onThemeChange={onThemeChange} />
           )}
+
+          {match?.route.path === '/reports' && <CapacityReport now={now} />}
 
           {match?.route.path === '/about' && <AboutPage />}
 

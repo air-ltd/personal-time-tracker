@@ -501,15 +501,15 @@ async function main() {
     // settings page, where there is room to explain what a backup is. Four items now —
     // About joined the three, and it keeps the same one-word-named rule.
     check(
-      'the menu holds four named buttons and no prose',
-      (await page.locator('.header-menu-panel .header-menu-item').count()) === 4 &&
+      'the menu holds five named buttons and no prose',
+      (await page.locator('.header-menu-panel .header-menu-item').count()) === 5 &&
         (await page.getByRole('heading', { name: /^Backup/ }).count()) === 0,
     )
     check(
       'the menu buttons are stacked vertically',
       await page.evaluate(() => {
         const items = [...document.querySelectorAll('.header-menu-panel .header-menu-item')]
-        if (items.length !== 4) return false
+        if (items.length !== 5) return false
         const tops = items.map((item) => item.getBoundingClientRect().top)
         return tops.every((top, index) => index === 0 || tops[index - 1] < top)
       }),
@@ -518,6 +518,7 @@ async function main() {
       'each menu button has its word beside the icon',
       (await page.getByTestId('header-menu-download').innerText()).trim() === 'download' &&
         (await page.getByTestId('header-menu-restore').innerText()).trim() === 'import' &&
+        (await page.getByTestId('header-menu-reports').innerText()).trim() === 'Reports' &&
         (await page.getByTestId('header-menu-about').innerText()).trim() === 'About',
     )
     check(
@@ -1607,6 +1608,90 @@ async function main() {
       'a non-production origin is marked dev in the title (item 40)',
       (await page.locator('.app-header .env-badge').count()) === 1,
     )
+
+    // 15. Expected hours: set a client's budget, and see it compared against what was
+    // actually tracked (0003 CT1-CT9, 0013 CR1-CR3).
+    //
+    // In a browser because the whole feature is a round trip: a form, an IndexedDB
+    // write, a read at render time, and a figure that depends on both. jsdom can check
+    // each half in isolation and would not catch the two halves disagreeing.
+    await page.goto(`${URL_BASE}/#/settings`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Expected hours' }).waitFor()
+
+    // A client with no expected hours has nothing to compare against, and says so.
+    const contractRows = page.locator('.contract-row')
+    check(
+      'each client has a row in the expected-hours panel',
+      (await contractRows.count()) > 0,
+      String(await contractRows.count()),
+    )
+    check(
+      'a client with no budget says so rather than showing a figure',
+      (await page.getByText('No expected hours set').count()) > 0,
+    )
+
+    // Set a budget for the first client.
+    await contractRows
+      .first()
+      .getByRole('button', { name: /Set hours|Edit hours/ })
+      .click()
+    const hoursField = page.getByLabel('Hours expected per week')
+    await hoursField.waitFor()
+    await hoursField.fill('20')
+    await page.getByRole('button', { name: 'Save expected hours' }).click()
+
+    // The row now shows the hours, and the figure survives a reload — which is the
+    // claim that actually matters, because the number is computed at read time from
+    // what is in the database rather than from what was in the form.
+    await page.getByText('20 hours a week').waitFor()
+    check('a saved budget is shown on the client row', true)
+
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Expected hours' }).waitFor()
+    check('the budget survives a reload', (await page.getByText('20 hours a week').count()) > 0)
+
+    // The report: expected against actual, for the same client.
+    await page.goto(`${URL_BASE}/#/reports`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Expected against actual' }).waitFor()
+    const capacityRow = page.locator('.capacity-table tbody tr').first()
+    await capacityRow.waitFor()
+
+    const rowText = await capacityRow.innerText()
+    const cells = await capacityRow.locator('td').allInnerTexts()
+
+    // The expected figure is the contract's week: 20 hours, so 1,200 minutes.
+    check(
+      'the report shows the expected hours for a client with a budget',
+      cells[0]?.trim() === '20h',
+      rowText,
+    )
+    check('the report shows a utilisation figure', /\d+(\.\d+)?%|—/.test(rowText), rowText)
+
+    // The tracked figure is minutes, not milliseconds. A unit slip here produces a
+    // number thousands of times too large, and it still looks like a plausible
+    // duration — so the check is on the magnitude, not on the presence of a figure.
+    const trackedCell = cells[1]?.trim() ?? ''
+    const trackedHours = /^(?:([\d.]+)h)?\s*(?:([\d.]+)m)?$/.exec(trackedCell)
+    const totalHours =
+      trackedHours === null
+        ? Number.NaN
+        : Number(trackedHours[1] ?? 0) + Number(trackedHours[2] ?? 0) / 60
+    check(
+      'the tracked figure is in minutes rather than milliseconds',
+      Number.isFinite(totalHours) && totalHours < 1000,
+      trackedCell,
+    )
+
+    // A client with no budget has no denominator, so its utilisation is unknown and
+    // renders as a dash rather than as 0% (0013 CP-A6). The em dash is the character
+    // the spec names, and it must not be confused with zero.
+    const dashCount = await page
+      .locator('.capacity-table tbody tr td')
+      .filter({
+        hasText: /^—$/,
+      })
+      .count()
+    check('a client with no contract shows an unknown utilisation, not zero', dashCount > 0)
 
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))
     check('no failed requests overall', failedRequests.length === 0, failedRequests.join(' | '))

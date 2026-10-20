@@ -1878,3 +1878,100 @@ code {
   text-transform: uppercase;
   vertical-align: middle;
 }
+
+/*
+ * Expected hours (0013 CR1–CR3, 0003 CT1–CT9).
+ *
+ * The client row is a summary line with its edit control at the end, so the common
+ * case — reading which clients have a budget — costs one line each and no interaction.
+ */
+
+.contract-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.contract-row {
+  border-top: 1px dotted var(--border);
+  padding: 0.5rem 0;
+}
+
+.contract-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.contract-name {
+  font-weight: 500;
+}
+
+.contract-days {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/*
+ * The label wraps the checkbox so the whole day is the hit target, not just the box.
+ * The visible text is the short name and the full name is for screen readers, so the
+ * two are not read out as "Mon Monday".
+ */
+.contract-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.contract-per-day {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.capacity-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.capacity-table th,
+.capacity-table td {
+  text-align: start;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.capacity-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.capacity-weeks {
+  margin-top: 0.75rem;
+}
+
+.capacity-week-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.capacity-week-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.capacity-week {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
