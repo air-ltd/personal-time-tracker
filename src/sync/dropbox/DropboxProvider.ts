@@ -423,7 +423,13 @@ export class DropboxProvider implements SyncProvider {
   }
 
   async status(): Promise<ProviderStatus> {
-    return { authenticated: await this.hasUsableToken() }
+    const tokens = toTokens(await this.storage.read())
+    return {
+      authenticated: await this.hasUsableToken(),
+      // The account the token belongs to. Read from the stored token rather than
+      // asked for again, so the answer costs nothing.
+      ...(tokens?.accountId === undefined ? {} : { accountId: tokens.accountId }),
+    }
   }
 
   async pull(path: string): Promise<RemoteFile | null> {

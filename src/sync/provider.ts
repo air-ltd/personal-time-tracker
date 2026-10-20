@@ -55,6 +55,15 @@ export interface RemoteFile {
 
 export interface ProviderStatus {
   authenticated: boolean
+  /**
+   * The provider's account id, when the provider knows it.
+   *
+   * Optional because not every provider can answer cheaply, and because an
+   * account that cannot be identified must not be treated as a different one — a
+   * guard that blocked every sync because it could not read an id would be worse
+   * than the thing it prevents.
+   */
+  accountId?: string
 }
 
 export interface SyncProvider {

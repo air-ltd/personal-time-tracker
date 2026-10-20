@@ -70,6 +70,17 @@ export interface SyncConfig {
    * just disconnected from, and never offers the button that would fix it.
    */
   onAuthLost?: () => void
+  /**
+   * The account this device's data is bound to, and the account the connected token
+   * belongs to.
+   *
+   * Optional, so the scheduler can be tested without a provider that can identify
+   * itself — and so a provider that cannot answer is not treated as a different
+   * account, which would block every sync.
+   */
+  readBoundAccountId?: () => Promise<string | null>
+  writeBoundAccountId?: (accountId: string) => Promise<void>
+  readConnectedAccountId?: () => Promise<string | null>
 }
 
 export interface SyncStatus {
@@ -165,6 +176,9 @@ export class SyncScheduler {
   private readonly writeLastSyncAt: (at: string) => Promise<void>
   private readonly readLastSyncAt: () => Promise<string | null>
   private readonly onAuthLost: (() => void) | undefined
+  private readonly readBoundAccountId: (() => Promise<string | null>) | undefined
+  private readonly writeBoundAccountId: ((accountId: string) => Promise<void>) | undefined
+  private readonly readConnectedAccountId: (() => Promise<string | null>) | undefined
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
   /** Armed while the tab is visible and polling is on. See `armPoll`. */
@@ -241,6 +255,37 @@ export class SyncScheduler {
     this.writeLastSyncAt = config.writeLastSyncAt ?? writeLastSyncAt
     this.readLastSyncAt = config.readLastSyncAt ?? readLastSyncAt
     this.onAuthLost = config.onAuthLost
+    this.readBoundAccountId = config.readBoundAccountId
+    this.writeBoundAccountId = config.writeBoundAccountId
+    this.readConnectedAccountId = config.readConnectedAccountId
+  }
+
+  /**
+   * Why this device's data cannot go to the connected account, or null.
+   *
+   * The local data is bound to the account it was last published to. Connecting a
+   * different one and publishing would hand the whole work history to it, so the
+   * cycle stops and the user is told.
+   *
+   * An account that cannot be identified is not a mismatch. The guard is there to
+   * stop data being shared without a word of warning, and a guard that stopped every
+   * sync because it could not read an id would be the worse of the two.
+   */
+  private async accountMismatch(): Promise<string | null> {
+    if (this.readBoundAccountId === undefined) return null
+    if (this.readConnectedAccountId === undefined) return null
+
+    const bound = await this.readBoundAccountId()
+    if (bound === null) return null
+
+    const connected = await this.readConnectedAccountId()
+    if (connected === null || connected === bound) return null
+
+    return (
+      'This device already holds work that was shared with a different Dropbox ' +
+      'account. Sharing it with this account too would put your whole work history ' +
+      'there as well, so nothing has been sent.'
+    )
   }
 
   /**
@@ -519,6 +564,7 @@ export class SyncScheduler {
         // once at startup for the status line.
         writeLastRev: this.writeLastRev,
         now: this.now,
+        findAccountMismatch: () => this.accountMismatch(),
         onLog: (entry: SyncLogEntry) => {
           if (entry.level === 'error') this.emit({ message: entry.message })
         },
@@ -560,6 +606,18 @@ export class SyncScheduler {
       }
 
       if (outcome.status === 'pushed' || outcome.status === 'up-to-date') {
+        /*
+         * Bind the local data to the account it has just been published to.
+         *
+         * Only after a successful publish, so the binding records where the data
+         * actually is rather than where it was hoped to be.
+         */
+        if (this.writeBoundAccountId !== undefined) {
+          const connected = await this.readConnectedAccountId?.()
+          if (connected !== null && connected !== undefined) {
+            await this.writeBoundAccountId(connected)
+          }
+        }
         await this.writeLastSyncAt(at)
         this.emit({ state: 'idle', lastOutcome: outcome, lastSyncAt: at, message: null })
       } else if (tokenUnusable) {

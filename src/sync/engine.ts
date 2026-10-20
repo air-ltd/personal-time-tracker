@@ -36,6 +36,15 @@ export interface SyncDeps {
   writeLastRev: (rev: string | null) => Promise<void>
   now: () => Date
   onLog?: (event: SyncLogEntry) => void
+  /**
+   * A message describing why this device's data cannot go to the connected account,
+   * or null when there is no problem.
+   *
+   * Optional, and a function rather than data, because the check needs two things the
+   * engine does not have: the account the local data is bound to, and the account the
+   * connected token belongs to.
+   */
+  findAccountMismatch?: () => Promise<string | null>
 }
 
 export interface SyncLogEntry {
@@ -58,6 +67,13 @@ export type SyncOutcome =
    * destroy whatever is really there.
    */
   | { status: 'blocked'; reason: 'corrupt-remote'; message: string }
+  /**
+   * The connected account is not the one this device's data belongs to.
+   *
+   * Publishing would hand the device's whole work history to a different account, so
+   * the cycle stops before anything moves. The user has to say so explicitly.
+   */
+  | { status: 'blocked'; reason: 'different-account'; message: string }
   | { status: 'failed'; message: string; kind: SyncError['kind'] }
 
 const MAX_ATTEMPTS = 3
@@ -88,6 +104,27 @@ export async function runSync(deps: SyncDeps): Promise<SyncOutcome> {
     }
 
     const local = await deps.readLocal()
+
+    /*
+     * 1b. Is this the account this device's data belongs to?
+     *
+     * Signing out leaves the local data behind (0012 AU7), so the data outlives the
+     * connection. Connecting a different account afterwards would find an empty
+     * remote and publish everything into it — the previous account's client names,
+     * notes and hours, handed to a different readership without a word of warning.
+     *
+     * So the cycle stops here, before anything is pulled or published. The user is
+     * told, and the way past it is explicit.
+     *
+     * An account that cannot be identified is not treated as a different one. A
+     * guard that blocked every sync because it could not read an id would be a
+     * worse failure than the one it prevents.
+     */
+    const mismatch = await deps.findAccountMismatch?.()
+    if (mismatch !== undefined && mismatch !== null) {
+      log(deps, 'error', mismatch)
+      return { status: 'blocked', reason: 'different-account', message: mismatch }
+    }
 
     // 2. Pull. Null means the file does not exist, which is a first run.
     let remote: RemoteFile | null = null

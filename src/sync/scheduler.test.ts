@@ -1014,3 +1014,91 @@ describe('polling for another device', () => {
     scheduler.stop()
   })
 })
+
+/**
+ * The account the local data belongs to.
+ *
+ * Signing out leaves the local data behind (0012 AU7), so the data outlives the
+ * connection. Connect a different account and the engine's first run finds an empty
+ * remote and publishes everything into it — the previous account's work history,
+ * handed over without a word of warning.
+ *
+ * So the cycle stops before anything moves, and the user is told.
+ */
+describe('a different Dropbox account', () => {
+  function buildWithAccounts(bound: string | null, connected: string | null) {
+    const provider = new StubProvider()
+    const statuses: SyncStatus[] = []
+    const snapshot: Snapshot = { schemaVersion: 1, entities: { entries: [] } }
+    let written: string | null = null
+
+    const scheduler = new SyncScheduler({
+      provider,
+      path: 'data.json',
+      now: () => new Date('2026-10-13T09:00:00.000Z'),
+      onStatus: (status) => statuses.push(status),
+      readLocal: () => Promise.resolve(snapshot),
+      writeLocal: () => Promise.resolve(),
+      readLastRev: () => Promise.resolve(null),
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+      readBoundAccountId: () => Promise.resolve(bound),
+      writeBoundAccountId: (accountId) => {
+        written = accountId
+        return Promise.resolve()
+      },
+      readConnectedAccountId: () => Promise.resolve(connected),
+    })
+
+    return { scheduler, statuses, bound: () => written }
+  }
+
+  it('stops the cycle and says so when the account differs', async () => {
+    const { scheduler, statuses } = buildWithAccounts('dbid:account-a', 'dbid:account-b')
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).toBe('blocked')
+    expect(last?.message).toMatch(/different Dropbox account/i)
+    scheduler.stop()
+  })
+
+  it('does not stop the cycle when the account is the same', async () => {
+    const { scheduler, statuses } = buildWithAccounts('dbid:account-a', 'dbid:account-a')
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).not.toBe('blocked')
+    scheduler.stop()
+  })
+
+  it('does not stop the cycle when there is no binding yet', async () => {
+    // A first run has no binding, and refusing to sync a device that has never
+    // synced would be the opposite of helpful.
+    const { scheduler, statuses } = buildWithAccounts(null, 'dbid:account-b')
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).not.toBe('blocked')
+    scheduler.stop()
+  })
+
+  it('does not stop the cycle when the account cannot be identified', async () => {
+    // A provider that cannot say which account it is must not be treated as a
+    // different one: a guard that blocked every sync would be the worse failure.
+    const { scheduler, statuses } = buildWithAccounts('dbid:account-a', null)
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).not.toBe('blocked')
+    scheduler.stop()
+  })
+
+  it('binds the data to the account it was published to', async () => {
+    const { scheduler, bound } = buildWithAccounts(null, 'dbid:account-b')
+    await scheduler.start()
+    expect(bound()).toBe('dbid:account-b')
+    scheduler.stop()
+  })
+})
