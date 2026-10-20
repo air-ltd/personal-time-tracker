@@ -17,7 +17,7 @@ import { SyncProvider } from '../features/sync/SyncProvider'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { AboutPage } from './AboutPage'
 import { HeaderMenu } from '../features/settings/HeaderMenu'
-import { CapacityReport } from '../features/capacity/CapacityReport'
+import { ReportsPage } from '../features/reports/ReportsPage'
 import { getEntry, restoreEntry, softDeleteEntry } from '../storage/entriesRepo'
 import { entryDurationMs } from '../domain/time/duration'
 import { appHomeUrl } from '../sync/redirect'
@@ -260,7 +260,7 @@ export function App() {
             <SettingsPage now={now} theme={theme} onThemeChange={onThemeChange} />
           )}
 
-          {match?.route.path === '/reports' && <CapacityReport now={now} />}
+          {match?.route.path === '/reports' && <ReportsPage now={now} />}
 
           {match?.route.path === '/about' && <AboutPage />}
 

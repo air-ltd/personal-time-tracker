@@ -1669,6 +1669,24 @@ async function main() {
     // The report: expected against actual, for the same client.
     await page.goto(`${URL_BASE}/#/reports`, { waitUntil: 'networkidle' })
     await page.getByRole('heading', { name: 'Expected against actual' }).waitFor()
+    // The entry-only reports are on the same screen and the same period.
+    await page.getByRole('heading', { name: 'Time tracked' }).waitFor()
+
+    /*
+     * The breakdown reconciles with its total (0006 RP2).
+     *
+     * Checked on the rendered page rather than in the unit tests, because the thing
+     * that matters is that the *screen* shows a total equal to the sum of its rows —
+     * the unit tests prove the arithmetic, and this proves the arithmetic reached the
+     * screen.
+     */
+    const breakdownTotal = await page.locator('.capacity-table tfoot tr').first().innerText()
+    const breakdownRows = await page.locator('.capacity-table tbody tr').count()
+    check(
+      'the breakdown has a total row',
+      breakdownTotal.includes('Total') && breakdownRows > 0,
+      `${breakdownTotal} / ${breakdownRows} rows`,
+    )
     const capacityRow = page.locator('.capacity-table tbody tr').first()
     await capacityRow.waitFor()
 

@@ -51,6 +51,27 @@ export interface DurationFormat {
 }
 
 /**
+ * Format a whole number of minutes as hours and minutes.
+ *
+ * For the capacity figures, which are computed in minutes rather than milliseconds:
+ * expected hours are minutes (0003 P6), so a report that converted them to
+ * milliseconds and back would be rounding twice for nothing.
+ *
+ * Separate from `formatDuration` because the unit is different, and a function that
+ * silently meant one unit when the caller meant another is how a figure comes out a
+ * thousand times too large.
+ */
+export function formatMinutes(minutes: number): string {
+  const sign = minutes < 0 ? '-' : ''
+  const absolute = Math.abs(minutes)
+  const hours = Math.floor(absolute / 60)
+  const rest = absolute % 60
+  if (hours === 0) return `${sign}${rest}m`
+  if (rest === 0) return `${sign}${hours}h`
+  return `${sign}${hours}h ${rest}m`
+}
+
+/**
  * Shared duration formatting (0008 F1–F3).
  *
  * One function for the UI and both CSV writers, so a row showing `1h 30m` cannot
