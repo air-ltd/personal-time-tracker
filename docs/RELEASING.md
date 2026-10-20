@@ -65,6 +65,15 @@ finished and is not.
 
 - [ ] The production app's `files.content.read` and `files.content.write` are ticked, and
       the redirect URI registered matches what the settings panel displays.
+- [ ] **The app checks for another device's work without being asked.** Polling is on by
+      default at ten seconds, and the rate is a setting under **Sync**. Record on one
+      device and watch the entry appear on the other. A poll asks Dropbox for the file's
+      *revision* and only downloads it when that has moved, so this should be quick and
+      should not transfer the whole file every ten seconds.
+- [ ] **Connecting a second Dropbox account does not quietly share this device's data.**
+      The app stops and says so, and offers to share it anyway as a deliberate act. Worth
+      trying once: it is the one behaviour that protects a work history from being handed
+      to an account you did not mean to put it in.
 - [ ] Connect works **against production**, not only the non-production app. Until this has
       been done once, the sync path has never run in the environment it will ship in.
 - [ ] A first sync completes, and the panel reports a time rather than "waiting".
@@ -83,6 +92,11 @@ finished and is not.
       and where both have the same entry the more recent one wins.
 - [ ] A malformed file is refused with a reason and changes nothing. A backup that half
       imports is worse than one that does not import.
+- [ ] **A record that breaks the app's own rules is left out, and the panel says how
+      many.** A file can contain an entry longer than a day, a note over the length
+      limit, or two clients with the same name; those records are dropped rather than
+      brought in, and the count is reported. Check it with a hand-edited file, and check
+      that the rest of the backup still comes back.
 
 ## After publishing
 

@@ -16,6 +16,8 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
 Expected hours: say how many hours a week you expect to spend on a client, and see
 what was actually tracked against them. This is the capacity half of Phase 6 in
 [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md), and the scope
@@ -61,6 +63,23 @@ change what the feature is.
   is multiplied. Nothing is stored: the invoice is worked out from your entries
   each time, so it can be regenerated later and compared, and changing a rate
   changes an old invoice.
+
+### Before you update a second device
+
+- **Update every device at once.** This release is data schema 5; 0.2.0 was schema 4.
+  Once one device is on 0.3.0 the file in Dropbox is schema 5 — and a device still
+  on 0.2.0 will **refuse to sync** rather than guess, saying that it does not
+  understand the schema.
+
+  That refusal is deliberate (0012 M9): reading a file whose shape you cannot
+  interpret is how data gets corrupted. The cost is a rollout one, and it is the
+  only thing in this release a user can hit through no action of their own. If you
+  have two devices, bring both up to date before relying on sync again.
+
+  Your data is not at risk — nothing is written by the device that refuses — but it
+  will stop moving until it is updated. The refusal is one-way: 0.3.0 reads a
+  0.2.0 file without complaint, so you can update one device first, and the other
+  will only start failing once the first has published.
 
 ### Changed — the schema
 

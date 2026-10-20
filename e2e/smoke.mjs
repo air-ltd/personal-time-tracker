@@ -574,6 +574,140 @@ async function main() {
       await status.innerText().catch(() => ''),
     )
 
+    /*
+     * Restoring a backup (0007 F-EXPORT-4–7).
+     *
+     * The release checklist has three items about the restore path, and the browser suite
+     * had none of them covered: the file input was never used. That is the gate that can
+     * only be taken in a browser — the import reads a file through a file picker, and
+     * jsdom has no file picker.
+     */
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    const fileInput = page.getByTestId('backup-file')
+
+    // A file that is not a backup at all is refused, and changes nothing.
+    const entriesBefore = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const count = await new Promise((resolve) => {
+        const g = db.transaction('entries', 'readonly').objectStore('entries').count()
+        g.onsuccess = () => resolve(g.result)
+        g.onerror = () => resolve(-1)
+      })
+      db.close()
+      return count
+    })
+
+    await fileInput.setInputFiles({
+      name: 'not-a-backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"hello":"world"}'),
+    })
+    await page.getByTestId('backup-status').waitFor()
+    const refusal = await page.getByTestId('backup-status').innerText()
+    check(
+      'a file that is not a backup is refused with a reason',
+      /not imported|nothing was imported|not valid/i.test(refusal),
+      refusal,
+    )
+
+    const entriesAfterRefusal = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const count = await new Promise((resolve) => {
+        const g = db.transaction('entries', 'readonly').objectStore('entries').count()
+        g.onsuccess = () => resolve(g.result)
+        g.onerror = () => resolve(-1)
+      })
+      db.close()
+      return count
+    })
+    check(
+      'a refused file changes nothing',
+      entriesAfterRefusal === entriesBefore,
+      `${entriesBefore} -> ${entriesAfterRefusal}`,
+    )
+
+    // A real backup, taken here and restored over the top, keeps everything and adds
+    // the entry that was made after the backup was taken. A restore merges; it does not
+    // replace (0007 F-EXPORT-5).
+    const backup = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const read = (store) =>
+        new Promise((resolve, reject) => {
+          const g = db.transaction(store, 'readonly').objectStore(store).getAll()
+          g.onsuccess = () => resolve(g.result)
+          g.onerror = () => reject(g.error)
+        })
+      const snapshot = {
+        entries: await read('entries'),
+        projects: await read('projects'),
+        clients: await read('clients'),
+        tags: await read('tags'),
+      }
+      db.close()
+      return {
+        format: 'personal-time-tracker-backup',
+        formatVersion: 1,
+        schemaVersion: 5,
+        exportedAt: new Date().toISOString(),
+        counts: {
+          entries: snapshot.entries.length,
+          projects: snapshot.projects.length,
+          clients: snapshot.clients.length,
+          tags: snapshot.tags.length,
+        },
+        data: snapshot,
+      }
+    })
+
+    // Record something after the backup was taken, then restore the backup.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: 'Start' }).click()
+    await page.waitForTimeout(300)
+    await page.getByRole('button', { name: 'Stop' }).click()
+    await page.waitForTimeout(600)
+
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    await page.getByTestId('backup-file').setInputFiles({
+      name: 'backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(backup)),
+    })
+    await page.getByTestId('backup-status').waitFor()
+    const restored = await page.getByTestId('backup-status').innerText()
+    check('a backup restores and says what it restored', /restored/i.test(restored), restored)
+
+    const merged = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const count = await new Promise((resolve) => {
+        const g = db.transaction('entries', 'readonly').objectStore('entries').count()
+        g.onsuccess = () => resolve(g.result)
+        g.onerror = () => resolve(-1)
+      })
+      db.close()
+      return count
+    })
+    check(
+      'restoring merges rather than replaces (0007 F-EXPORT-5)',
+      merged > entriesBefore,
+      `${entriesBefore} -> ${merged}`,
+    )
+
     // 12. Taxonomy on an entry, end to end (0005 P1, N2, U1, T1, Phase 4 gate).
     // Driven through the real UI rather than seeded into IndexedDB, because the parts
     // worth covering here are the ones only a browser can exercise: the picker populating

@@ -6,14 +6,15 @@ optionally syncs to your own Dropbox.
 
 ## Status
 
-**Released as 0.2.0** (13 October 2026), covering Phases 1 to 4 plus a rebuild of the
-settings page and the timer card. Later phases — reports, capacity, invoicing — are not
-in this version; see [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md)
-for the phase sequence and each phase's gate.
+**Released as 0.3.0** (21 October 2026), covering Phases 1 to 6: reports, charts, an
+invoice, and expected hours per client. See
+[`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md) for the phase
+sequence and each phase's gate.
 
-What changed in 0.2.0: clients and their projects are one list, a project is added from
-the list it joins, the timer card has one control per client, and the Dropbox state is
-carried by a mark rather than a word.
+What changed in 0.3.0: you can say how many hours a week you expect to spend on a
+client and see what was actually tracked against them; there is a reports screen with
+breakdowns, charts and an invoice; the app checks Dropbox for another device's work
+every ten seconds; and the edit sheet handles times to the second.
 
 - What has changed: [`CHANGELOG.md`](CHANGELOG.md), also readable in the app under
   **About**.
@@ -30,7 +31,10 @@ carried by a mark rather than a word.
 | 2B | Dropbox sync, cross-device merge, backup/restore | Done |
 | 3 | Test suite, property tests, silent-failure gate | Done |
 | 4 | Projects, clients, tags | Done |
-| 5+ | Reports, capacity, invoicing | Not started |
+| 5 | Reports, charts, invoice | Done |
+| 6 | Expected hours per client, and the comparison against actual | Done |
+| 7 | CSV export | Not started |
+| 8 | Release hardening, erase-all | Not started |
 
 ## Documentation
 
