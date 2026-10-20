@@ -474,6 +474,11 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     silent either way. A broken upgrade resets a billing currency and an entry period with
     the app still looking healthy; a tombstone dropped by the merge resurrects a project the
     user deleted three versions ago and republishes it.
+75. [ ] dropbox sync should auto check/refresh every 5-10 seconds to ensure consistency with what is in dropbox (user likely to work with multiple devices). The rate of this polling should be configurable with default at 10s
+76. [ ] touch targets for start/stop should be larger on mobile screen.
+77. [ ] on edit screen default to enter end time rather than hours worked. Also save/cancel delete should be at the top of the edit card, not the bottom.
+78. [ ] when a timer is running, rather than having a delete option beside it, do an edit option (pencil icon) that open edit sheet.
+
 
 # Where the branches are
 
