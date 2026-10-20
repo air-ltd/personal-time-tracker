@@ -1,4 +1,4 @@
-# 0013 — Non-working days and contracted hours
+# 0013 — Contracted hours
 
 **Status:** `Draft`
 **Depends on:** 0003, 0004, 0006
@@ -9,11 +9,21 @@
 One question: **of the hours I am contracted to deliver, how many am I actually
 delivering?**
 
-The app previously had a numerator with no denominator. Marking a day as leave or
-a public holiday is the mechanism for reducing the denominator — contracted hours
-for that day drop to zero — which makes the utilisation figures meaningful.
+Contracted hours are scoped to a client. A contract period says how many hours the
+user expects to spend on one client in a week, and what shape that week has.
+The scope is the client rather than the project, because a project's hours are
+already a subset of its client's, and a project-level contract would double-count
+against its own client. Project-level budgeting is not built.
 
-That is the whole feature. There is deliberately no leave entitlement tracking.
+The user calls this a "budget". The spec says "contracted hours" throughout and
+the two mean the same thing.
+
+The denominator is the contracted hours; the numerator is the time actually
+tracked against that client. The comparison is per week, because a week is the
+unit a contract is expressed in.
+
+There is deliberately no leave entitlement tracking, and no non-working-day
+entity — see §Non-working days for what replaces it and what that costs.
 
 ## The invariant this changes
 
@@ -26,8 +36,8 @@ mistake here. Entry-only reports are unaffected.
 | Duration by project / client / tag (0006 R2, R3) | entries only |
 | Billable summary (0006 R6) | entries only |
 | Trends (0006 R4, R5) | entries only |
-| Expected hours | contract + non-working days |
-| Utilisation | expected hours + entries |
+| Expected hours for a client | that client's contract periods |
+| Utilisation for a client | expected hours + that client's entries |
 
 **CP1** — All of these MUST still be computed at read time. Nothing is
 precomputed, consistent with 0006 P2.
@@ -35,7 +45,44 @@ precomputed, consistent with 0006 P2.
 **CP2** — Absence MUST NOT be modelled as a `TimeEntry` of kind "leave". See 0003
 §Capacity entities for the reasoning. The separation is load-bearing.
 
+Absence is instead carried as an ordinary project — a client-less project named
+for leave or non-work hours, with the time recorded against it as usual. That
+satisfies CP2, which forbids a new *entry kind*: a project is a project. It has
+two consequences worth stating, because they are visible in the numbers rather
+than hidden.
+
+- The leave project's time counts as **worked** time in every total, because it
+  is an ordinary entry against an ordinary project. Nothing excludes it.
+- It counts against **no client**, because it has none. So no client's
+  expected-versus-actual comparison is affected by the user's own leave — which
+  is the same outcome the original design produced, for a client whose work was
+  not delivered.
+
+A client whose own office closes for a fortnight has no way to have that
+fortnight removed from its expectation. The expectation simply goes unmet, and
+the utilisation figure says so.
+
+
 ## Non-working days
+
+**Deferred — not built in this increment.** The `NonWorkingDay` entity (0003) is
+not built, and the requirements below are recorded for a future increment rather
+than implemented now. Absence is carried as an ordinary client-less project
+instead; see CP2 for what that costs.
+
+Two of these requirements are affected by the deferral in a way that matters:
+
+- **N1** was the mechanism for reducing the denominator. Without it, expected
+  hours are the contracted hours, full stop. A day the user did not work is
+  simply a day the user did not work, and the gap shows in the utilisation
+  figure rather than being explained away.
+- **N8** (half days) and **CP-A4** (odd-minute handling) are the reason a
+  contract pattern can produce a figure that is not a whole number of minutes.
+  With no half days, every expected figure is a whole number of minutes and the
+  `unknownMinutes` accumulator has nothing to accumulate.
+
+The remaining requirements are unaffected by the deferral and are kept so that
+citations to them resolve.
 
 Leave and public holidays are one entity, `NonWorkingDay` (0003), with `kind` for
 reporting. They have identical arithmetic — both make the day uncontracted — and
@@ -77,9 +124,9 @@ more trouble than they are worth in practice, dropping them costs only the
 
 ## Contracted hours
 
-**K1** — Contracted hours are stored per `ContractPeriod` (0003), effective-dated.
-Confirmed necessary: hours change, and a single global value would make historical
-reports wrong from the day they did.
+**K1** — Contracted hours are stored per `ContractPeriod` (0003), effective-dated
+and scoped to a client. Confirmed necessary: hours change, and a single value
+would make historical reports wrong from the day they did.
 
 **K2** — The week MUST be expressible per weekday, because contracted hours are
 rarely uniform. A 37.5-hour contract is commonly Mon–Thu 8h and Fri 5h, and
@@ -91,13 +138,15 @@ storage, reports, CSV and tests. JavaScript's `Date.getDay()` is Sunday-first an
 is a reliable source of off-by-one bugs. This MUST be handled in exactly one place
 in `domain/` and never inline.
 
-**K4** — Contract periods MUST NOT overlap, and at most one may be open-ended
-(0003 CT1). The app MUST refuse to create a second open-ended period rather than
-leaving the user to work out which applies.
+**K4** — Contract periods MUST NOT overlap for the same client, and at most one
+may be open-ended per client (0003 CT1). The app MUST refuse to create a second
+open-ended period for a client rather than leaving the user to work out which
+applies. Two *different* clients may each have an open-ended period: neither
+speaks for the other's hours.
 
-**K5** — If no contract period covers part or all of a report range, expected hours
-for that portion MUST be reported as **unknown**, not as zero. Zero contracted
-hours makes utilisation divide by zero, and "unknown" is the truth.
+**K5** — If no contract period covers part or all of a report range for a client,
+expected hours for that portion MUST be reported as **unknown**, not as zero. Zero
+contracted hours makes utilisation divide by zero, and "unknown" is the truth.
 
 **K6** — A contract with no working days MUST be rejected (0003 CT6), because it
 has no denominator.
@@ -116,7 +165,10 @@ under both contracts, and this is what the app SHOULD steer the user towards.
 
 **K9** — The same period being edited on two devices can produce an overlap after a
 merge, even though each device's copy was valid. See 0012 M2.3; the merge surfaces
-this rather than accepting it silently.
+this rather than accepting it silently. Because scopes are per client, the overlap
+is judged within a client, so a merge that overlaps two *different* clients' periods
+is not a conflict and MUST NOT be surfaced as one.
+
 
 ## Capacity computation
 
@@ -126,45 +178,55 @@ parameters — no clock reads, no storage access (0002 A2).
 ### Expected hours for a date range
 
 ```
-expectedMinutes(range):
+expectedMinutes(range, clientId):
   for each local calendar day d in range:
-    period  = contractPeriodContaining(d)              // null → unknown
+    period  = contractPeriodContaining(d, clientId)      // null → unknown
     if period is null: mark unknown; continue
     minutes = pattern.minutes[weekday(d)]
     if minutes == 0:                   contribute 0
-    else if d is a whole non-working day: contribute 0
-    else if d is a half non-working day: contribute minutes / 2
     else:                               contribute minutes
   if any day was unknown, the figure is unknown
 ```
 
+There is no non-working-day step, because the entity is deferred. Every expected
+figure is therefore a whole number of minutes, and a day the user did not work
+is a day that shows as unworked rather than as excused.
+
 **CP-A1** — The per-day loop is mandatory. Expected hours cannot be computed as
 `range × minutesPerWeek / 7`, because the work pattern is not uniform across the
-week and non-working days are not evenly distributed. That shortcut is wrong in
-every real case.
+week. That shortcut is wrong in every real case.
 
 **CP-A2** — Day boundaries MUST follow the browser's local timezone (0006 DT5),
 consistent with day bucketing everywhere else in the app.
 
-**CP-A3** — A range spanning two contract periods MUST be computed per period and
-summed, with each portion attributed to its own contract. The app MUST NOT apply
-one period's pattern to the whole range.
+**CP-A3** — A range spanning two contract periods for a client MUST be computed per
+period and summed, with each portion attributed to its own contract. The app MUST
+NOT apply one period's pattern to the whole range. A range spanning two *clients*
+is two separate computations, not one: client scopes are disjoint, so their
+expected hours MAY be summed for a range total.
 
-**CP-A4** — A half day's contribution MUST be computed in integer minutes, and a
-pattern value that is odd MUST round half down with the remainder handled as an
-explicit `unknownMinutes` count rather than being discarded. Two odd weekdays in a
-range must not silently lose a minute each.
+**CP-A4** — **Deferred with the non-working-day entity.** A half day's
+contribution is not computed, because half days are not recorded. Every expected
+figure is a whole number of minutes and there is no `unknownMinutes` remainder
+to carry. The requirement is kept for a future increment.
 
 ### Utilisation
 
 ```
-worked   = sum(entry durations in range, excluding soft-deleted)
+worked   = sum(entry durations in range for this client, excluding soft-deleted)
 billable = sum(entry durations where resolved, rounded per 0006 RD2)
-available = expectedMinutes(range)
+available = expectedMinutes(range, clientId)
 
 hourUtilisation     = worked / available
 billableUtilisation = billable / available
 ```
+
+`worked` is the time tracked **for this client**: entries whose project belongs
+to it, or which name it directly. Time tracked against a client-less project —
+the leave project, for instance — belongs to no client and appears in no
+client's utilisation. That is the correct outcome, and it is also why the
+app's overall hours-worked figure and the sum of the clients' figures differ
+(IE3).
 
 **CP-A5** — Utilisation MUST be expressed as a percentage to one decimal place,
 derived from unrounded inputs.
@@ -179,27 +241,33 @@ contracted hours is normal and profitable, not an error.
 **CP-A8** — A day where entries overlap (0004 O2) may push worked minutes above
 available minutes. This MUST render as-is, consistent with 0006 DT4.
 
+
 ## Reports added
 
-**CR1 — Contract overview.** Current and historical contract periods, the work
-pattern, and which applies today.
+Every report below is **per client**. A range total across clients is the sum of
+the per-client figures, and is well defined, because client scopes are disjoint
+(CP-A3).
 
-**CR2 — Expected vs actual.** Per week across a range: contracted, expected after
-non-working days, actual worked, and the delta. The delta is what people want.
+**CR1 — Contract overview.** The current and historical contract periods for a
+client, the work pattern, and which applies today.
 
-**CR3 — Utilisation.** Hour and billable utilisation per week, with the range
-total.
+**CR2 — Expected vs actual.** Per week across a range, for a client: contracted,
+expected, actual worked, and the delta. The delta is what people want.
 
-**CR4 — Non-working days taken.** Grouped by `label` and by month. Free-text
-labels group as-is (N5).
+**CR3 — Utilisation.** Hour and billable utilisation per week for a client, with
+the range total.
 
-**CR5 — Calendar.** A month grid showing working days, non-working days and logged
-time. This is the view that makes gaps visible.
+**CR4 — Non-working days taken.** **Deferred with the non-working-day entity.**
+Grouped by `label` and by month. Free-text labels group as-is (N5).
 
-**CR6** — Absent vs unlogged. Days inside a contract that are neither a
-non-working day nor contain entries. Confirmed as wanted: this is the report that
-finds time you neither worked nor accounted for, and it is the highest-value
-output of the feature.
+**CR5 — Calendar.** A month grid showing the client's working days and the time
+logged against them. This is the view that makes gaps visible.
+
+**CR6 — Absent vs unlogged.** Days inside a client's contract that contain no
+entries for that client. Confirmed as wanted: this is the report that finds time
+you neither worked nor accounted for, and it is the highest-value output of the
+feature. Without the non-working-day entity there is no way to distinguish
+"not worked" from "excused", so every such day appears here.
 
 ## Interaction with entries
 
@@ -207,12 +275,24 @@ output of the feature.
 
 **IE2** — The entry list SHOULD mark entries recorded on a non-working day with a
 subtle indicator, so an intentional exception is distinguishable from a mistake.
+**Deferred with the non-working-day entity** — there is no non-working day to
+mark.
 
 **IE3** — Reports MUST keep entry-only figures and capacity figures visually
 separate. A total mixing worked hours with expected hours is meaningless.
 
+
 ## Deferred
 
+- **The `NonWorkingDay` entity** (0003), and with it N1–N9, CR4, IE2 and CP-A4.
+  Absence is carried as an ordinary client-less project instead. The cost is
+  stated in CP2: a client's own closures cannot be excused from its expectation,
+  and a day the user did not work is indistinguishable from a day they were on
+  leave. This is a simplification, and it is the user's choice — but it is
+  recorded here so the difference is visible later rather than rediscovered.
+- **Project-level contracts.** The scope is the client. A project's hours are
+  already a subset of its client's, so a project-level contract would
+  double-count against its own client.
 - **`.ics` import.** Confirmed as later, not now. Needs a real parser and a
   date-time model that does not exist yet.
 - **Holiday import from official sources** — government or standards-body
@@ -231,23 +311,20 @@ separate. A total mixing worked hours with expected hours is meaningless.
 
 ## Acceptance criteria
 
-1. A 40-hour Mon–Fri contract yields exactly 2,400 expected minutes for a normal
-   week.
-2. Marking one of those days as a non-working day yields 1,920 for that week
-   (N1).
-3. A 37.5-hour Mon–Thu 480 / Fri 300 pattern produces the correct figure, and does
+1. A 40-hour Mon–Fri contract for a client yields exactly 2,400 expected minutes
+   for a normal week.
+2. A 37.5-hour Mon–Thu 480 / Fri 300 pattern produces the correct figure, and does
    NOT equal 2,250/7 per day (K2, CP-A1).
-4. A Friday afternoon off removes half of Friday's contracted 300 minutes, not half
-   of 480 (N8).
-5. Leave spanning a non-working Saturday changes nothing (N2).
-6. Two overlapping non-working day records produce the same result as one (0003
-   NW5).
-7. Utilisation renders `—`, not `0%` or `NaN`, when no contract covers the range
+3. Utilisation renders `—`, not `0%` or `NaN`, when no contract covers the range
    (CP-A6).
-8. A range spanning a contract change attributes each portion to its own contract
+4. A range spanning a contract change attributes each portion to its own contract
    (CP-A3).
-9. An annual holiday with weekend substitution lands on the correct observed date
-   in two different years where the weekday differs (0003 NW7).
-10. A one-off non-working day never shifts (0003 NW10).
-11. Non-working days never contribute to worked or billable totals (N3).
-12. Absent-but-unlogged days are identified correctly (CR6).
+5. Two clients may each hold an open-ended period without either conflicting
+   (K4).
+6. Expected hours for a client with no contract covering part of the range are
+   unknown for that portion, not zero (K5).
+7. Time tracked against a client-less project appears in no client's utilisation
+   (CP2).
+8. Absent-but-unlogged days are identified correctly for a client (CR6).
+9. Weekday indexing is Monday-first in every code path (K3).
+

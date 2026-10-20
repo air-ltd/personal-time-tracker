@@ -104,6 +104,46 @@ table and no separate state machine persisted to storage.
 time. It MUST NOT be stored and accumulated, because a stored counter cannot
 survive a page reload and will drift.
 
+### Setting
+
+A user's preferences, one row per setting, keyed by a stable name. Settings live
+in their own table rather than in `meta`, because `meta` holds this device's own
+sync bookkeeping (`lastRev`, `lastSyncAt`) and a preference must not travel with
+it. Splitting the tables makes that exclusion structural rather than a rule
+someone has to remember.
+
+| Field | Type | Rules |
+| --- | --- | --- |
+| `id` | string | PK. The setting's stable name. |
+| `value` | varies | The setting's value. Shape depends on the setting. |
+| `updatedAt` | ISO string | |
+| `deletedAt` | ISO string \| null | Soft delete, as entries |
+
+A setting row is shaped exactly like every other mergeable record — `id`,
+`updatedAt`, `deletedAt` — so settings merge through the existing union-by-id,
+last-write-wins path with no merge rule of their own to be wrong.
+
+| Setting | Type | Rules |
+| --- | --- | --- |
+| `app-default-currency` | string \| null | ISO 4217. `null` = fall back. 0003 CU1. |
+| `visible-currencies` | string[] | ISO 4217 codes. 0005. |
+| `entry-period` | `day` \| `week` \| `all` | How the entry list groups. 0004 L1–L2. |
+| `week-start` | `monday` \| `sunday` | Default `monday`. 0006 DR3, DT8. |
+| `billable-rounding-increment` | integer | Minutes. Default 15. 0006 RD2, RD2.1. |
+
+The theme is deliberately **not** here: 0002 TH4 needs it readable before first
+paint, and only `localStorage` can be read synchronously (0011 R5). The Dropbox
+app key is also not here, because it is chosen by host and syncing it would let
+a local build inherit the deployed app's identity.
+
+**SET1** — A setting's `id` MUST NOT change once written. It is the merge
+identity, so renaming one silently forks the value into two.
+
+**SET2** — A setting MUST be absent rather than present-and-default where
+absence and default mean different things. An absent `week-start` means the
+default applies; a stored `monday` is the user having chosen it. The two must
+not collapse, or a later change of default would rewrite an explicit choice.
+
 ## Derived values
 
 **Duration**
@@ -184,29 +224,41 @@ clearing `deletedAt`.
 
 ## Capacity entities
 
-These model *availability and obligation*, not work done. They are deliberately
-separate from `TimeEntry`: absence is not time tracked. Behaviour and the derived
-capacity figures live in 0013.
+These model *expected hours*, not work done. They are deliberately separate from
+`TimeEntry`: expected hours are a commitment, and a commitment is not something
+you can record having met. Behaviour and the derived capacity figures live in
+0013.
 
-The separation matters concretely. If absence were an entry kind, every "hours
-worked" query would need to exclude it, leave would need project/tag/rate fields
-it has no use for, and a stray tap could log eight hours of Christmas as work.
+The separation matters concretely. If expected hours were an entry kind, every
+"hours worked" query would need to exclude them, a contract would need
+project/tag/rate fields it has no use for, and a stray tap could log eight
+hours of Christmas as work.
+
+**Expected hours are scoped to a client.** A contract period says how many hours
+the user expects to spend on one client in a week, and what shape that week has.
+The scope is the client, not the project: a project's hours are already a
+subset of its client's, so a project-level contract would double-count against
+its own client. Project-level budgeting is not built. The user's word for this
+is "budget"; the spec says "contracted hours" throughout, and the two mean the
+same thing.
 
 ### ContractPeriod
 
 Contracted hours are effective-dated, because contracts genuinely change: an
-annual increment, a mid-year reduction, a new employer. A single global value
-would make historical reports silently wrong the day hours change.
+annual increment, a mid-year reduction, a new client on a retainer. A single
+global value would make historical reports silently wrong the day hours change.
 
 | Field | Type | Rules |
 | --- | --- | --- |
 | `id` | UUID | PK |
+| `clientId` | UUID | FK → Client. The scope. CT9. |
 | `effectiveFrom` | ISO **date** | Local calendar date, inclusive. |
 | `effectiveTo` | ISO date \| null | Inclusive. `null` = open-ended. |
 | `minutesPerWeek` | integer | Weekly contracted total. P6. |
 | `workPattern` | `DayPattern[]` | One entry per weekday, Monday-first. CT2. |
 | `createdAt` | ISO string | |
 | `updatedAt` | ISO string | |
+| `deletedAt` | ISO string \| null | Soft delete, as entries |
 
 `DayPattern`:
 
@@ -215,7 +267,10 @@ would make historical reports silently wrong the day hours change.
 | `weekday` | `0`–`6` | Monday-first. See 0013 K3 on why this is not `Date.getDay()`. |
 | `minutes` | integer | `0` for a non-working day. Must sum to `minutesPerWeek`. CT3. |
 
-**CT1** — Contract periods MUST NOT overlap. At most one may be open-ended.
+**CT1** — Contract periods MUST NOT overlap *for the same client*. At most one
+may be open-ended per client. Overlap is judged within a scope: two clients may
+each have an open-ended period without either conflicting, because neither
+speaks for the other's hours.
 
 **CT2** — `workPattern` MUST cover all seven weekdays exactly once. A missing
 weekday is ambiguous between "not specified" and "not working", and that ambiguity
@@ -245,7 +300,35 @@ silently with a rounded figure. The app MUST either prompt for per-day overrides
 or explain that the split is uneven. 2,250 / 4 is 562.5, and rounding it would
 make the pattern stop summing to `minutesPerWeek`, violating CT3.
 
+**CT9** — A contract period MUST name exactly one client. `clientId` is required:
+a contract with no client has no scope, and expected hours cannot be compared
+against anything. An archived client MUST NOT be offered when creating one
+(0005 X4), because an archived client is not being worked for.
+
 ### NonWorkingDay
+
+**Deferred — not built in this increment.** Leave and public holidays were
+originally modelled here, as records that reduce a contracted day's expected
+minutes to zero. The user has chosen to carry absence as an ordinary project
+instead — a client-less project named for leave or non-work hours, with the
+time recorded against it as usual.
+
+That choice has consequences worth stating, because they are visible in the
+numbers rather than hidden:
+
+- The leave project's time counts as *worked* time in every total, because it is
+  an ordinary entry against an ordinary project. It is not excluded anywhere.
+- It counts against no client, because it has no client. So a client's
+  expected-versus-actual comparison is unaffected by the user's own leave, which
+  is the outcome the original design would also have produced for a client whose
+  work was not delivered.
+- A client whose office closes for a fortnight cannot have that fortnight removed
+  from its expectation without this entity. The expectation simply goes unmet,
+  and the utilisation figure says so.
+
+The specification below is kept for the day the entity is built, and the
+requirements it carries are marked deferred in 0013. Building it later is an
+addition, not a correction.
 
 Leave and public holidays have the same effect on capacity: the day is not
 contracted, so its contracted hours become zero. They differ only in intent and in
@@ -327,20 +410,29 @@ code and MUST be validated on import (0008):
   most destructive thing the app can do, and it must be explicit.
 - **F4** — Archiving is the intended way to retire a project. Deleting is for
   projects created by mistake.
-- **F5** — Capacity entities (`ContractPeriod`, `NonWorkingDay`) reference nothing,
-  so no foreign keys are involved. Contract periods relate only through their date
-  ranges, constrained by CT1 rather than by a FK.
+- **F5** — Capacity entities reference a client, and no foreign keys are
+  involved. `ContractPeriod.clientId` points at a `Client`; `NonWorkingDay` is
+  deferred and would reference nothing. Contract periods relate to each other
+  only through their date ranges and their client, constrained by CT1 and CT9
+  rather than by a FK.
 - **F6** — F1 through F4 apply to every entity with a `deletedAt`, so all
   soft-deletion behaviour is uniform across the model.
+- **F7** — A contract period whose `clientId` names a missing client MUST be
+  dropped, and the drop reported. Unlike an entry, a contract cannot be
+  "uncategorised": expected hours with no client have no scope to be compared
+  against, so keeping it would produce a figure that matches nothing.
 
 ## Schema versioning
 
 - **V1** — The store MUST carry a `schemaVersion` integer, stored in a dedicated
   metadata record.
 - **V2** — Any change to entity shapes MUST increment it and register a migration
-  in 0007's migration registry. Adding the capacity entities (0003) is one such
-  increment: an existing database gains three stores and no backfill, since absent
-  entities correctly mean "no contract configured" and "no leave taken".
+  in 0007's migration registry. Adding the contract period (0003) is one such
+  increment: an existing database gains one store and no backfill, since absent
+  contract periods correctly mean "no budget set for any client". The same
+  increment carries the two settings added with it — `week-start` and the
+  billable rounding increment — so that neither needs a migration of its own
+  later.
 - **V3** — Migrations MUST be applied on load, in order, and MUST be idempotent
   so a crash mid-migration can be retried safely.
 - **V4** — The app MUST refuse to start against a `schemaVersion` greater than it

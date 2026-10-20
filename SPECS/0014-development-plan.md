@@ -372,21 +372,36 @@ Notes from implementation:
 
 ### Phase 6 — Capacity
 
-- `ContractPeriod` CRUD, effective-dated, non-overlapping (0003 CT1, 0013 K1–K4)
+- `ContractPeriod` CRUD, effective-dated, non-overlapping, **scoped to a client**
+  (0003 CT1, CT9, 0013 K1–K4)
 - Even-split form shortcut, refused when not divisible (0003 CT7–CT8)
-- `NonWorkingDay` CRUD: leave and holiday kinds, free-text label, ranges, half
-  days (0003 NW1–NW3)
-- Annual recurrence and weekend substitution, no RRULE (0003 NW7–NW10)
-- Overlaps permitted and idempotent (0003 NW5, 0013 N1–N2)
-- Expected minutes: mandatory per-day loop (0013 CP-A1–CP-A4)
-- Utilisation, expected vs actual, non-working days taken, calendar,
-  absent-vs-unlogged (0013 CR1–CR6)
+- Two settings shipped in the same schema increment, so neither needs a
+  migration of its own later: `week-start` (0006 DR3, DT8) and the billable
+  rounding increment (0006 RD2, RD2.1)
+- Expected minutes: mandatory per-day loop, per client (0013 CP-A1–CP-A3)
+- Utilisation, expected vs actual, per client, per week (0013 CR1–CR3, CR5–CR6)
+- Reports: range presets, entry-only reports and breakdowns, list filtering
+  (0004 L3), chart primitives with a keyboard-reachable table equivalent
+  (0006 C1–C7, 0010 AC4–AC5)
+
+**Not in this phase**, and recorded so the gap is deliberate rather than
+accidental:
+
+- The `NonWorkingDay` entity (0003), and with it 0013 N1–N9, CR4, IE2, CP-A4 and
+  0012 M2.4. Absence is carried as an ordinary client-less project instead; the
+  cost is stated in 0013 CP2.
+- Project-level contracts (0003 CT9). A project's hours are already a subset of
+  its client's, so a project-level contract would double-count.
 
 **Gate**
 - A 40-hour Mon–Fri contract yields exactly 2,400 expected minutes for a week
-- Marking one contracted day yields 1,920 for that week
-- Utilisation renders `—` when no contract covers the range
+- A 37.5-hour Mon–Thu 480 / Fri 300 pattern yields 2,250, and NOT 2,250/7 per day
+- Utilisation renders `—` when no contract covers the range, and expected hours
+  for an uncovered portion are unknown rather than zero
+- Two clients may each hold an open-ended period without either conflicting
+- Time tracked against a client-less project appears in no client's utilisation
 - Weekday indexing is Monday-first in every code path
+
 
 ---
 

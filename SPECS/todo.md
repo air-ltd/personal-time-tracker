@@ -478,6 +478,37 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 76. [ ] touch targets for start/stop should be larger on mobile screen.
 77. [ ] on edit screen default to enter end time rather than hours worked. Also save/cancel delete should be at the top of the edit card, not the bottom.
 78. [ ] when a timer is running, rather than having a delete option beside it, do an edit option (pencil icon) that open edit sheet.
+79. [x] **a concept of the number of hours expected to work.** Decided and written into the
+    specs, and it is the Phase 6 capacity feature. Three decisions were made, and each one
+    is a narrowing of what the spec originally said:
+    - **The scope is the client, not the project.** A `ContractPeriod` names one client
+      (0003 CT9) and says how many hours a week are expected on them and what shape that
+      week has. Project-level contracts are not built: a project's hours are already a
+      subset of its client's, so a project-level contract would double-count against its
+      own client.
+    - **The spec says "contracted hours"; the user says "budget".** The spec's wording is
+      kept, and a note in 0003 records that the two mean the same thing.
+    - **There is no global scope.** Every contract belongs to a client, so "expected hours"
+      is always "expected hours for that client". Client scopes are disjoint, which is what
+      makes a range total across clients well defined.
+80. [ ] **the `NonWorkingDay` entity is deferred.** Leave and public holidays were to be
+    records that reduce a contracted day's expected minutes to zero. The user has chosen to
+    carry absence as an ordinary project instead — a client-less project named for leave or
+    non-work hours, with the time recorded against it as usual.
+    The cost is real and is recorded in 0013 CP2 rather than left to be discovered: the
+    leave project's time counts as *worked* time in every total, because nothing excludes
+    it; and a client whose own office closes for a fortnight has no way to have that
+    fortnight removed from its expectation, so the utilisation figure simply says the
+    expectation went unmet.
+    A day's absence is therefore indistinguishable from a day's idleness. That is the
+    trade, and it was chosen.
+81. [ ] **`week-start` and the billable rounding increment ship with schema 5.** Both are
+    values written once and then never needing another migration (0006 DR3, RD2.1), so
+    they are written in the same increment as the contract period rather than in the one
+    that first needs them.
+    This also corrects a false claim: `SPECS/README.md` said the rounding increment was
+    "stored as a setting now", and it was not — `settingsRepo.ts` held three keys and none
+    of them was the increment. The same class of defect as item 72.
 
 
 # Where the branches are
@@ -489,7 +520,10 @@ Numbered, not bulleted. Ordered roughly by when they came up.
   branches from the previous phase's head.
 - `phase-4` — taxonomy. Merged as PR #4 and **released as 0.1.0**. Deployed and verified
   live: `/package.json` 404s, so Pages is on Actions rather than branch source (0009 MP1).
-- `phase-5` — reports and charts. **Current branch.** Local only, see item 1 below.
+- `phase-5` — review remediation: settings and timer rebuilt, Dropbox token handling,
+  schema migrations, About page. Merged as PR #5 and **released as 0.2.0**.
+- `phase-6` — **current branch.** Capacity: client-scoped contracted hours, and the reports
+  and charts that go with them.
 
 ## Outstanding on `phase-2b` and `phase-3`
 

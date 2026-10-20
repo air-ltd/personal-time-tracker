@@ -44,7 +44,7 @@ breaking older importers.
   "exportedAt": "2026-10-03T12:00:00.000Z",
   "counts": {
     "entries": 412, "projects": 9, "clients": 3, "tags": 12,
-    "contractPeriods": 2, "nonWorkingDays": 17
+    "contractPeriods": 2
   },
   "data": {
     "projects": [ ],
@@ -52,16 +52,21 @@ breaking older importers.
     "tags": [ ],
     "entries": [ ],
     "contractPeriods": [ ],
-    "nonWorkingDays": [ ],
     "meta": { }
   }
 }
 ```
 
 **J2.1** — The envelope MUST include every entity in 0003, including the capacity
-entities from 0013. A backup that omits non-working days or contract data would
-leave the user with entries and no record of why a week was short, which is a worse
+entities from 0013. A backup that omits contract data would leave the user with
+entries and no record of what they were expected to deliver, which is a worse
 outcome than having neither.
+
+`nonWorkingDays` is absent, because the entity is deferred (0003 §NonWorkingDay).
+It joins the envelope when it is built, and the absence is meaningful rather than
+a format change: a file with no `nonWorkingDays` key means the entity does not
+exist, exactly as an absent `contractPeriods` means no budget is set.
+
 
 **J3** — `formatVersion` versions the file layout and MUST be incremented on any
 breaking layout change.
@@ -91,6 +96,14 @@ value, before attempting to parse `data`.
 
 **J12** — Import MUST reject a `formatVersion` greater than it supports, and
 SHOULD handle older versions via explicit migrations.
+
+**J13** — Import MUST validate every reference before writing, per 0003
+§Referential integrity. A record whose reference cannot be resolved is handled by
+the rule for that reference, not by a blanket rejection of the file: an entry
+naming a missing project becomes uncategorised (0003 F1), while a contract period
+naming a missing client is dropped (0003 F7). Every dropped or altered record MUST
+be reported in the import summary (0007 F-EXPORT-7), because a contract that
+silently disappears is a client's expected hours quietly becoming unknown.
 
 ## CSV report
 
@@ -211,15 +224,21 @@ covered by two records counts once.
 
 | # | Column | Type | Notes |
 | --- | --- | --- | --- |
-| 1 | `effective_from` | ISO date | |
-| 2 | `effective_to` | ISO date | Empty if open-ended |
-| 3 | `minutes_per_week` | integer | 0003 P6 |
-| 4 | `pattern` | string | e.g. `Mon=480;Tue=480;Wed=480;Thu=480;Fri=300` |
-| 5 | `working_days` | integer | Count of non-zero weekdays |
+| 1 | `client` | string | The scope. Client name, as entered. |
+| 2 | `effective_from` | ISO date | |
+| 3 | `effective_to` | ISO date | Empty if open-ended |
+| 4 | `minutes_per_week` | integer | 0003 P6 |
+| 5 | `pattern` | string | e.g. `Mon=480;Tue=480;Wed=480;Thu=480;Fri=300` |
+| 6 | `working_days` | integer | Count of non-zero weekdays |
 
 **C15** — `pattern` MUST serialise all seven weekdays including zeros, so the file
 is unambiguous about which days are worked. Omitting zero days would make a
 four-day contract look identical to a five-day one with a short Friday.
+
+**C15.1** — `client` MUST be the first column, because the file's rows are
+scoped and a reader needs to know which client's budget a row describes before
+any of the numbers. A file of contract rows with no scope column is a list of
+numbers that cannot be read.
 
 **C16** — There MUST be no leave-allowance or entitlement column. Entitlement is out
 of scope by decision (0013 §Deferred), and the schema stays ready for it without
