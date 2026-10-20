@@ -259,7 +259,16 @@ export function AboutPage() {
  * Kept deliberately small. A general Markdown renderer would be more code than the thing it
  * renders, and more surface for something to go subtly wrong.
  */
-function Changelog({ source }: { source: string }): ReactNode {
+/**
+ * The changelog, rendered from markdown.
+ *
+ * Exported so the parsing can be tested against a fixture rather than against whatever
+ * `CHANGELOG.md` happens to say today. The behaviour worth testing — an empty section
+ * is dropped rather than rendered as a heading over nothing — was previously only
+ * observable by leaving a section empty in the real file, which meant the test broke
+ * every time a release added content to it, and said nothing about the rule itself.
+ */
+export function Changelog({ source }: { source: string }): ReactNode {
   /*
    * Which versions are open (item 69).
    *

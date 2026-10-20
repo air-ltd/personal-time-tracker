@@ -176,6 +176,28 @@ export function normaliseColour(hex: string): string | null {
 }
 
 /**
+ * A colour safe to put in a CSS `background`.
+ *
+ * The one place a colour becomes CSS, so it is the one place the value is checked.
+ *
+ * `background` is a *shorthand*, and `background: url(https://elsewhere/x)` is a valid
+ * value for it — so a colour string that arrived from a hand-edited backup or an
+ * imported file could otherwise ask the browser to fetch a URL. The Content Security
+ * Policy blocks that today (`img-src 'self' data:`), but a policy is one change away
+ * from not blocking it, and a colour is not worth a beacon.
+ *
+ * Anything that is not a plain `#rrggbb` becomes the fallback, which is a neutral
+ * grey rather than a missing colour: a swatch that is grey says "this record has no
+ * colour", and a swatch that is absent says the record is not there.
+ */
+export function backgroundColour(hex: string | null | undefined): string {
+  return normaliseColour(hex ?? '') ?? FALLBACK_BACKGROUND
+}
+
+/** The colour a record falls back to when its own is missing or unusable. */
+export const FALLBACK_BACKGROUND = '#9a9aa4'
+
+/**
  * Whether a user-chosen colour is safe to use as a chart colour.
  *
  * Not a hard rejection: 0005 P3 allows an override. It reports the measured ratio so

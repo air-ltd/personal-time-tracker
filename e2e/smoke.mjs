@@ -1594,11 +1594,27 @@ async function main() {
       bracketHeadings.length === 0,
       bracketHeadings.join(' | '),
     )
+    /*
+     * No changelog heading is left standing over nothing.
+     *
+     * Asserted as a property of the rendered page rather than as "the Unreleased
+     * heading is absent", which was only ever true because the section happened to be
+     * empty — and which broke every time a release added content to it. The rule is
+     * the one worth keeping: a bare heading over nothing is the first thing a reader
+     * would meet on this page.
+     */
+    const emptyChangelogHeadings = await page.evaluate(() =>
+      [...document.querySelectorAll('.changelog h3, .changelog h4')]
+        .filter((heading) => {
+          const next = heading.nextElementSibling
+          return next === null || (next.textContent ?? '').trim() === ''
+        })
+        .map((heading) => heading.textContent ?? ''),
+    )
     check(
-      'an empty changelog section shows no heading at all',
-      // `## [Unreleased]` is empty at every release cut; a bare heading over nothing is the
-      // first thing a reader would meet on this page.
-      (await page.getByRole('heading', { name: 'Unreleased', exact: true }).count()) === 0,
+      'no changelog heading stands over nothing',
+      emptyChangelogHeadings.length === 0,
+      emptyChangelogHeadings.join(' | '),
     )
 
     // Item 40: the suite runs against a local preview, which is a non-production origin, so

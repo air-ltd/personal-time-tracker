@@ -7,6 +7,7 @@ import {
 import { formatDuration } from '../../domain/time/duration'
 import type { TimeEntry } from '../../domain/entries/types'
 import type { Client, Project } from '../../domain/taxonomy/types'
+import { backgroundColour } from '../../domain/taxonomy/colour'
 
 /**
  * The period control and the per-client summary (items 22 and 25).
@@ -87,7 +88,7 @@ export function EntrySummary({
                   {row.colour !== null && (
                     <span
                       className="tag-swatch"
-                      style={{ background: row.colour }}
+                      style={{ background: backgroundColour(row.colour) }}
                       aria-hidden="true"
                     />
                   )}

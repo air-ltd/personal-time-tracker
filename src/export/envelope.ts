@@ -23,14 +23,44 @@ const isoInstant = z
   .refine((v) => !Number.isNaN(Date.parse(v)), 'must be an ISO instant')
 const nullableIsoInstant = isoInstant.nullable()
 
+/*
+ * Bounds on the sizes a file may claim.
+ *
+ * A backup file arrives from outside — a file the user picked, or a blob in their
+ * Dropbox account — so its shape is not the app's to assume. Without these, a
+ * 64 MB file is accepted and then parsed, validated, merged and written in one
+ * synchronous pass on the main thread, which freezes the tab and then fails on a
+ * quota error. A file that is too large is *rejected*, which is a better answer than
+ * a browser that stops responding.
+ *
+ * The limits are generous compared with the confirmed volume — under a hundred
+ * entries a week, a few thousand in total — so they never bite on real data, and
+ * tight enough that a hostile file is refused rather than absorbed.
+ */
+
+/** A note, a label, or a name. The app's own limit is 2,000 characters (0004 V4). */
+const MAX_TEXT_LENGTH = 2_000
+
+/** An identifier. A UUID with room to spare. */
+const MAX_ID_LENGTH = 128
+
+/** Tags on one entry. A person does not tag an entry with fifty things. */
+const MAX_TAGS_PER_ENTRY = 64
+
+/** The weekdays in a work pattern. 0003 CT2 says exactly seven, and only seven. */
+const MAX_PATTERN_ENTRIES = 7
+
+/** Records in one table of a file. Roughly a decade of entries. */
+const MAX_RECORDS_PER_TABLE = 50_000
+
 export const entrySchema = z.object({
-  id: z.string().min(1),
-  projectId: z.string().nullable(),
-  tagIds: z.array(z.string()),
+  id: z.string().min(1).max(MAX_ID_LENGTH),
+  projectId: z.string().max(MAX_ID_LENGTH).nullable(),
+  tagIds: z.array(z.string().max(MAX_ID_LENGTH)).max(MAX_TAGS_PER_ENTRY),
   start: isoInstant,
   // Null only while running (0003 E4).
   end: nullableIsoInstant,
-  note: z.string(),
+  note: z.string().max(MAX_TEXT_LENGTH),
   billable: z.boolean(),
   rateOverrideMinor: z.number().int().nonnegative().nullable(),
   source: z.enum(['timer', 'manual']) satisfies z.ZodType<EntrySource>,
@@ -57,11 +87,12 @@ export const entrySchema = z.object({
 const deferredTable = z
   .array(
     z.looseObject({
-      id: z.string().min(1),
+      id: z.string().min(1).max(MAX_ID_LENGTH),
       updatedAt: isoInstant,
       deletedAt: nullableIsoInstant,
     }),
   )
+  .max(MAX_RECORDS_PER_TABLE)
   .default([])
 
 /**
@@ -95,14 +126,14 @@ const contractPeriodSchema = z.looseObject({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .nullable(),
   minutesPerWeek: z.number().int().nonnegative(),
-  workPattern: z.array(dayPatternSchema),
+  workPattern: z.array(dayPatternSchema).max(MAX_PATTERN_ENTRIES),
   createdAt: isoInstant,
   updatedAt: isoInstant,
   deletedAt: nullableIsoInstant,
 })
 
 const entityTables = {
-  entries: z.array(entrySchema),
+  entries: z.array(entrySchema).max(MAX_RECORDS_PER_TABLE),
   projects: deferredTable,
   clients: deferredTable,
   tags: deferredTable,
@@ -124,11 +155,12 @@ const entityTables = {
   settings: z
     .array(
       z.looseObject({
-        id: z.string().min(1),
+        id: z.string().min(1).max(MAX_ID_LENGTH),
         updatedAt: isoInstant,
         deletedAt: nullableIsoInstant,
       }),
     )
+    .max(MAX_RECORDS_PER_TABLE)
     .optional(),
 }
 

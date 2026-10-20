@@ -7,6 +7,7 @@ import { useEntries } from './useEntries'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
 import { EditIcon } from '../../app/Icons'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
+import { backgroundColour } from '../../domain/taxonomy/colour'
 
 /**
  * Entry list, grouped by local day with per-day subtotals (0004 L1–L2).
@@ -174,7 +175,7 @@ function EntryRow({
               <span className="entry-project">
                 <span
                   className="tag-swatch"
-                  style={{ background: project.colour }}
+                  style={{ background: backgroundColour(project.colour) }}
                   aria-hidden="true"
                 />
                 {project.name}
@@ -196,7 +197,7 @@ function EntryRow({
               <li key={tag.id} className="chip">
                 <span
                   className="tag-swatch"
-                  style={{ background: tag.colour }}
+                  style={{ background: backgroundColour(tag.colour) }}
                   aria-hidden="true"
                 />
                 {tag.name}

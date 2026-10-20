@@ -83,7 +83,12 @@ export function ContractEditor({
       const pattern = buildPattern()
       if (pattern === null) return
 
-      const effectiveFrom = period?.effectiveFrom ?? defaultEffectiveFrom
+      /*
+       * The start date comes from the form's own state, not from a fresh default.
+       * Recomputing it here would silently discard whatever the user had set — a
+       * local binding of the same name would shadow the state, and the date input
+       * would have no effect at all.
+       */
       if (period === undefined) {
         const created = await createContractPeriod(
           {

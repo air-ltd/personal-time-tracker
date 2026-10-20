@@ -509,6 +509,34 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     This also corrects a false claim: `SPECS/README.md` said the rounding increment was
     "stored as a setting now", and it was not — `settingsRepo.ts` held three keys and none
     of them was the increment. The same class of defect as item 72.
+82. [ ] **a security review, and the two things it found that are still open.**
+    A review of the whole app against `0011` was carried out, and the fixes it turned up
+    are in this branch. Most of what it confirmed is worth recording, because it is the
+    answer to "is this safe?" and the answer is mostly yes: no HTML injection sink exists
+    anywhere, the sync payload and the backup file cannot carry a credential (the
+    `secrets` table is excluded structurally, not by a filter), prototype pollution was
+    ruled out against the installed Zod, the OAuth flow cannot be redirected, the CSP's
+    script hash matches the script it describes, and every action is pinned to a full
+    SHA.
+
+    Two things remain open, and one of them is a decision rather than a bug:
+
+    - **Local data can be pushed into a second Dropbox account.** Signing out deliberately
+      leaves the local data (0012 AU7), and the engine's first run then pushes the whole
+      local snapshot into whichever account the new token belongs to — and if that
+      account already has a file, the merge is a union, so the previous account's entries
+      go with it. Dropbox returns an `accountId` and the app stores it, and never
+      compares it to anything. Connecting a second account therefore hands a copy of the
+      user's work history to a different readership. The fix is a decision: warn, refuse,
+      or bind the local data to the first account and refuse to sync it anywhere else.
+      It changes what "connect" means, so it is not a call to make alone.
+    - **The import path bypasses the domain's own rules.** A restored file's entries are
+      not checked against the 24-hour cap, names are not checked for length or
+      uniqueness, and colours were not checked at all. The colour case is now fixed at
+      the point where a colour becomes CSS, and contract periods are now checked for the
+      two ways they can be unusable. The entry and name cases are not, and fixing them
+      means deciding what a restore should do with a file that breaks the app's own
+      invariants: refuse it, repair it, or accept it and let the domain cope.
 
 
 # Where the branches are

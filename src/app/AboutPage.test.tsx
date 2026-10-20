@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { AboutPage } from './AboutPage'
+import { AboutPage, Changelog } from './AboutPage'
 import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 import changelog from '../../CHANGELOG.md?raw'
 
@@ -34,13 +34,35 @@ describe('About', () => {
     render(<AboutPage />)
 
     // Without Keep a Changelog's brackets, which read as leftover syntax in a heading.
-    // `Unreleased` is the one that is *absent*: it is empty at every release cut, and a
-    // heading with nothing under it is dropped rather than rendered.
-    expect(screen.queryByRole('heading', { name: 'Unreleased' })).toBeNull()
     expect(screen.getByRole('heading', { name: 'Versioning' })).toBeInTheDocument()
     // The file's own title is dropped: the card already has a heading, and two h1s on one
     // page is an outline problem.
     expect(screen.queryByRole('heading', { name: 'Changelog' })).toBeNull()
+  })
+
+  /*
+   * An empty section is dropped rather than rendered as a heading over nothing.
+   *
+   * Tested against a fixture rather than against the real changelog, because the rule
+   * is about the *parser* and the real file's content changes at every release — the
+   * test used to break whenever a release added anything to `Unreleased`, and it was
+   * really asserting the state of the file rather than the behaviour.
+   */
+  it('drops an empty changelog section, and keeps a section with content', () => {
+    render(
+      <Changelog
+        source={[
+          '## [Unreleased]',
+          '',
+          '## [0.1.0] - 2026-01-01',
+          '',
+          'Something happened.',
+        ].join('\n')}
+      />,
+    )
+
+    expect(screen.queryByRole('heading', { name: 'Unreleased' })).toBeNull()
+    expect(screen.getByRole('heading', { name: /0\.1\.0/ })).toBeInTheDocument()
   })
 
   it('renders bullets and bold text', () => {

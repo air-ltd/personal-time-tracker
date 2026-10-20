@@ -16,6 +16,74 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+Expected hours: say how many hours a week you expect to spend on a client, and see
+what was actually tracked against them. This is the capacity half of Phase 6 in
+[`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md), and the scope
+changed while it was being written — the details are below, because two of them
+change what the feature is.
+
+### Added — expected hours
+
+- **A budget per client.** Settings has a new panel, "Expected hours", where each
+  client gets the hours you expect to spend on them in a week and the days you expect
+  to work. The scope is the client rather than the project, because a project's hours
+  are already a subset of its client's, and a project-level budget would double-count
+  against its own client.
+- **Expected against actual**, on its own screen. A table per client: expected hours,
+  hours tracked, the difference, and a utilisation figure. The expected hours are per
+  week as well as per range, because a month-long total hides which week went short.
+- **An unknown is not a zero.** A client with no expected hours, or a range the
+  contract does not cover, shows a dash rather than 0%. A dash means "not known" and
+  a zero means "none expected", and they are different answers.
+- **A report and a list filter.** The entry list can be filtered by project, client,
+  tag, billable state, source and free text, and overlapping entries are marked so a
+  deliberate double-booking is distinguishable from a mistake.
+
+### Changed — the schema
+
+- **Schema 5** adds a store for the expected hours. The upgrade is additive: no row
+  is moved and none is invented, and a client with no expected hours correctly means
+  "no budget set" rather than "a budget of zero".
+- **Two settings ship with it**: the day the week starts on, and the billable rounding
+  increment. Both are values written once and then never needing another migration, so
+  they are written in the same increment that was going to happen anyway rather than
+  costing one later.
+
+### Deferred — non-working days
+
+- **Leave and public holidays are not modelled as their own records.** Absence is
+  carried as an ordinary project instead — a client-less project named for leave or
+  non-work hours, with the time recorded against it as usual. The cost is real and is
+  stated in the specs rather than left to be found: the leave project's time counts as
+  worked time in every total, because nothing excludes it; and a client whose own
+  office closes for a fortnight has no way to have that fortnight excused from its
+  expectation, so the utilisation figure simply says the expectation went unmet.
+
+### Security
+
+- **A secret gate that cannot be fooled by a rename.** The gate that checks nothing
+  sensitive is bundled now allows only the two `VITE_` variables this project
+  actually uses, and reads the built output as well as the source. That second half
+  matters: Vite inlines every `VITE_` variable present in the build environment into
+  the shipped JavaScript, whether or not any source file refers to it, so a variable
+  that existed only in the build environment was previously invisible to the gate and
+  shipped anyway.
+- **A colour from an imported file cannot become a URL.** `background` is a CSS
+  shorthand, and `background: url(...)` is a valid value for it. Colours are now
+  checked where they become CSS, so a colour arriving from a hand-edited backup
+  cannot ask the browser to fetch something. The Content Security Policy already
+  blocked that; this does not rely on the policy continuing to.
+- **Restoring a backup no longer keeps a contract that cannot be used.** A contract
+  naming a client that is not in the file, or whose working days do not add up to the
+  week it claims, is dropped and the drop is counted and reported.
+- **A sync can no longer delete a contract from the remote file.** The repair that
+  drops an unusable contract runs on the import path only. It used to run on the sync
+  path as well, which publishes what it repairs — the one place in the app where a
+  record could be removed rather than tombstoned.
+- **A file with impossible sizes in it is rejected rather than absorbed.** A backup's
+  records are now bounded, so a large or malformed file is refused instead of being
+  parsed, validated and written in one pass on the main thread.
+
 ## [0.2.0] - 2026-10-13
 
 Settings rebuilt around one list, the timer card reduced to one control per client,

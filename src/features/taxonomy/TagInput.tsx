@@ -1,6 +1,7 @@
 import { useCallback, useId, useState } from 'react'
 import { createOrFindTag } from '../../storage/taxonomyRepo'
 import type { Tag } from '../../domain/taxonomy/types'
+import { backgroundColour } from '../../domain/taxonomy/colour'
 
 /**
  * Inline tag entry (0005 T1–T2).
@@ -162,7 +163,7 @@ export function TagInput({
                     present as text and never encoded in the swatch alone (0005 N2). */}
                 <span
                   className="tag-swatch"
-                  style={{ background: tag.colour }}
+                  style={{ background: backgroundColour(tag.colour) }}
                   aria-hidden="true"
                 />
                 {tag.name}

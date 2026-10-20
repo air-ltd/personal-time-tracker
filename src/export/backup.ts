@@ -1,4 +1,4 @@
-import { mergeSnapshots, type Snapshot } from '../domain/merge'
+import { dropUnusableContractPeriods, mergeSnapshots, type Snapshot } from '../domain/merge'
 import { MINUTE } from '../domain/time/duration'
 import { parseEnvelope, serialiseEnvelope, toEnvelope } from './envelope'
 
@@ -35,7 +35,20 @@ export interface BackupSummary {
 }
 
 export type RestoreOutcome =
-  | { status: 'restored'; counts: Record<string, number>; exportedAt: string | null }
+  | {
+      status: 'restored'
+      counts: Record<string, number>
+      exportedAt: string | null
+      /**
+       * How many contract periods were dropped because the client they name was not in
+       * the file (0003 F7).
+       *
+       * Reported rather than dropped silently: a record that disappears during a
+       * recovery is exactly the thing a person needs to be told about, and a count is
+       * more honest than a message that might be wrong about how many.
+       */
+      droppedContracts: number
+    }
   | { status: 'rejected'; message: string; issues: string[] }
 
 /**
@@ -105,17 +118,31 @@ export async function restoreBackup(deps: BackupDeps, raw: string): Promise<Rest
    * a modification they did not ask for and cannot see. An entry referencing a project
    * absent from the file renders uncategorised, which is honest about the file's
    * contents; nulling the reference instead quietly changes the data.
+   *
+   * Contract periods are the one exception, and it is a deliberate one (0003 F7). An
+   * entry can be uncategorised and still mean something — it is time the user worked.
+   * A contract period cannot: its whole content is "these hours are expected on that
+   * client", so a contract naming no client describes a scope that cannot be compared
+   * against anything, and the user has no way to find or remove it in the interface.
+   * It is dropped, and the drop is counted and reported.
+   *
+   * This is also the only path that drops it. The sync path publishes what it
+   * repairs, so dropping there would let a sync permanently delete a contract from
+   * the remote file.
    */
-  const merged = outcome.merged
+  const before = outcome.merged.entities['contractPeriods']?.length ?? 0
+  const merged = dropUnusableContractPeriods(outcome.merged)
+  const droppedContracts = before - (merged.entities['contractPeriods']?.length ?? 0)
   await deps.writeLocal(merged)
 
   const counts: Record<string, number> = {}
   for (const [table, records] of Object.entries(merged.entities)) counts[table] = records.length
 
-  const exportedAt = (decoded as { exportedAt?: unknown }).exportedAt
+  const exportedAt = (decoded as { exportedAt?: string | undefined }).exportedAt
   return {
     status: 'restored',
     counts,
     exportedAt: typeof exportedAt === 'string' ? exportedAt : null,
+    droppedContracts,
   }
 }

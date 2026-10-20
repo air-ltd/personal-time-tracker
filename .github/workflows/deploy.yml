@@ -58,6 +58,14 @@ jobs:
       # stopped resolving. `check:silent` is deliberately absent — it re-introduces
       # bugs on purpose and re-runs the suite once per mutation, so it belongs on a
       # schedule rather than on every push.
+      #
+      # The build runs first, because the secret gate reads the built output as well
+      # as the source. Vite inlines every `VITE_*` variable present in the build
+      # environment into the bundle, whether or not the source refers to it, so a
+      # variable that exists only in the environment is only visible in the output.
+      - name: Build
+        run: npm run build
+
       - name: Check for bundled secrets
         run: npm run check:secrets
 
@@ -66,9 +74,6 @@ jobs:
 
       - name: Test
         run: npm run test
-
-      - name: Build
-        run: npm run build
 
   smoke:
     name: Browser smoke test
