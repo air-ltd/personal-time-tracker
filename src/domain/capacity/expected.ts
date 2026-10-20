@@ -101,12 +101,17 @@ export function expectedMinutesByWeek(
     const week = weekKeyFor(day, weekStart)
     const bucket = weeks.get(week) ?? { minutes: 0, unknownDays: 0, coveredDays: 0 }
     const minutes = expectedMinutesForDay(periods, clientId, day)
-    if (minutes === null) bucket.unknownDays += 1
-    else {
-      bucket.minutes += minutes
+    if (minutes === null) {
+      bucket.unknownDays += 1
+      // Unknown is sticky within the week, exactly as it is within a range.
+      bucket.minutes = null
+    } else {
+      // `coveredDays` counts every covered day, even after the week has become
+      // unknown — the count is diagnostic, and a week that turned unknown halfway
+      // through still covered the days before that point.
       bucket.coveredDays += 1
+      if (bucket.minutes !== null) bucket.minutes += minutes
     }
-    bucket.minutes = bucket.unknownDays > 0 ? null : bucket.minutes
     weeks.set(week, bucket)
   })
 

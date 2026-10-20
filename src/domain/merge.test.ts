@@ -454,3 +454,47 @@ describe('repairReferences is pure', () => {
     expect(canonicalStringify(repairReferences(once))).toBe(canonicalStringify(once))
   })
 })
+
+/**
+ * Contract periods whose client is missing (0003 F7).
+ *
+ * An entry can be uncategorised and still mean something — it is time the user
+ * worked. A contract period cannot: its content is "these hours are expected on that
+ * client", so a contract naming no client describes a scope that cannot be compared
+ * against anything.
+ */
+describe('repairReferences — orphaned contract periods (0003 F7)', () => {
+  it('drops a contract period naming a client that does not exist', () => {
+    const snapshot = snap(1, {
+      clients: [record('c1', '2026-10-13T09:00:00.000Z')],
+      contractPeriods: [
+        record('cp1', '2026-10-13T09:00:00.000Z', { clientId: 'ghost' }),
+        record('cp2', '2026-10-13T09:00:00.000Z', { clientId: 'c1' }),
+      ],
+    })
+
+    const repaired = repairReferences(snapshot)
+    const periods = repaired.entities.contractPeriods ?? []
+    expect(periods).toHaveLength(1)
+    expect((periods[0] as unknown as { clientId: string }).clientId).toBe('c1')
+  })
+
+  it('drops a contract period with no client at all', () => {
+    const snapshot = snap(1, {
+      clients: [record('c1', '2026-10-13T09:00:00.000Z')],
+      contractPeriods: [record('cp1', '2026-10-13T09:00:00.000Z')],
+    })
+
+    const repaired = repairReferences(snapshot)
+    expect(repaired.entities.contractPeriods ?? []).toHaveLength(0)
+  })
+
+  it('leaves contract periods alone when there is no clients table to check against', () => {
+    const snapshot = snap(1, {
+      contractPeriods: [record('cp1', '2026-10-13T09:00:00.000Z', { clientId: 'c1' })],
+    })
+
+    const repaired = repairReferences(snapshot)
+    expect(repaired.entities.contractPeriods ?? []).toHaveLength(1)
+  })
+})

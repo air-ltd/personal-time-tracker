@@ -64,12 +64,49 @@ const deferredTable = z
   )
   .default([])
 
+/**
+ * One weekday's contracted minutes (0003 CT2).
+ *
+ * `weekday` is Monday-first: 0 is Monday, 6 is Sunday (0013 K3).
+ */
+const dayPatternSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  minutes: z.number().int().nonnegative().max(1440),
+})
+
+/**
+ * A contract period (0003 §ContractPeriod).
+ *
+ * `looseObject` rather than `object`, for the same reason `deferredTable` uses it: a
+ * plain Zod object strips fields it does not know about, so a contract period written
+ * by a later build would silently lose whatever that build added. Validating the
+ * fields this build knows while passing the rest through means it can reject a
+ * malformed contract and still carry a newer one.
+ *
+ * `clientId` is required, because a contract with no client has no scope to be
+ * compared against (0003 CT9) — a record without one is not a contract.
+ */
+const contractPeriodSchema = z.looseObject({
+  id: z.string().min(1),
+  clientId: z.string().min(1),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  effectiveTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  minutesPerWeek: z.number().int().nonnegative(),
+  workPattern: z.array(dayPatternSchema),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+  deletedAt: nullableIsoInstant,
+})
+
 const entityTables = {
   entries: z.array(entrySchema),
   projects: deferredTable,
   clients: deferredTable,
   tags: deferredTable,
-  contractPeriods: deferredTable,
+  contractPeriods: z.array(contractPeriodSchema).default([]),
   nonWorkingDays: deferredTable,
   /*
    * Settings, as mergeable rows (SPECS/todo.md item 46).

@@ -142,8 +142,10 @@ export function repairReferences(snapshot: Snapshot): Snapshot {
 
   const projectIds = new Set((entities['projects'] ?? []).map((p) => p.id))
   const tagIds = new Set((entities['tags'] ?? []).map((t) => t.id))
+  const clientIds = new Set((entities['clients'] ?? []).map((c) => c.id))
   const hasProjects = 'projects' in entities
   const hasTags = 'tags' in entities
+  const hasClients = 'clients' in entities
 
   const entries = entities['entries']
   if (entries) {
@@ -185,6 +187,31 @@ export function repairReferences(snapshot: Snapshot): Snapshot {
         projectId: danglingProject ? null : record.projectId,
         tagIds: danglingTags ?? record.tagIds,
       }
+    })
+  }
+
+  /*
+   * Contract periods whose client is missing are dropped (0003 F7).
+   *
+   * Not repaired the way an entry's project is. An entry can be uncategorised and still
+   * mean something — it is time the user worked. A contract period cannot: its whole
+   * content is "these hours are expected on that client", so a contract naming no
+   * client describes a scope that cannot be compared against anything. Keeping it would
+   * give a client an expected-hours figure that matches no client at all.
+   *
+   * Dropped rather than tombstoned, because a tombstone would travel to other devices
+   * as a deletion of something they may still hold. Clients are never hard-deleted
+   * (0005 X1), so this only fires for a genuinely orphaned record — a hand-edited
+   * import, or a file written before the client existed.
+   */
+  const contractPeriods = entities['contractPeriods']
+  if (contractPeriods && hasClients) {
+    entities['contractPeriods'] = contractPeriods.filter((record) => {
+      const clientId = (record as Mergeable & { clientId?: string }).clientId
+      // A record with no clientId at all is malformed rather than orphaned, and is
+      // dropped too: 0003 CT9 makes the client required.
+      if (typeof clientId !== 'string') return false
+      return clientIds.has(clientId)
     })
   }
 

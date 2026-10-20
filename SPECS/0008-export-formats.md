@@ -44,7 +44,7 @@ breaking older importers.
   "exportedAt": "2026-10-03T12:00:00.000Z",
   "counts": {
     "entries": 412, "projects": 9, "clients": 3, "tags": 12,
-    "contractPeriods": 2
+    "contractPeriods": 2, "nonWorkingDays": 0
   },
   "data": {
     "projects": [ ],
@@ -52,6 +52,7 @@ breaking older importers.
     "tags": [ ],
     "entries": [ ],
     "contractPeriods": [ ],
+    "nonWorkingDays": [ ],
     "meta": { }
   }
 }
@@ -62,10 +63,12 @@ entities from 0013. A backup that omits contract data would leave the user with
 entries and no record of what they were expected to deliver, which is a worse
 outcome than having neither.
 
-`nonWorkingDays` is absent, because the entity is deferred (0003 §NonWorkingDay).
-It joins the envelope when it is built, and the absence is meaningful rather than
-a format change: a file with no `nonWorkingDays` key means the entity does not
-exist, exactly as an absent `contractPeriods` means no budget is set.
+Every table 0003 defines has a slot, whether or not the entity is built yet.
+`nonWorkingDays` is empty while the entity is deferred (0003 §NonWorkingDay), but the
+slot is there: a build that does not understand a table can still carry it, so a file
+written by a later build is not silently stripped by this one. The absence of a key
+and the presence of an empty array are different answers, and only the second one
+lets a build pass a table through.
 
 
 **J3** — `formatVersion` versions the file layout and MUST be incremented on any

@@ -71,7 +71,6 @@ describe('validateContractPeriod', () => {
         workPattern: MON_FRI_40H.map((entry) => ({ ...entry, minutes: 0 })),
       }),
       [],
-      new Date(2026, 0, 15),
     )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.code).toBe('no-working-days')
@@ -81,7 +80,6 @@ describe('validateContractPeriod', () => {
     const result = validateContractPeriod(
       period({ minutesPerWeek: 2250, workPattern: MON_THU_480_FRI_300 }),
       [],
-      new Date(2026, 0, 15),
     )
     // 4 x 480 + 300 = 2220, which is not 2250.
     expect(result.ok).toBe(false)
@@ -92,18 +90,13 @@ describe('validateContractPeriod', () => {
     const result = validateContractPeriod(
       period({ effectiveFrom: '2026-02-01', effectiveTo: '2026-01-01' }),
       [],
-      new Date(2026, 0, 15),
     )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.code).toBe('date-range-invalid')
   })
 
   it('rejects a date that does not exist', () => {
-    const result = validateContractPeriod(
-      period({ effectiveFrom: '2026-02-30' }),
-      [],
-      new Date(2026, 0, 15),
-    )
+    const result = validateContractPeriod(period({ effectiveFrom: '2026-02-30' }), [])
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.code).toBe('date-range-invalid')
   })
@@ -115,7 +108,6 @@ describe('validateContractPeriod', () => {
     const result = validateContractPeriod(
       period({ effectiveFrom: '2026-03-01', effectiveTo: '2026-09-30' }),
       existing,
-      new Date(2026, 0, 15),
     )
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.code).toBe('overlaps-existing')
@@ -134,7 +126,6 @@ describe('validateContractPeriod', () => {
     const result = validateContractPeriod(
       period({ effectiveFrom: '2026-04-01', effectiveTo: '2026-12-31' }),
       existing,
-      new Date(2026, 0, 15),
     )
     expect(result.ok).toBe(true)
   })

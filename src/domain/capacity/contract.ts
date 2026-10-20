@@ -243,7 +243,9 @@ export function localDateKey(value: Date): string {
 
 function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const [year, month, day] = value.split('-').map(Number)
+  const year = Number(value.slice(0, 4))
+  const month = Number(value.slice(5, 7))
+  const day = Number(value.slice(8, 10))
   if (month < 1 || month > 12) return false
   if (day < 1 || day > 31) return false
   // Reject dates that only exist because the month was too short, e.g. 2026-02-30.

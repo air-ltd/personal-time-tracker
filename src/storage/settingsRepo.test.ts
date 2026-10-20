@@ -3,10 +3,14 @@ import { installTestDb } from '../test/harness'
 import {
   readDefaultCurrency,
   readEntryPeriod,
+  readRoundingIncrementMinutes,
   readVisibleCurrencies,
+  readWeekStart,
   writeDefaultCurrency,
   writeEntryPeriod,
+  writeRoundingIncrementMinutes,
   writeVisibleCurrencies,
+  writeWeekStart,
 } from './settingsRepo'
 import { getDb } from './db'
 import { resolveCurrency } from '../domain/taxonomy/money'
@@ -197,5 +201,74 @@ describe('visible currencies', () => {
     await writeVisibleCurrencies(null)
 
     expect(await getDb().settings.get('visible-currencies')).toBeUndefined()
+  })
+})
+
+/**
+ * Week start (0006 DR3, DT8).
+ *
+ * The value decides where a week begins, and every weekly figure depends on it — so a
+ * week that starts on the wrong day puts every one of them a day out. Monday is the
+ * default because most of the world starts the working week there.
+ */
+describe('week start', () => {
+  beforeEach(() => {
+    installTestDb()
+  })
+
+  it('is Monday before anything is configured', async () => {
+    expect(await readWeekStart()).toBe('monday')
+  })
+
+  it('round-trips a chosen day', async () => {
+    await writeWeekStart('sunday')
+    expect(await readWeekStart()).toBe('sunday')
+  })
+
+  it('ignores a value that is not a day', async () => {
+    await getDb().settings.put({
+      id: 'week-start',
+      value: 'tuesday',
+      updatedAt: SEEDED_AT.toISOString(),
+      deletedAt: null,
+    })
+
+    expect(await readWeekStart()).toBe('monday')
+  })
+})
+
+/**
+ * The billable rounding increment (0006 RD2, RD2.1).
+ *
+ * The value is stored so that a control can be added later without a migration, which
+ * is the entire point of RD2.1 — and the promise only holds if it is written before the
+ * schema moves on again.
+ */
+describe('billable rounding increment', () => {
+  beforeEach(() => {
+    installTestDb()
+  })
+
+  it('is fifteen minutes before anything is configured', async () => {
+    expect(await readRoundingIncrementMinutes()).toBe(15)
+  })
+
+  it('round-trips a chosen increment', async () => {
+    await writeRoundingIncrementMinutes(30)
+    expect(await readRoundingIncrementMinutes()).toBe(30)
+  })
+
+  it('ignores a value that is not a positive whole number of minutes', async () => {
+    for (const value of [0, -15, 12.5, 'fifteen', null]) {
+      await getDb().settings.put({
+        id: 'billable-rounding-increment',
+        value,
+        updatedAt: SEEDED_AT.toISOString(),
+        deletedAt: null,
+      })
+
+      // Zero would round every billable duration to nothing, so it must not be honoured.
+      expect(await readRoundingIncrementMinutes()).toBe(15)
+    }
   })
 })
