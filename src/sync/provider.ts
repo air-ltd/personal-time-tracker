@@ -75,6 +75,20 @@ export interface SyncProvider {
    */
   pull(path: string): Promise<RemoteFile | null>
   /**
+   * The remote file's revision, without downloading the file.
+   *
+   * Optional, and the reason polling is affordable. A poll that pulled the whole
+   * blob would download the user's entire history every ten seconds; this asks the
+   * provider for the file's revision, which is a small answer, and the blob is only
+   * fetched when the revision has actually moved.
+   *
+   * A provider that cannot answer cheaply returns null — meaning "I do not know" —
+   * and the caller falls back to a full pull. The distinction is deliberate: null
+   * must not mean "unchanged", or a provider that failed to answer would silently
+   * stop the app from ever seeing a change.
+   */
+  peek?(path: string): Promise<{ rev: string } | null>
+  /**
    * Write the blob, enforcing `expectedRev` so a concurrent write is rejected
    * rather than silently overwritten (0012 SY6, C5).
    */

@@ -34,6 +34,19 @@ export interface SyncConfig {
   provider: SyncProvider
   path: string
   debounceMs?: number
+  /**
+   * How often to check the remote for changes, in milliseconds.
+   *
+   * Zero or absent means no polling, which is what 0012 C6 asks for. Item 75 changes
+   * that: the user works across several devices and wants the app to notice another
+   * device's work without being told to.
+   *
+   * A poll is a *check*, not a cycle. The provider is asked for the remote file's
+   * revision, which is a small answer, and the file is only downloaded when that
+   * revision has moved. A poll that pulled the whole file would move the user's
+   * entire history every ten seconds.
+   */
+  pollIntervalMs?: number
   now?: () => Date
   onLog?: (entry: SyncLogEntry) => void
   onStatus?: (status: SyncStatus) => void
@@ -140,6 +153,8 @@ export class SyncScheduler {
   private readonly provider: SyncProvider
   private readonly path: string
   private readonly debounceMs: number
+  /** The poll interval, in milliseconds. Zero means no polling. */
+  private pollIntervalMs: number
   private readonly now: () => Date
   private readonly onStatus: ((status: SyncStatus) => void) | undefined
   private readonly logSink: ((entry: SyncLogEntry) => void) | undefined
@@ -152,6 +167,8 @@ export class SyncScheduler {
   private readonly onAuthLost: (() => void) | undefined
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null
+  /** Armed while the tab is visible and polling is on. See `armPoll`. */
+  private pollTimer: ReturnType<typeof setInterval> | null = null
   /** Armed only after a transient failure; see `armRetry` (item 47). */
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   /** How many retries have already been spent on the current run of failures. */
@@ -199,6 +216,7 @@ export class SyncScheduler {
     this.provider = config.provider
     this.path = config.path
     this.debounceMs = config.debounceMs ?? DEBOUNCE_MS
+    this.pollIntervalMs = config.pollIntervalMs ?? 0
     this.now = config.now ?? (() => new Date())
     this.onStatus = config.onStatus
     this.logSink = config.onLog
@@ -249,7 +267,14 @@ export class SyncScheduler {
     // Tab focus: the user has just come back, so this is the moment most likely to
     // want a fresh pull.
     this.onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void this.syncNow()
+      if (document.visibilityState !== 'visible') {
+        // A hidden tab is not polled: it is not being read, the browser throttles its
+        // timers anyway, and the change is picked up on the way back instead.
+        this.clearPoll()
+        return
+      }
+      this.armPoll()
+      void this.syncNow()
     }
     document.addEventListener('visibilitychange', this.onVisibilityChange)
 
@@ -278,7 +303,100 @@ export class SyncScheduler {
     // to any decision.
     // Emitted rather than assigned, so the panel sees it like any other status change.
     this.emit({ lastRev: await this.readLastRev() })
+    this.armPoll()
     await this.syncNow()
+  }
+
+  /**
+   * Change the poll interval while running (item 75).
+   *
+   * The setting is read after the scheduler starts, rather than before, because the
+   * first cycle should not wait on a preference read — and because the user can
+   * change the rate without the app having to tear the scheduler down and start a new
+   * one, which would interrupt whatever it was doing.
+   *
+   * Zero turns polling off. The app still syncs when the tab becomes visible and
+   * after a local change, so this does not mean "never sync".
+   */
+  setPollInterval(ms: number): void {
+    if (this.pollIntervalMs === ms) return
+    this.pollIntervalMs = ms
+    this.clearPoll()
+    this.armPoll()
+  }
+
+  /**
+   * Arm the poll timer (item 75).
+   *
+   * **This is polling, and 0012 C6 forbade it.** C6 said the app would not run a
+   * background interval that syncs unconditionally, and the reason was that a healthy
+   * tab should cost nothing. The user works across several devices and wants the app
+   * to notice another device's work without being asked, so the decision is reversed
+   * — deliberately, and with the cost in mind rather than by accident:
+   *
+   * - A poll is a *check*, not a cycle. The provider is asked for the remote file's
+   *   revision, which is a small answer; the file is downloaded only when that
+   *   revision has moved. A poll that pulled the whole file would move the user's
+   *   entire history every ten seconds.
+   * - Nothing is polled while the tab is hidden. A background tab is not being read,
+   *   the browser throttles its timers anyway, and `visibilitychange` already syncs
+   *   when the tab becomes visible again — so the change is picked up on the way back
+   *   rather than ten seconds late.
+   * - Nothing is polled when there is no connection to poll.
+   */
+  private armPoll(): void {
+    if (this.stopped) return
+    if (this.pollIntervalMs <= 0) return
+    if (this.pollTimer !== null) return
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+
+    this.pollTimer = setInterval(() => {
+      void this.poll()
+    }, this.pollIntervalMs)
+  }
+
+  /** Stop the poll timer. */
+  private clearPoll(): void {
+    if (this.pollTimer === null) return
+    clearInterval(this.pollTimer)
+    this.pollTimer = null
+  }
+
+  /**
+   * One poll: ask whether the remote has moved, and sync only if it has.
+   *
+   * A provider that cannot answer cheaply — or that cannot be reached — falls back to
+   * a full cycle, because "I do not know" and "nothing has changed" are different
+   * answers and treating them as the same would silently stop the app from ever
+   * seeing another device's work.
+   */
+  private async poll(): Promise<void> {
+    if (this.stopped || this.running) return
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+
+    const provider = this.provider
+    if (provider.peek === undefined) {
+      await this.syncNow()
+      return
+    }
+
+    try {
+      const remote = await provider.peek(this.path)
+      if (remote === null) {
+        // Either the file does not exist or the provider could not tell. Pull and let
+        // the engine decide, which is the safe answer to "I do not know".
+        await this.syncNow()
+        return
+      }
+      if (remote.rev === this.status.lastRev) return
+      await this.syncNow()
+    } catch (problem) {
+      // A failed check is not a failed sync: the app is still working, and the next
+      // poll will ask again. The status is left alone, because nothing was learned
+      // about the remote.
+      const detail = problem instanceof Error ? problem.message : String(problem)
+      this.log(`Poll could not reach the provider: ${detail}`, 'warn')
+    }
   }
 
   /**
@@ -322,6 +440,9 @@ export class SyncScheduler {
     this.stopped = true
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
     this.debounceTimer = null
+    // The poll timer, for the same reason as the debounce timer below: an armed
+    // interval survives teardown and a stopped scheduler goes on asking.
+    this.clearPoll()
     // With the debounce timer. Without it an armed retry survives teardown and the stopped
     // scheduler goes on syncing, which is the exact failure the rest of this method exists
     // to prevent — and `schedule()`'s own stopped check does not help, because a retry

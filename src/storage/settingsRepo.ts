@@ -217,3 +217,39 @@ export async function writeRoundingIncrementMinutes(minutes: number): Promise<vo
   await putSetting(ROUNDING_INCREMENT_KEY, minutes)
   bumpRevision()
 }
+
+const SYNC_POLL_INTERVAL_KEY = 'sync-poll-interval-seconds'
+
+/** The default poll interval, in seconds (item 75). */
+export const DEFAULT_SYNC_POLL_INTERVAL_SECONDS = 10
+
+/**
+ * How often the app checks the remote for another device's work, in seconds.
+ *
+ * Ten seconds by default, which is what the user asked for. The value is a setting
+ * because a poll costs something, and the right cost depends on how the app is being
+ * used — a phone on a metered connection and a desktop with two monitors are not the
+ * same question.
+ *
+ * Zero means "do not poll", which turns the check off entirely. The app still syncs
+ * when the tab becomes visible and after a local change, so turning polling off does
+ * not mean never syncing.
+ *
+ * Read as the default when nothing is stored, or when the stored value is not a
+ * whole number of seconds that is not negative: a corrupted preference must not
+ * produce a poll every millisecond, or none at all when the user asked for one.
+ */
+export async function readSyncPollIntervalSeconds(): Promise<number> {
+  const record = await getDb().settings.get(SYNC_POLL_INTERVAL_KEY)
+  const value = record?.value
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    return DEFAULT_SYNC_POLL_INTERVAL_SECONDS
+  }
+  return value
+}
+
+/** Remember the poll interval. Zero turns polling off. */
+export async function writeSyncPollIntervalSeconds(seconds: number): Promise<void> {
+  await putSetting(SYNC_POLL_INTERVAL_KEY, seconds)
+  bumpRevision()
+}

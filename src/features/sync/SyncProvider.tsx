@@ -6,6 +6,7 @@ import {
   REMOTE_PATH,
 } from '../../sync/providerFactory'
 import { describeKeySource, readAppKey } from '../../sync/appKey'
+import { readSyncPollIntervalSeconds } from '../../storage/settingsRepo'
 import { beginAuthCallback, takeAuthError } from '../../sync/oauthCallback'
 import { SyncContext, type Connection } from './syncContext'
 
@@ -85,6 +86,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     })
     schedulerRef.current = scheduler
     void scheduler.start()
+    /*
+     * The poll interval is a preference, so it is read rather than assumed — but it is
+     * read *after* the scheduler has started, because the first cycle should not wait
+     * on a preference read. The scheduler takes the interval as it is set, so the two
+     * orders do not have to agree.
+     */
+    void readSyncPollIntervalSeconds()
+      .then((seconds) => scheduler.setPollInterval(seconds * 1000))
+      .catch(() => {
+        // A failed read leaves the scheduler's default, which is no polling. The app
+        // still syncs when the tab becomes visible and after a local change.
+      })
     return () => {
       scheduler.stop()
       schedulerRef.current = null

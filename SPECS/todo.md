@@ -474,7 +474,26 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     silent either way. A broken upgrade resets a billing currency and an entry period with
     the app still looking healthy; a tombstone dropped by the merge resurrects a project the
     user deleted three versions ago and republishes it.
-75. [ ] dropbox sync should auto check/refresh every 5-10 seconds to ensure consistency with what is in dropbox (user likely to work with multiple devices). The rate of this polling should be configurable with default at 10s
+75. [x] **dropbox sync should auto check/refresh every 5-10 seconds to ensure consistency
+    with what is in dropbox (user likely to work with multiple devices). The rate of this
+    polling should be configurable with default at 10s.** Done, and it reverses 0012 C6,
+    which said the app would not poll on a background interval at all. The reason C6 gave
+    was that a timer moves the user's whole history and keeps the device awake, so the
+    cost is bounded rather than avoided:
+    - A poll asks the provider for the remote file's **revision**, which is a small
+      answer, and downloads the file only when that revision has moved. The provider
+      gained a `peek` for this, and it is optional: a provider that cannot answer
+      cheaply falls back to a full pull, because "I do not know" and "nothing has
+      changed" are different answers.
+    - Nothing is polled while the tab is hidden. A background tab is not being read,
+      the browser throttles its timers anyway, and `visibilitychange` already syncs
+      when the tab comes back — so the change is picked up on the way back rather than
+      ten seconds late.
+    - The rate is a setting, ten seconds by default, with "off" offered. Turning it off
+      does not turn syncing off: the app still syncs on open, on edit and on tab focus.
+
+    0012 C6 is amended to C6.2 rather than deleted, and the amendment says what the
+    poll must not do as well as what it must.
 76. [x] **touch targets for start/stop should be larger on mobile screen.** Done. The timer
     card's start and stop controls were 2.35rem — about 38px — and are now 2.75rem, which is
     44px, on a coarse pointer. Scoped to `(pointer: coarse)` rather than to a narrow

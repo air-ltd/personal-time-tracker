@@ -1,6 +1,7 @@
 import { useSync, type Connection } from './syncContext'
 import { CloudIcon } from '../../app/Icons'
 import { DropboxSetup } from './DropboxSetup'
+import { SyncPollRate } from './SyncPollRate'
 
 /**
  * Sync detail (0012 C8, AU8; item 10 of `SPECS/todo.md`).
@@ -132,6 +133,13 @@ export function SyncPanel() {
       )}
 
       <SyncStatusLine status={status} connection={connection} authError={authError} />
+
+      {/*
+        The poll rate, only while connected. There is nothing to poll when there is no
+        connection, and offering a rate for a check that cannot happen would be a
+        control that does nothing.
+      */}
+      {connection === 'connected' && <SyncPollRate />}
 
       <p className="hint">
         Your data stays in this browser. Syncing copies one file to the Dropbox account you

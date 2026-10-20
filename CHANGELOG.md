@@ -49,6 +49,18 @@ change what the feature is.
   they are written in the same increment that was going to happen anyway rather than
   costing one later.
 
+### Changed — sync
+
+- **The app now checks Dropbox for another device's work every ten seconds, and the
+  rate is a setting.** This reverses a recorded decision that the app would not poll
+  at all. The cost that decision was protecting against is bounded rather than
+  avoided: a check asks Dropbox for the file's _revision_, which is a small answer,
+  and the file is downloaded only when that revision has actually moved. A hidden tab
+  is not checked at all — it is not being read, and the app already syncs when the
+  tab comes back into view. Setting the rate to "off" turns the check off without
+  turning syncing off: the app still syncs when it opens, when you change something,
+  and when you come back to it.
+
 ### Deferred — non-working days
 
 - **Leave and public holidays are not modelled as their own records.** Absence is

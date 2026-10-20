@@ -94,7 +94,7 @@ Recorded here so the specs stay the source of truth.
 | Stack | TypeScript, React, Vite, IndexedDB via Dexie, Zod, Vitest | [0002](0002-architecture.md) |
 | Charting | Hand-rolled SVG. Chart.js only as a documented escape hatch | [0002 §Charts](0002-architecture.md) |
 | Sync provider | Dropbox first, behind a `SyncProvider` interface so a second can be added | [0012](0012-sync.md) |
-| When sync runs | On app open, debounced after local writes, on tab focus and `pagehide`, plus a manual button. No polling | [0012 C1–C7](0012-sync.md) |
+| When sync runs | On app open, debounced after local writes, on tab focus and `pagehide`, plus a manual button — and, while the tab is visible, a poll every 10s by default. The poll asks for the file's revision and only downloads when it has moved | [0012 C1–C7, C6.2](0012-sync.md) |
 | Sync encryption | Provider-side only, no app-level passphrase | [0011 §Accepted risks](0011-privacy-and-security.md) |
 | Data at rest locally | Unencrypted; relies on OS and browser profile | [0011 R1](0011-privacy-and-security.md) |
 | Conflict resolution | Union by `id`, last-write-wins on `updatedAt`, deterministic tiebreak | [0012 §Merge](0012-sync.md) |
