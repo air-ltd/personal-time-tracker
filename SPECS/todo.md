@@ -607,15 +607,20 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
     Two things remain open, and one of them is a decision rather than a bug:
 
-    - **Local data can be pushed into a second Dropbox account.** Signing out deliberately
-      leaves the local data (0012 AU7), and the engine's first run then pushes the whole
-      local snapshot into whichever account the new token belongs to — and if that
-      account already has a file, the merge is a union, so the previous account's entries
-      go with it. Dropbox returns an `accountId` and the app stores it, and never
-      compares it to anything. Connecting a second account therefore hands a copy of the
-      user's work history to a different readership. The fix is a decision: warn, refuse,
-      or bind the local data to the first account and refuse to sync it anywhere else.
-      It changes what "connect" means, so it is not a call to make alone.
+    - ~~**Local data can be pushed into a second Dropbox account.**~~ **Fixed.** The
+      local data is now bound to the account it was last published to, and a cycle
+      against a different account stops before anything is pulled or published.
+
+      The binding lives in `meta`, so it is device-local and never travels — it is a
+      fact about *this device's* data, and a binding that were copied to another device
+      would be the wrong thing to copy. The account id is the one Dropbox already
+      returns on the token, which was being stored and never compared to anything.
+
+      The way past the block is explicit rather than silent: the sync panel says what
+      would happen and offers "Share with this account too", and the data ends up in
+      both accounts. A guard that stopped every sync because it could not read an
+      account id would be the worse of the two failures, so an account that cannot be
+      identified is not treated as a different one.
     - **The import path bypasses the domain's own rules.** A restored file's entries are
       not checked against the 24-hour cap, names are not checked for length or
       uniqueness, and colours were not checked at all. The colour case is now fixed at
