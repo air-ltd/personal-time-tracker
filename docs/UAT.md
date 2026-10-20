@@ -417,6 +417,44 @@ only stops the automatic check.
 
 ---
 
+## 20. The charts, and the table behind them
+
+On the **Reports** screen, scroll past the tables to the charts.
+
+Press **Show table** on a chart. It should swap to a table with the same figures.
+
+Then press **Show chart** to go back.
+
+> **What to look for.** Does the table show the same numbers as the chart? Is the
+> button easy to find and obvious about what it will do? If you use only the keyboard:
+> can you reach the button, and can you reach the bars themselves — and does
+> focusing a bar tell you what it is?
+
+> **A note on what the charts are for.** A chart is a picture of the data, not the
+> data itself. The table is the data, and it is the one a screen reader reads. If a
+> chart and its table ever disagree, that is a serious finding — please write it down.
+
+---
+
+## 21. An invoice
+
+On the **Reports** screen, under **Invoice**, choose a client and press **Show the
+invoice**.
+
+The lines should be your billable work, grouped by project, with the rate charged
+and the amount.
+
+> **What to look for.** Do the line amounts add up to the total exactly? Is the rate
+> on each line the rate you actually charged — including an entry where you set your
+> own rate rather than using the project's? Is a non-billable entry left out, and an
+> entry with no rate at all?
+
+If you change a rate and come back, the invoice changes with it. That is on
+purpose — nothing about an invoice is stored — but it is worth knowing before you
+rely on an old figure.
+
+---
+
 ## What we want from you
 
 For each section, one of:
