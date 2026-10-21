@@ -645,17 +645,23 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 # Where the branches are
 
 - `phase-2a` — basic end-to-end: timer, entries, storage, list. Merged as PR #3.
-- `phase-2b` — Dropbox sync, merge, backup. Complete; **still not pushed** as its own
-  branch. Its work reached `main` via `phase-4`.
+- `phase-2b` — Dropbox sync, merge, backup. Complete and **pushed**; its work reached
+  `main` via `phase-4`.
 - `phase-3` — test suite. Complete; folded into `phase-4`'s history, since each phase
   branches from the previous phase's head.
 - `phase-4` — taxonomy. Merged as PR #4 and **released as 0.1.0**. Deployed and verified
   live: `/package.json` 404s, so Pages is on Actions rather than branch source (0009 MP1).
 - `phase-5` — review remediation: settings and timer rebuilt, Dropbox token handling,
   schema migrations, About page. Merged as PR #5 and **released as 0.2.0**.
-- `phase-6` — **current branch.** Capacity: client-scoped contracted hours, and the reports
-  and charts that go with them.
+- `phase-6` — capacity: client-scoped contracted hours, and the reports and charts that
+  go with them. Merged as PR #7 and **released as 0.3.0**.
+- `phase-7` — the 0.3.0 branch, continued.
+- `phase-8` — **current branch.** The 0.3.1 fixes: the report's comparison, the
+  billable summary's unit, the save errors' position, a future start, and an uncovered
+  period counting as zero. Merged as PR #8 and **released as 0.3.1**, tagged `v0.3.1`.
 
+  `phase-6` is redundant — `phase-7` and `phase-8` contain all of it — and can be
+  deleted from the remote whenever that stops being confusing.
 
 ## Outstanding on `phase-2b` and `phase-3`
 
