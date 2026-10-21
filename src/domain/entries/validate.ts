@@ -111,13 +111,29 @@ export function validateEntry(
     }
   }
 
-  // 0004 V3
+  /*
+   * 0004 V3, amended.
+   *
+   * A start in the future used to be an error, and it was the wrong kind of wrong: it
+   * is *possible*, and several ordinary reasons for it are not mistakes. Planning a block
+   * of work that starts later today is a thing people do. A device whose clock is
+   * wrong by more than five minutes is a thing that happens. And a timer started before
+   * the clock was corrected is a thing that happened here.
+   *
+   * So it warns. The same treatment 0004 V5 gives a long entry: something that is
+   * unusual enough to be worth saying and ordinary enough not to be worth refusing.
+   *
+   * The tolerance stays, so ordinary clock skew does not even warn — the warning is
+   * for a start far enough ahead to be worth a second look.
+   */
   if (!Number.isNaN(start.getTime()) && start.getTime() > now.getTime() + FUTURE_TOLERANCE_MS) {
     issues.push({
       field: 'start',
       code: 'start_in_future',
-      message: 'Start is in the future.',
-      severity: 'error',
+      message:
+        'This entry starts in the future. Save it anyway if that is right — it is how you ' +
+        'record work you have planned for later.',
+      severity: 'warning',
     })
   }
 

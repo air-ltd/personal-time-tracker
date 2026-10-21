@@ -427,9 +427,12 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     expect(await screen.findByTestId('running-preview')).toHaveTextContent(/1h 30m/)
   })
 
-  it('still validates the parts that do apply', async () => {
-    // A running entry skips the duration rules because its length is the clock's doing,
-    // but a future start is the user's own error and must still block the save.
+  it('warns about a future start, and still saves', async () => {
+    // A running entry skips the duration rules because its length is the clock's doing.
+    // A future start used to block the save as well, which was the wrong kind of
+    // wrong: a start in the future is *possible* — planned work, a clock that is out,
+    // a timer started before the clock was corrected — and refusing to record it
+    // stopped people recording work at all.
     const stored = await putEntry(
       entry({ start: new Date('2026-10-13T12:00:00.000Z'), end: null, source: 'timer' }),
     )
@@ -437,7 +440,13 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     render(<EntryForm now={LATER} entry={stored} />)
     await user.click(await screen.findByRole('button', { name: 'Save changes' }))
 
-    expect(await screen.findByText('Start is in the future.')).toBeInTheDocument()
+    // A warning, not a blocker.
+    expect(await screen.findByText(/This entry starts in the future/)).toBeInTheDocument()
+
+    // And the save went through: the entry is still there, still running.
+    const saved = await getEntry(stored.id)
+    expect(saved).toBeDefined()
+    expect(saved?.end).toBeNull()
   })
 
   it('stops the entry when a duration is stated (0004 ED2)', async () => {
@@ -601,5 +610,74 @@ describe('the billing preview resolves currency through the whole chain', () => 
     await createProject({ name: 'Website', clientId: null, defaultRateMinor: 12_500, now: T0 })
 
     expect(await previewFor('Website')).toHaveTextContent(/\$125\.00/)
+  })
+})
+
+/**
+ * Where the save errors appear.
+ *
+ * The buttons are at the top of the card (item 77), so an error about the *save* has
+ * to be near them. They used to be at the bottom of the form, which was fine while
+ * the buttons were at the bottom too — and after the buttons moved, a save that failed
+ * said so below the form, out of sight of the control that had just been pressed.
+ */
+describe('where the save errors are', () => {
+  it('puts them directly under the save button, and above the fields', async () => {
+    const user = userEvent.setup()
+    installTestDb()
+
+    // A new entry with no times: the form cannot save it, and says so.
+    render(<EntryForm now={T0} />)
+    await user.click(await screen.findByRole('button', { name: 'Add entry' }))
+
+    const errors = await screen.findByTestId('form-errors')
+    const submit = screen.getByTestId('entry-submit')
+    const firstField = screen.getByLabelText('Start')
+
+    // After the button, so it is in the direction the eye moves from the control that
+    // was pressed. `compareDocumentPosition` describes the *argument's* position
+    // relative to the receiver, so the button preceding the errors is PRECEDING.
+    expect(
+      errors.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
+
+    // …and before the first field, so it cannot be below the fold on a form that is
+    // mostly fields.
+    expect(
+      errors.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('puts the warnings there too, for the same reason', async () => {
+    const user = userEvent.setup()
+    installTestDb()
+
+    // A start well into the future warns, and a warning is something the save said.
+    //
+    // Both times are stated, so the form is complete: an incomplete form returns
+    // before validation runs, and there is nothing to warn about yet.
+    render(<EntryForm now={T0} />)
+    await user.click(await screen.findByRole('radio', { name: 'Enter an end time' }))
+
+    // `fireEvent.change` rather than `user.type`: typing into a datetime-local types
+    // characters rather than filling the segments, so the value never lands.
+    fireEvent.change(screen.getByLabelText('Start'), {
+      target: { value: '2026-12-25T09:00' },
+    })
+    fireEvent.change(screen.getByLabelText('End'), {
+      target: { value: '2026-12-25T10:00' },
+    })
+    await user.click(await screen.findByRole('button', { name: 'Add entry' }))
+
+    const warnings = await screen.findByTestId('form-warnings')
+    const submit = screen.getByTestId('entry-submit')
+    const firstField = screen.getByLabelText('Start')
+
+    expect(
+      warnings.compareDocumentPosition(submit) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
+    expect(
+      warnings.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
   })
 })

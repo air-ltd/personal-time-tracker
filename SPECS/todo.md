@@ -639,6 +639,8 @@ Numbered, not bulleted. Ordered roughly by when they came up.
       action, and silently rewriting somebody's backup while recovering it is a
       modification they did not ask for and cannot see.
 
+84. [ ] When use opens two browsers concurrently they can start up two times in sync - they have to try hard to do this. In future we should build method to highlight overlapping timers.
+85. [ ] What do I want to reports related to expected hours.
 
 # Where the branches are
 
@@ -653,6 +655,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
   schema migrations, About page. Merged as PR #5 and **released as 0.2.0**.
 - `phase-6` — **current branch.** Capacity: client-scoped contracted hours, and the reports
   and charts that go with them.
+
 
 ## Outstanding on `phase-2b` and `phase-3`
 

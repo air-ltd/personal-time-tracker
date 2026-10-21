@@ -162,8 +162,15 @@ Applied to every entry, regardless of source:
 - **V1** — `end` is required and strictly after `start`.
 - **V2** — Maximum duration is 24 hours. A longer span is rejected with an
   explicit message, since it almost always means a typo or an unattended timer.
-- **V3** — `start` MUST not be in the future beyond a small tolerance
-  (5 minutes) to absorb clock skew.
+- **V3** — `start` SHOULD warn, not block, when it is in the future beyond a small
+  tolerance (5 minutes) to absorb clock skew.
+  *Amended.* This used to be an error, and it was the wrong kind of wrong: a start in
+  the future is *possible*, and several ordinary reasons for it are not mistakes.
+  Planning a block of work that starts later today is a thing people do; a device
+  whose clock is wrong by more than five minutes is a thing that happens; and a timer
+  started before the clock was corrected is a thing that happened here. So it warns,
+  the same treatment V5 gives a long entry — something worth saying and not worth
+  refusing. The tolerance stays, so ordinary clock skew does not even warn.
 - **V4** — Project required unless the user explicitly chooses uncategorised.
 - **V5** — The app SHOULD warn, not block, on a duration over 12 hours, because
   the 24-hour cap already caught the gross errors.

@@ -6,7 +6,7 @@ import { EntryReports } from './EntryReports'
 import { InvoiceView } from './InvoiceView'
 import { ReportsPage } from './ReportsPage'
 import { installTestDb } from '../../test/harness'
-import { prepareEntries } from '../../domain/reports/report'
+import { prepareEntries, rangeEntries, type ReportEntry } from '../../domain/reports/report'
 import { entry } from '../../test/factories'
 import type { Client, Project } from '../../domain/taxonomy/types'
 
@@ -50,6 +50,11 @@ const PROJECT: Project = {
 
 const NOW = new Date('2026-10-14T12:00:00.000Z')
 
+/** The entries as a range would hold them, for the report screens. */
+function ranged(prepared: readonly ReportEntry[]) {
+  return rangeEntries(prepared, { from: '2026-10-12', to: '2026-10-18' }, 'clipped', NOW, 15)
+}
+
 describe('the expected-against-actual report', () => {
   beforeEach(() => {
     installTestDb()
@@ -66,24 +71,108 @@ describe('the expected-against-actual report', () => {
     )
     render(
       <CapacityReport
+        now={NOW}
         range={{ from: '2026-10-12', to: '2026-10-18' }}
-        prepared={prepared}
+        ranged={ranged(prepared)}
         clients={[CLIENT]}
       />,
     )
 
-    await waitFor(() => expect(screen.getByRole('table')).toBeTruthy())
+    await waitFor(() => expect(screen.getAllByRole('table').length).toBeGreaterThan(0))
     const row = screen.getByRole('row', { name: /Acme Ltd/ })
     // The utilisation cell is the last one, and it must be a dash.
     const cells = within(row).getAllByRole('cell')
     expect(cells[cells.length - 2]?.textContent).toBe('—')
   })
 
+  /*
+   * The tracked figure must be for the period, not for ever.
+   *
+   * The expected hours are computed from the contract over the range, so summing every
+   * entry the client has ever had compared a lifetime against one week — the two sides
+   * of the comparison were about different periods, and the percentage was meaningless.
+   */
+  it('counts only the time tracked inside the period', async () => {
+    const prepared = prepareEntries(
+      [
+        // Two hours inside the period.
+        entry({
+          id: 'in',
+          projectId: 'p1',
+          start: new Date('2026-10-13T09:00:00.000Z'),
+          end: new Date('2026-10-13T11:00:00.000Z'),
+        }),
+        // Six hours before it, which must not be counted.
+        entry({
+          id: 'out',
+          projectId: 'p1',
+          start: new Date('2026-10-01T09:00:00.000Z'),
+          end: new Date('2026-10-01T15:00:00.000Z'),
+        }),
+      ],
+      { projects: [PROJECT], clients: [CLIENT], defaultCurrency: 'GBP' },
+      NOW,
+      15,
+    )
+    render(
+      <CapacityReport
+        now={NOW}
+        range={{ from: '2026-10-12', to: '2026-10-18' }}
+        ranged={ranged(prepared)}
+        clients={[CLIENT]}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByRole('table').length).toBeGreaterThan(0))
+    const row = screen.getByRole('row', { name: /Acme Ltd/ })
+    const cells = within(row).getAllByRole('cell')
+    // Two hours tracked, not eight.
+    expect(cells[1]?.textContent).toBe('2h')
+  })
+
+  /*
+   * The per-week list is a comparison, not a second set of totals.
+   *
+   * It used to show only the hours expected in each week, which reads as a total —
+   * and a total sitting next to the period's totals is a number about a different
+   * thing. It is how "a single week" came to be read as the expectation for the
+   * whole period.
+   */
+  it('shows the tracked hours beside the expected ones, for each week', async () => {
+    const prepared = prepareEntries(
+      [
+        entry({
+          id: 'in',
+          projectId: 'p1',
+          start: new Date('2026-10-13T09:00:00.000Z'),
+          end: new Date('2026-10-13T11:00:00.000Z'),
+        }),
+      ],
+      { projects: [PROJECT], clients: [CLIENT], defaultCurrency: 'GBP' },
+      NOW,
+      15,
+    )
+    render(
+      <CapacityReport
+        now={NOW}
+        range={{ from: '2026-10-12', to: '2026-10-18' }}
+        ranged={ranged(prepared)}
+        clients={[CLIENT]}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getAllByRole('table').length).toBeGreaterThan(1))
+    // The per-week table, by its caption — the summary table has an "Expected" column
+    // too, so the caption is what says *which* table this is.
+    expect(screen.getByText('Expected and tracked hours by week, for Acme Ltd')).toBeTruthy()
+  })
+
   it('says so when there is no client to report on', async () => {
     render(
       <CapacityReport
+        now={NOW}
         range={{ from: '2026-10-12', to: '2026-10-18' }}
-        prepared={[]}
+        ranged={[]}
         clients={[]}
       />,
     )
@@ -99,20 +188,7 @@ describe('the entry reports', () => {
   })
 
   it('says so when nothing was tracked in the period (0006 C6)', async () => {
-    const prepared = prepareEntries(
-      [],
-      { projects: [], clients: [], defaultCurrency: 'GBP' },
-      NOW,
-      15,
-    )
-    render(
-      <EntryReports
-        prepared={prepared}
-        durations={[]}
-        mode="clipped"
-        onModeChange={() => {}}
-      />,
-    )
+    render(<EntryReports ranged={[]} mode="clipped" onModeChange={() => {}} />)
     await waitFor(() =>
       expect(screen.getByText(/Nothing was tracked in this period/)).toBeTruthy(),
     )
@@ -126,14 +202,7 @@ describe('the entry reports', () => {
       NOW,
       15,
     )
-    render(
-      <EntryReports
-        prepared={prepared}
-        durations={prepared.map((item) => item.durationMs)}
-        mode="clipped"
-        onModeChange={() => {}}
-      />,
-    )
+    render(<EntryReports ranged={ranged(prepared)} mode="clipped" onModeChange={() => {}} />)
 
     await waitFor(() => expect(screen.getByRole('row', { name: /Total/ })).toBeTruthy())
     // A total row, and a percentage that adds to a hundred.
@@ -204,7 +273,7 @@ describe('the invoice', () => {
     expect(
       screen.getByRole('button', { name: 'Hide the invoice' }).getAttribute('aria-expanded'),
     ).toBe('true')
-    expect(screen.getByRole('table')).toBeTruthy()
+    expect(screen.getAllByRole('table').length).toBeGreaterThan(0)
   })
 })
 

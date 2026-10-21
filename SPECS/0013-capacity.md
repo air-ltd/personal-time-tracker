@@ -145,8 +145,18 @@ applies. Two *different* clients may each have an open-ended period: neither
 speaks for the other's hours.
 
 **K5** — If no contract period covers part or all of a report range for a client,
-expected hours for that portion MUST be reported as **unknown**, not as zero. Zero
-contracted hours makes utilisation divide by zero, and "unknown" is the truth.
+expected hours for that portion MUST be counted as **zero**, so the total can be
+added up and compared with what was worked.
+
+*Amended.* This used to make the whole figure **unknown**, and the reasoning was that
+zero is a claim and "unknown" is the truth. But a report that cannot be summed
+cannot be read: a period the contract only partly covered showed a dash for its
+total, next to a per-week breakdown that had the covered weeks' figures in it, and the
+two together said less than either alone. A dash is a number about a different thing.
+
+The days that were not covered are still counted, so a report can say how much of the
+period the contract had an opinion about — the distinction is kept where it is
+informative and dropped where it is only obstructive.
 
 **K6** — A contract with no working days MUST be rejected (0003 CT6), because it
 has no denominator.
@@ -180,12 +190,12 @@ parameters — no clock reads, no storage access (0002 A2).
 ```
 expectedMinutes(range, clientId):
   for each local calendar day d in range:
-    period  = contractPeriodContaining(d, clientId)      // null → unknown
-    if period is null: mark unknown; continue
+    period  = contractPeriodContaining(d, clientId)      // null → not covered
+    if period is null: count as uncovered; contribute 0   // K5
     minutes = pattern.minutes[weekday(d)]
     if minutes == 0:                   contribute 0
     else:                               contribute minutes
-  if any day was unknown, the figure is unknown
+  the total is the sum, and the count of uncovered days is reported alongside it
 ```
 
 There is no non-working-day step, because the entity is deferred. Every expected
@@ -231,8 +241,11 @@ app's overall hours-worked figure and the sum of the clients' figures differ
 **CP-A5** — Utilisation MUST be expressed as a percentage to one decimal place,
 derived from unrounded inputs.
 
-**CP-A6** — When `available` is unknown or zero (K5), utilisation MUST render as
-`—`, never `0%`, `100%`, `NaN` or `Infinity`.
+**CP-A6** — When `available` is zero — which is what a period the contract does not
+cover at all amounts to (K5) — utilisation MUST render as `—`, never `0%`, `100%`,
+`NaN` or `Infinity`. There is no expectation to have a share of, so there is no
+percentage to show; the expected and tracked figures beside it are still shown, so
+the reader can see what happened.
 
 **CP-A7** — Billable utilisation above 100% MUST still be shown exactly, with a
 plain-language note rather than a cap or a warning colour. Billing more than
@@ -321,8 +334,8 @@ separate. A total mixing worked hours with expected hours is meaningless.
    (CP-A3).
 5. Two clients may each hold an open-ended period without either conflicting
    (K4).
-6. Expected hours for a client with no contract covering part of the range are
-   unknown for that portion, not zero (K5).
+6. Expected hours for a client with no contract covering part of the range count as
+   zero for that portion, and the total can still be added up (K5).
 7. Time tracked against a client-less project appears in no client's utilisation
    (CP2).
 8. Absent-but-unlogged days are identified correctly for a client (CR6).

@@ -288,10 +288,40 @@ describe('billableSummary (0006 R6)', () => {
     const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
     const durations = prepared.map((item) => item.durationMs)
 
-    const summary = billableSummary(prepared, durations)
-    expect(summary.billableMs).toBe(2 * 3_600_000)
-    expect(summary.nonBillableMs).toBe(2 * 3_600_000)
-    expect(summary.totalMs).toBe(4 * 3_600_000)
+    const summary = billableSummary(
+      prepared.map((item, index) => ({
+        item,
+        ms: durations[index] ?? null,
+        billableMs: durations[index] ?? null,
+      })),
+    )
+    // Minutes, like every other figure on the reports screen.
+    expect(summary.billableMinutes).toBe(2 * 60)
+    expect(summary.nonBillableMinutes).toBe(2 * 60)
+    expect(summary.totalMinutes).toBe(4 * 60)
+  })
+
+  it('reports in minutes, not milliseconds', () => {
+    // A unit error in a figure that is otherwise plausible is the worst kind: five
+    // hours of work read as "300000h", which looks like a lifetime rather than a
+    // typo. Every other figure on the reports screen is in minutes, and this one
+    // has to agree with them.
+    const entries = [
+      entry({ id: 'e1', projectId: 'p1', billable: true }),
+      entry({ id: 'e2', projectId: 'p1', billable: false }),
+    ]
+    const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
+    const ranged = prepared.map((item) => ({
+      item,
+      ms: item.durationMs,
+      billableMs: item.durationMs,
+    }))
+
+    const summary = billableSummary(ranged)
+    // Two hours each.
+    expect(summary.billableMinutes).toBe(120)
+    expect(summary.nonBillableMinutes).toBe(120)
+    expect(summary.totalMinutes).toBe(240)
   })
 
   it('keeps currencies apart rather than summing them (0003 CU2)', () => {
@@ -302,7 +332,13 @@ describe('billableSummary (0006 R6)', () => {
     const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
     const durations = prepared.map((item) => item.durationMs)
 
-    const summary = billableSummary(prepared, durations)
+    const summary = billableSummary(
+      prepared.map((item, index) => ({
+        item,
+        ms: durations[index] ?? null,
+        billableMs: durations[index] ?? null,
+      })),
+    )
     expect(summary.amountByCurrency.size).toBe(2)
   })
 })

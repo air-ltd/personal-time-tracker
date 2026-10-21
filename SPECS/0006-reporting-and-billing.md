@@ -25,6 +25,11 @@ applied, and MUST NOT silently use a default when none covers the range
 (0013 K5). A utilisation figure with an unstated denominator is the kind of number
 that gets quoted out of context.
 
+*Amended with K5:* a period no contract covers counts as zero expected hours, so the
+figure can be added up. The denominator is still stated, and the report still says how
+much of the period the contract had an opinion about — a zero that is not labelled is
+exactly the unstated default RP4 is about.
+
 ## Date ranges
 
 **DR1** — The app MUST offer presets: today, yesterday, this week, last week, this
