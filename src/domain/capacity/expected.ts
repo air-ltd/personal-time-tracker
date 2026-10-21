@@ -21,11 +21,13 @@ import { contractPeriodContaining, localDateKey } from './contract'
 import type { ContractPeriod } from './types'
 
 /**
- * The expected minutes for one local day, or `null` when unknown.
+ * The expected minutes for one local day, or `null` when no contract covered it.
  *
- * `null` means *unknown*, not zero (0013 K5). Zero contracted hours makes utilisation
- * divide by zero, and "unknown" is the truth: no contract covered that day, so there is
- * no denominator for it.
+ * `null` means *not specified*, not zero. The distinction is kept at the day level
+ * because it is worth knowing — a day the contract says nothing about is a different
+ * fact from a day the contract says is zero hours — but it does not poison a total.
+ *
+ * See `expectedMinutes` for what happens when the two are added up.
  */
 export function expectedMinutesForDay(
   periods: readonly ContractPeriod[],
@@ -44,14 +46,19 @@ export function expectedMinutesForDay(
 
 export interface ExpectedHours {
   /**
-   * Total expected minutes, or `null` when any part of the range is unknown.
+   * Total expected minutes over the range.
    *
-   * Unknown is sticky for the range: a total that adds a known number to an unknown one
-   * is itself unknown, and reporting it as the known part would understate the
-   * expectation without saying so (0013 K5).
+   * **A day no contract covered counts as zero.** It used to make the whole total
+   * unknown, which meant a report over a period the contract only partly covered
+   * could not be added up or compared with anything — the figure was a dash, and a
+   * dash next to a total is a number about a different thing.
+   *
+   * Summing is the point: a report that cannot be summed cannot be read. The days
+   * that were not covered are still counted in `unknownDays`, so the report can say
+   * how much of the period the contract had an opinion about.
    */
-  minutes: number | null
-  /** Days in the range that no contract covered. */
+  minutes: number
+  /** Days in the range that no contract covered, and which therefore counted as zero. */
   unknownDays: number
   /** Days in the range that a contract covered. */
   coveredDays: number
@@ -76,14 +83,17 @@ export function expectedMinutes(
 
   forEachDayKey(from, to, (day) => {
     const minutes = expectedMinutesForDay(periods, clientId, day)
-    if (minutes === null) unknownDays += 1
-    else {
-      total += minutes
-      coveredDays += 1
+    if (minutes === null) {
+      // No contract covered this day, so no hours are expected for it. Zero, and the
+      // day is counted so the report can say how much of the period was like this.
+      unknownDays += 1
+      return
     }
+    total += minutes
+    coveredDays += 1
   })
 
-  return { minutes: unknownDays > 0 ? null : total, unknownDays, coveredDays }
+  return { minutes: total, unknownDays, coveredDays }
 }
 
 /**
@@ -108,15 +118,12 @@ export function expectedMinutesByWeek(
     const bucket = weeks.get(week) ?? { minutes: 0, unknownDays: 0, coveredDays: 0 }
     const minutes = expectedMinutesForDay(periods, clientId, day)
     if (minutes === null) {
+      // No contract covered this day, so no hours are expected for it. Zero, and the
+      // day is counted so the report can say how much of the week was like this.
       bucket.unknownDays += 1
-      // Unknown is sticky within the week, exactly as it is within a range.
-      bucket.minutes = null
     } else {
-      // `coveredDays` counts every covered day, even after the week has become
-      // unknown — the count is diagnostic, and a week that turned unknown halfway
-      // through still covered the days before that point.
+      bucket.minutes += minutes
       bucket.coveredDays += 1
-      if (bucket.minutes !== null) bucket.minutes += minutes
     }
     weeks.set(week, bucket)
   })

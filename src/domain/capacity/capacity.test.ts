@@ -229,15 +229,22 @@ describe('expectedMinutes', () => {
     expect(expectedMinutesForDay(bounded, 'client-a', '2027-01-04')).toBeNull()
   })
 
-  it('makes the whole range unknown when any day is uncovered (0013 K5)', () => {
+  it('counts a day the contract does not cover as zero, and says how many (0013 K5)', () => {
     const bounded = [period({ effectiveTo: '2026-12-31' })]
     const result = expectedMinutes('2026-01-05', '2026-01-11', 'client-a', bounded)
     expect(result.minutes).toBe(2400)
 
-    // A range that runs past the end of the contract is partly unknown.
+    // A range that runs past the end of the contract is partly uncovered. It used to
+    // make the whole total unknown, which meant a report over a period the contract
+    // only partly covered could not be added up at all.
+    //
+    // The contract runs to the end of 2026, so almost all of this range is covered:
+    // 518 working days at 240 minutes, and the eighteen uncovered days in January
+    // 2027 count as zero.
     const partly = expectedMinutes('2026-01-05', '2027-01-18', 'client-a', bounded)
-    expect(partly.minutes).toBeNull()
-    expect(partly.unknownDays).toBeGreaterThan(0)
+    expect(partly.minutes).toBe(518 * 240)
+    expect(partly.unknownDays).toBe(18)
+    expect(partly.coveredDays).toBe(361)
   })
 
   it('attributes each portion of a range to its own contract (0013 CP-A3)', () => {
@@ -259,14 +266,18 @@ describe('expectedMinutes', () => {
   })
 
   it('keeps two clients apart', () => {
+    // A client with no contract has no expected hours. Zero is the right answer now:
+    // the report can add it up, and the utilisation is a dash because there is no
+    // expectation to have a share of (0013 CP-A6).
     const result = expectedMinutes('2026-01-05', '2026-01-11', 'client-b', periods)
-    expect(result.minutes).toBeNull()
+    expect(result.minutes).toBe(0)
+    expect(result.unknownDays).toBe(7)
   })
 
   it('ignores a tombstoned contract (0012 M6)', () => {
     const deleted = [period({ deletedAt: '2026-01-01T00:00:00.000Z' })]
     const result = expectedMinutes('2026-01-05', '2026-01-11', 'client-a', deleted)
-    expect(result.minutes).toBeNull()
+    expect(result.minutes).toBe(0)
   })
 })
 
@@ -326,12 +337,16 @@ describe('utilisation', () => {
     expect(result.percent).toBe(125)
   })
 
-  it('reports the delta as unknown when the expectation is unknown', () => {
+  it('reports the difference against zero when nothing is expected', () => {
     const result = utilisation('2026-01-05', '2026-01-11', 'client-b', periods, {
       minutes: 600,
       billableMinutes: 600,
     })
-    expect(result.delta).toBeNull()
+    // The utilisation is a dash — there is no expectation to have a share of — but the
+    // difference is a number, because 600 against 0 is 600.
+    expect(result.percent).toBeNull()
+    expect(result.expected).toBe(0)
+    expect(result.delta).toBe(600)
   })
 })
 

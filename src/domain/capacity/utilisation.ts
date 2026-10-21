@@ -15,19 +15,25 @@ import type { ContractPeriod } from './types'
 
 export interface Utilisation {
   /**
-   * Percentage to one decimal place, or `null` when the denominator is unknown or zero.
+   * Percentage to one decimal place, or `null` when there is no expectation to have a
+   * share of.
    *
    * Derived from unrounded inputs (0013 CP-A5) and never clamped: billing more than
    * contracted hours is normal and profitable, not an error (0013 CP-A7).
    */
   percent: number | null
-  /** Expected minutes in the range, or null when unknown. */
-  expected: number | null
+  /**
+   * Expected minutes in the range.
+   *
+   * Days the contract did not cover count as zero, so this is a figure that can be
+   * added up and compared with what was worked.
+   */
+  expected: number
   /** Minutes actually worked against the client in the range. */
   worked: number
-  /** Minutes worked minus minutes expected, or null when the expectation is unknown. */
-  delta: number | null
-  /** Days in the range that no contract covered. */
+  /** Minutes worked minus minutes expected. */
+  delta: number
+  /** Days in the range that no contract covered, and which therefore counted as zero. */
   unknownDays: number
 }
 
@@ -56,12 +62,17 @@ export function utilisation(
   const expected: ExpectedHours = expectedMinutes(from, to, clientId, periods)
   const available = expected.minutes
 
-  if (available === null || available === 0) {
+  /*
+   * No expectation at all — the contract covers none of this period — leaves nothing
+   * to have a share of, and the figure renders as a dash rather than as a division by
+   * zero (0013 CP-A6).
+   */
+  if (available === 0) {
     return {
       percent: null,
       expected: available,
       worked: worked.minutes,
-      delta: null,
+      delta: worked.minutes,
       unknownDays: expected.unknownDays,
     }
   }
@@ -91,12 +102,12 @@ export function billableUtilisation(
   const expected: ExpectedHours = expectedMinutes(from, to, clientId, periods)
   const available = expected.minutes
 
-  if (available === null || available === 0) {
+  if (available === 0) {
     return {
       percent: null,
       expected: available,
       worked: worked.billableMinutes,
-      delta: null,
+      delta: worked.billableMinutes,
       unknownDays: expected.unknownDays,
     }
   }

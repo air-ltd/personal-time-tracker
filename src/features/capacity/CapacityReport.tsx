@@ -162,7 +162,7 @@ export function CapacityReport({ now, range, ranged, clients }: CapacityReportPr
           {rows.map(({ clientId, figure, billable }) => (
             <tr key={clientId}>
               <th scope="row">{nameOf(clientId)}</th>
-              <td>{figure.expected === null ? '—' : formatMinutes(figure.expected)}</td>
+              <td>{formatMinutes(figure.expected)}</td>
               <td>{formatMinutes(figure.worked)}</td>
               <td>{figure.delta === null ? '—' : formatMinutes(figure.delta)}</td>
               <td>{formatUtilisation(figure.percent)}</td>

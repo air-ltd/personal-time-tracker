@@ -35,6 +35,13 @@ wrong.
   difference for each week — rather than a list of weekly expectations that
   read as totals.
 
+  And a period the contract does not fully cover now counts as zero expected
+  hours rather than making the whole figure unknown. A report that cannot be
+  summed cannot be read: the total was a dash, sitting next to a per-week
+  breakdown that had the covered weeks' figures in it, and the two together said
+  less than either alone. The days the contract said nothing about are still
+  counted, so a report can say how much of the period it had an opinion about.
+
 - **The save errors and warnings sat at the bottom of the form.** They were
   there from before the buttons moved to the top, and after they moved the
   errors were left at the bottom: a save that failed said so out of sight of the

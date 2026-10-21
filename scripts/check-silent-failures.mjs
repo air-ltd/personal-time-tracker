@@ -279,12 +279,12 @@ const MUTATIONS = [
      * guard this is `NaN` or `Infinity`, and the panel renders it as a number because
      * the number is what it is.
      */
-    find: `  if (available === null || available === 0) {
+    find: `  if (available === 0) {
     return {
       percent: null,
       expected: available,
       worked: worked.minutes,
-      delta: null,
+      delta: worked.minutes,
       unknownDays: expected.unknownDays,
     }
   }
@@ -292,7 +292,7 @@ const MUTATIONS = [
   return {
     percent: roundToOneDecimal((worked.minutes / available) * 100),`,
     replace: `  return {
-    percent: roundToOneDecimal((worked.minutes / (available ?? 0)) * 100),`,
+    percent: roundToOneDecimal((worked.minutes / available) * 100),`,
     test: 'src/domain/capacity/capacity.test.ts',
   },
   {

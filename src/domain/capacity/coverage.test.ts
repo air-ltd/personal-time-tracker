@@ -66,13 +66,16 @@ describe('billable utilisation (0013 CR3)', () => {
     expect(billable.percent).toBe(37.5)
   })
 
-  it('is unknown when the expectation is unknown, not zero', () => {
+  it('is a dash when nothing is expected, because there is no share to have', () => {
     const result = billableUtilisation('2026-01-05', '2026-01-11', 'client-b', periods, {
       minutes: 600,
       billableMinutes: 600,
     })
+    // No contract covers this client, so there is no expectation to have a share of.
+    // The difference is still a number: 600 against 0 is 600.
     expect(result.percent).toBeNull()
-    expect(result.delta).toBeNull()
+    expect(result.expected).toBe(0)
+    expect(result.delta).toBe(600)
     expect(result.worked).toBe(600)
   })
 
