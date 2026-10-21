@@ -18,7 +18,7 @@ breaks, and the patch digit for fixes within that.
 
 ## [0.3.1] - 2026-10-21
 
-Three fixes to 0.3.0, the first of which made a number on the reports screen
+Five fixes to 0.3.0, the first of which made a number on the reports screen
 wrong.
 
 ### Fixed
