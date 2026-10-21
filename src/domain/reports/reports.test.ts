@@ -288,7 +288,13 @@ describe('billableSummary (0006 R6)', () => {
     const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
     const durations = prepared.map((item) => item.durationMs)
 
-    const summary = billableSummary(prepared, durations)
+    const summary = billableSummary(
+      prepared.map((item, index) => ({
+        item,
+        ms: durations[index] ?? null,
+        billableMs: durations[index] ?? null,
+      })),
+    )
     expect(summary.billableMs).toBe(2 * 3_600_000)
     expect(summary.nonBillableMs).toBe(2 * 3_600_000)
     expect(summary.totalMs).toBe(4 * 3_600_000)
@@ -302,7 +308,13 @@ describe('billableSummary (0006 R6)', () => {
     const prepared = prepareEntries(entries, TAXONOMY, NOW, 15)
     const durations = prepared.map((item) => item.durationMs)
 
-    const summary = billableSummary(prepared, durations)
+    const summary = billableSummary(
+      prepared.map((item, index) => ({
+        item,
+        ms: durations[index] ?? null,
+        billableMs: durations[index] ?? null,
+      })),
+    )
     expect(summary.amountByCurrency.size).toBe(2)
   })
 })

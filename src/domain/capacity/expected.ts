@@ -138,6 +138,43 @@ export function weekKeyFor(day: string, weekStart: WeekStart = 'monday'): string
 }
 
 /**
+ * The time tracked, grouped by the week it falls in.
+ *
+ * The counterpart to `expectedMinutesByWeek`, and the reason the two are paired: a
+ * week that shows what was expected and nothing about what was done reads as a total,
+ * and a total next to the period's totals is a number about a different thing.
+ *
+ * An entry that runs across a week boundary is split between the weeks it touches, so
+ * the weeks add up to the period's total.
+ */
+export function trackedMinutesByWeek(
+  entries: readonly { startMs: number; endMs: number }[],
+  from: string,
+  to: string,
+  weekStart: WeekStart = 'monday',
+): Map<string, number> {
+  const weeks = new Map<string, number>()
+
+  forEachDayKey(from, to, (day) => {
+    const week = weekKeyFor(day, weekStart)
+    weeks.set(week, weeks.get(week) ?? 0)
+  })
+
+  for (const entry of entries) {
+    forEachDayKey(from, to, (day) => {
+      const { start, end } = localDayBounds(day)
+      const from_ = Math.max(entry.startMs, start.getTime())
+      const to_ = Math.min(entry.endMs, end.getTime())
+      if (to_ <= from_) return
+      const week = weekKeyFor(day, weekStart)
+      weeks.set(week, (weeks.get(week) ?? 0) + (to_ - from_) / 60_000)
+    })
+  }
+
+  return weeks
+}
+
+/**
  * Call `visit` for every local day key from `from` to `to`, inclusive of both ends.
  *
  * Inclusive at both ends because a contract's dates are inclusive (0003 §ContractPeriod)

@@ -353,6 +353,45 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
         )}
       </div>
 
+      {/*
+        The save warnings, with the errors and for the same reason.
+
+        A warning is something the save said — "this starts in the future", "that is a
+        thirteen-hour entry" — and it belongs beside the button that saved it, for the
+        same reason the errors do.
+      */}
+      {warnings.length > 0 && (
+        <div className="alert alert-warning" data-testid="form-warnings">
+          <ul>
+            {warnings.map((issue) => (
+              <li key={`${issue.code}-${issue.field}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/*
+        The save errors, directly under the button that was pressed.
+
+        They used to be at the bottom of the form, which was fine while the buttons
+        were at the bottom too. Moving the buttons to the top (item 77) left the
+        errors at the bottom, so a save that failed said so *below* the form — out of
+        sight of the button that had just been pressed, and a long way down a form
+        that is mostly fields.
+
+        The error is about the *save*, so it belongs beside the control that saves.
+      */}
+      {errors.length > 0 && (
+        <div className="alert alert-error" role="alert" data-testid="form-errors">
+          <p className="visually-hidden">Cannot save yet</p>
+          <ul>
+            {errors.map((issue) => (
+              <li key={`${issue.code}-${issue.field}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="field">
         <label htmlFor="entry-start">Start</label>
         <input
@@ -535,27 +574,6 @@ export function EntryForm({ entry, now, onDelete }: EntryFormProps) {
       {taxonomyError !== null && (
         <div className="alert alert-error" role="alert" data-testid="taxonomy-error">
           <p>{taxonomyError}</p>
-        </div>
-      )}
-
-      {errors.length > 0 && (
-        <div className="alert alert-error" role="alert" data-testid="form-errors">
-          <p className="visually-hidden">Cannot save yet</p>
-          <ul>
-            {errors.map((issue) => (
-              <li key={`${issue.code}-${issue.field}`}>{issue.message}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {warnings.length > 0 && (
-        <div className="alert alert-warning" data-testid="form-warnings">
-          <ul>
-            {warnings.map((issue) => (
-              <li key={`${issue.code}-${issue.field}`}>{issue.message}</li>
-            ))}
-          </ul>
         </div>
       )}
     </form>

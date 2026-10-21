@@ -7,7 +7,7 @@ import { readRoundingIncrementMinutes, readWeekStart } from '../../storage/setti
 import { useRevision } from '../../storage/useRevision'
 import { useEntries } from '../entries/useEntries'
 import { useTaxonomy } from '../taxonomy/useTaxonomy'
-import { durationInRange, prepareEntries } from '../../domain/reports/report'
+import { prepareEntries, rangeEntries } from '../../domain/reports/report'
 import type { ReportEntry } from '../../domain/reports/report'
 
 /**
@@ -74,10 +74,17 @@ export function ReportsPage({ now }: ReportsPageProps) {
     [entries, projects, clients, now, increment],
   )
 
-  const durations = useMemo(
-    () =>
-      prepared.map((item) => durationInRange(item, range ?? { from: '', to: '' }, mode, now)),
-    [prepared, range, mode, now],
+  /*
+   * The entries in the range, with what each one contributes.
+   *
+   * Computed once here and shared, so the capacity report, the entry reports and the
+   * invoice are all about the same period. It is also what stops one of them summing
+   * every entry the client has ever had while another counts only the period — the
+   * comparison then means nothing.
+   */
+  const ranged = useMemo(
+    () => (range === null ? [] : rangeEntries(prepared, range, mode, now, increment)),
+    [prepared, range, mode, now, increment],
   )
 
   if (entriesLoading || taxonomyLoading || !loaded) {
@@ -113,13 +120,8 @@ export function ReportsPage({ now }: ReportsPageProps) {
 
       {range !== null && (
         <>
-          <CapacityReport range={range} prepared={prepared} clients={clients} />
-          <EntryReports
-            prepared={prepared}
-            durations={durations}
-            mode={mode}
-            onModeChange={setMode}
-          />
+          <CapacityReport now={now} range={range} ranged={ranged} clients={clients} />
+          <EntryReports ranged={ranged} mode={mode} onModeChange={setMode} />
 
           {/*
             The invoice, for one client at a time.
@@ -154,7 +156,7 @@ export function ReportsPage({ now }: ReportsPageProps) {
             clientId={invoiceClientId}
             clientName={clients.find((client) => client.id === invoiceClientId)?.name ?? ''}
             entries={prepared}
-            durations={durations}
+            durations={ranged.map((entry) => entry.ms)}
             incrementMinutes={increment}
           />
         </>

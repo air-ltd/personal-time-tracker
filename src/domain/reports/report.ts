@@ -352,10 +352,7 @@ export interface BillableSummary {
   amountByCurrency: Map<string, number>
 }
 
-export function billableSummary(
-  prepared: readonly ReportEntry[],
-  durations: readonly (number | null)[],
-): BillableSummary {
+export function billableSummary(ranged: readonly RangedEntry[]): BillableSummary {
   let billable = 0
   let rawBillable = 0
   let nonBillable = 0
@@ -363,17 +360,19 @@ export function billableSummary(
   let unknown = false
   const amountByCurrency = new Map<string, number>()
 
-  prepared.forEach((item, index) => {
-    const duration = durations[index] ?? null
-    if (duration === null) {
+  for (const { item, ms, billableMs } of ranged) {
+    if (ms === null) {
       unknown = true
-      return
+      continue
     }
-    total += duration
+    total += ms
     if (item.entry.billable) {
-      billable += item.billableMs ?? duration
-      rawBillable += duration
-    } else nonBillable += duration
+      // The rounded *clipped* duration, so the billable figure is about the same
+      // period as the total beside it. An entry that ran from before the period
+      // into it contributes only the part inside.
+      billable += billableMs ?? ms
+      rawBillable += ms
+    } else nonBillable += ms
 
     if (item.amountMinor !== null && item.currency !== null) {
       amountByCurrency.set(
@@ -381,7 +380,7 @@ export function billableSummary(
         (amountByCurrency.get(item.currency) ?? 0) + item.amountMinor,
       )
     }
-  })
+  }
 
   return {
     billableMs: unknown ? null : billable,
@@ -390,6 +389,45 @@ export function billableSummary(
     rawBillableMs: unknown ? null : rawBillable,
     amountByCurrency,
   }
+}
+
+/**
+ * The entries in a range, with the duration each one contributes.
+ *
+ * **Both** figures are clipped to the range: the time it contributed, and the billable
+ * time it contributed.
+ *
+ * The billable one matters as much as the other. An entry that runs from before the
+ * range into it contributes only the part inside, and the billable figure has to be
+ * the rounded *clipped* time — otherwise a month's total says "8 hours" and the
+ * billable figure beside it says the whole of an entry that started last month.
+ *
+ * One function, so the reports cannot disagree about which entries are in the period
+ * or what they contributed to it.
+ */
+export interface RangedEntry {
+  item: ReportEntry
+  /** Milliseconds inside the range. Null when the entry's duration cannot be read. */
+  ms: number | null
+  /** The billable duration inside the range, rounded to the increment. */
+  billableMs: number | null
+}
+
+export function rangeEntries(
+  prepared: readonly ReportEntry[],
+  range: DateRange,
+  mode: RangeMode,
+  now: Date,
+  incrementMinutes: number,
+): RangedEntry[] {
+  return prepared.map((item) => {
+    const ms = durationInRange(item, range, mode, now)
+    return {
+      item,
+      ms,
+      billableMs: ms === null ? null : billableDurationMs(ms, incrementMinutes),
+    }
+  })
 }
 
 /**

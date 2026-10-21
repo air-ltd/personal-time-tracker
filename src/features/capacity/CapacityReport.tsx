@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 import { useContracts } from './useContracts'
-import { expectedMinutesByWeek } from '../../domain/capacity/expected'
+import { expectedMinutesByWeek, trackedMinutesByWeek } from '../../domain/capacity/expected'
 import {
   billableUtilisation,
   formatUtilisation,
   utilisation,
 } from '../../domain/capacity/utilisation'
 import { formatMinutes } from '../../domain/time/duration'
-import type { ReportEntry } from '../../domain/reports/report'
+import type { RangedEntry } from '../../domain/reports/report'
 import type { DateRange } from '../../domain/reports/ranges'
 import type { Client } from '../../domain/taxonomy/types'
 
@@ -27,13 +27,22 @@ import type { Client } from '../../domain/taxonomy/types'
  * total (0006 RP2).
  */
 export interface CapacityReportProps {
+  /** The instant a running entry's elapsed time is measured against. */
+  now: Date
   range: DateRange
-  prepared: readonly ReportEntry[]
+  /**
+   * The entries in the range, with what each contributed.
+   *
+   * The range is what makes the two sides of the comparison agree. The expected hours
+   * are for the period, so the tracked hours have to be for the same period — summing
+   * every entry the client has ever had would compare a lifetime against one week.
+   */
+  ranged: readonly RangedEntry[]
   /** The clients, so a row can be named rather than identified. */
   clients: readonly Client[]
 }
 
-export function CapacityReport({ range, prepared, clients }: CapacityReportProps) {
+export function CapacityReport({ now, range, ranged, clients }: CapacityReportProps) {
   const nameOf = useMemo(() => {
     const byId = new Map(clients.map((client) => [client.id, client.name]))
     return (id: string) => byId.get(id) ?? id
@@ -51,7 +60,7 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
      * identical to "no expectation set".
      */
     const clientIds = new Set<string>()
-    for (const item of prepared) {
+    for (const { item } of ranged) {
       if (item.clientId !== null) clientIds.add(item.clientId)
     }
     for (const period of periods) {
@@ -59,10 +68,12 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
     }
 
     return [...clientIds].map((clientId) => {
-      const clientEntries = prepared.filter((item) => item.clientId === clientId)
-      const workedMs = clientEntries.reduce((total, item) => total + (item.durationMs ?? 0), 0)
+      // Only what fell inside the period, so the tracked figure and the expected
+      // figure are about the same period.
+      const clientEntries = ranged.filter(({ item }) => item.clientId === clientId)
+      const workedMs = clientEntries.reduce((total, entry) => total + (entry.ms ?? 0), 0)
       const billableMs = clientEntries.reduce(
-        (total, item) => total + (item.billableMs ?? 0),
+        (total, entry) => total + (entry.billableMs ?? 0),
         0,
       )
       /*
@@ -86,14 +97,34 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
       const billable = billableUtilisation(range.from, range.to, clientId, periods, worked)
       return { clientId, figure, billable }
     })
-  }, [range, prepared, periods])
+  }, [range, ranged, periods])
 
+  /*
+   * Each week, with what was expected and what was done.
+   *
+   * The two are paired deliberately. A week that shows only what was expected reads
+   * as a total, and a total sitting next to the period's totals is a number about a
+   * different thing — which is how "a single week" came to be compared against the
+   * whole period.
+   */
   const weeks = useMemo(() => {
-    return [...new Set(rows.map((row) => row.clientId))].map((clientId) => ({
-      clientId,
-      byWeek: expectedMinutesByWeek(range.from, range.to, clientId, periods),
-    }))
-  }, [range, rows, periods])
+    return [...new Set(rows.map((row) => row.clientId))].map((clientId) => {
+      const clientEntries = ranged
+        .filter(({ item }) => item.clientId === clientId)
+        .map(({ item }) => {
+          const start = Date.parse(item.entry.start)
+          const end = item.entry.end === null ? now.getTime() : Date.parse(item.entry.end)
+          return { startMs: start, endMs: end }
+        })
+        .filter((span) => Number.isFinite(span.startMs) && Number.isFinite(span.endMs))
+
+      return {
+        clientId,
+        expected: expectedMinutesByWeek(range.from, range.to, clientId, periods),
+        tracked: trackedMinutesByWeek(clientEntries, range.from, range.to),
+      }
+    })
+  }, [range, rows, periods, ranged, now])
 
   if (loading) return <p className="hint">Loading expected hours…</p>
 
@@ -146,20 +177,44 @@ export function CapacityReport({ range, prepared, clients }: CapacityReportProps
         which week went short (0013 CR2).
       */}
       <div className="capacity-weeks">
-        {weeks.map(({ clientId, byWeek }) => (
+        {weeks.map(({ clientId, expected, tracked }) => (
           <div key={clientId} className="capacity-week-group">
             <h3>{nameOf(clientId)}</h3>
-            {byWeek.size === 0 ? (
+            {expected.size === 0 ? (
               <p className="hint">Nothing in this period.</p>
             ) : (
-              <ul className="capacity-week-list">
-                {[...byWeek.entries()].map(([week, value]) => (
-                  <li key={week}>
-                    <span className="capacity-week">{week}</span>
-                    <span>{value.minutes === null ? '—' : formatMinutes(value.minutes)}</span>
-                  </li>
-                ))}
-              </ul>
+              <table className="capacity-table">
+                <caption className="visually-hidden">
+                  Expected and tracked hours by week, for {nameOf(clientId)}
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Week of</th>
+                    <th scope="col">Expected</th>
+                    <th scope="col">Tracked</th>
+                    <th scope="col">Difference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...expected.entries()].map(([week, value]) => {
+                    const done = tracked.get(week) ?? 0
+                    const expectedMinutes = value.minutes
+                    const difference = expectedMinutes === null ? null : done - expectedMinutes
+                    return (
+                      <tr key={week}>
+                        <th scope="row">{week}</th>
+                        <td>
+                          {expectedMinutes === null ? '—' : formatMinutes(expectedMinutes)}
+                        </td>
+                        <td>{formatMinutes(Math.round(done))}</td>
+                        <td>
+                          {difference === null ? '—' : formatMinutes(Math.round(difference))}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         ))}

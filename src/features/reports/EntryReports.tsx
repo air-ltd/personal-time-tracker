@@ -4,6 +4,7 @@ import {
   breakdownBy,
   dailyTotals,
   unbilledWork,
+  type RangedEntry,
   type ReportEntry,
 } from '../../domain/reports/report'
 import type { RangeMode } from '../../domain/reports/ranges'
@@ -24,15 +25,14 @@ import { ShareBar } from './charts/ShareBar'
  * checked afterwards (0006 RP2).
  */
 export interface EntryReportsProps {
-  prepared: readonly ReportEntry[]
   /**
-   * How much each entry contributes to the range, already clipped.
+   * The entries in the range, with what each contributed.
    *
-   * Passed in rather than computed here, because the invoice needs the same
-   * durations — and two reports over different periods would be two answers to one
-   * question.
+   * Passed in rather than computed here, because the capacity report and the invoice
+   * need the same figures — and two reports over different periods would be two
+   * answers to one question.
    */
-  durations: readonly (number | null)[]
+  ranged: readonly RangedEntry[]
   mode: RangeMode
   onModeChange: (mode: RangeMode) => void
 }
@@ -55,27 +55,26 @@ function breakdownShare(groups: readonly { percentage: number | null }[]): strin
   return `${total.toFixed(1)}%`
 }
 
-export function EntryReports({ prepared, durations, mode, onModeChange }: EntryReportsProps) {
+export function EntryReports({ ranged, mode, onModeChange }: EntryReportsProps) {
   const [dimension, setDimension] = useState<Dimension>('project')
 
   /*
-   * The entries that count, and the duration each one contributes.
+   * The entries that count, and what each one contributes to this period.
    *
-   * Kept as two parallel arrays rather than filtering the durations and looking the
-   * entry up again: the two must stay in step, and keeping them together is what stops
-   * a duration being attributed to the wrong entry.
+   * A ranged entry carries both the time it contributed and the billable time it
+   * contributed, so the two cannot drift apart — and an entry that ran from before the
+   * period into it contributes only the part inside.
    */
   const kept = useMemo(() => {
     const entries: ReportEntry[] = []
     const keptDurations: (number | null)[] = []
-    prepared.forEach((item, index) => {
-      const duration = durations[index] ?? null
-      if (duration === null || duration <= 0) return
+    ranged.forEach(({ item, ms }) => {
+      if (ms === null || ms <= 0) return
       entries.push(item)
-      keptDurations.push(duration)
+      keptDurations.push(ms)
     })
     return { entries, durations: keptDurations }
-  }, [prepared, durations])
+  }, [ranged])
 
   const breakdown = useMemo(
     () => breakdownBy(kept.entries, dimension, kept.durations),
@@ -83,7 +82,10 @@ export function EntryReports({ prepared, durations, mode, onModeChange }: EntryR
   )
 
   const days = useMemo(() => dailyTotals(kept.entries, kept.durations), [kept])
-  const billable = useMemo(() => billableSummary(kept.entries, kept.durations), [kept])
+  const billable = useMemo(
+    () => billableSummary(ranged.filter(({ ms }) => ms !== null && ms > 0)),
+    [ranged],
+  )
   const unbilled = useMemo(() => unbilledWork(kept.entries), [kept])
 
   /** Whether rounding changed the billable figure (0006 RD5). */

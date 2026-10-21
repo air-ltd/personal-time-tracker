@@ -48,15 +48,16 @@ describe('validateEntry (0004 V1–V5)', () => {
     expect(result.issues).toHaveLength(1)
   })
 
-  // V3
-  it('rejects a start in the future beyond the tolerance', () => {
+  // V3, amended: a start in the future warns rather than blocks.
+  it('warns about a start in the future but still allows the save', () => {
     const future = new Date(NOW.getTime() + FUTURE_TOLERANCE_MS + 60_000)
     const result = validateEntry(
       { start: future, end: new Date(future.getTime() + HOUR), note: '' },
       NOW,
     )
-    expect(result.ok).toBe(false)
-    expect(blockingIssues(result.issues).some((i) => i.code === 'start_in_future')).toBe(true)
+    expect(result.ok).toBe(true)
+    expect(blockingIssues(result.issues).some((i) => i.code === 'start_in_future')).toBe(false)
+    expect(result.issues.some((i) => i.code === 'start_in_future')).toBe(true)
   })
 
   it('tolerates a small clock skew', () => {
