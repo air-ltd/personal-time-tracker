@@ -6,7 +6,7 @@ optionally syncs to your own Dropbox.
 
 ## Status
 
-**Released as 0.3.0** (21 October 2026), covering Phases 1 to 6: reports, charts, an
+**Released as 0.3.1** (21 October 2026), covering Phases 1 to 6: reports, charts, an
 invoice, and expected hours per client. See
 [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md) for the phase
 sequence and each phase's gate.
@@ -15,6 +15,10 @@ What changed in 0.3.0: you can say how many hours a week you expect to spend on 
 client and see what was actually tracked against them; there is a reports screen with
 breakdowns, charts and an invoice; the app checks Dropbox for another device's work
 every ten seconds; and the edit sheet handles times to the second.
+
+0.3.1 fixes three things in that: the report compared a client's whole history
+against one week's expectation, the save errors sat at the bottom of the form, and
+a start time in the future stopped the save.
 
 - What has changed: [`CHANGELOG.md`](CHANGELOG.md), also readable in the app under
   **About**.

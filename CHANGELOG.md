@@ -16,6 +16,34 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-21
+
+Three fixes to 0.3.0, the first of which made a number on the reports screen
+wrong.
+
+### Fixed
+
+- **The report compared two different periods.** The expected hours were computed
+  from the contract over the selected range, but the tracked hours were summed
+  over _every_ entry the client had ever had — so a row compared a lifetime
+  against one week, and the utilisation percentage was about two different
+  periods. The tracked figure is now the time inside the range, and the billable
+  figure is the rounded _clipped_ time, so an entry that ran from before the
+  period into it contributes only the part inside.
+
+  The per-week list is now a comparison as well — expected, tracked, and the
+  difference for each week — rather than a list of weekly expectations that
+  read as totals.
+
+- **The save errors and warnings sat at the bottom of the form.** They were
+  there from before the buttons moved to the top, and after they moved the
+  errors were left at the bottom: a save that failed said so out of sight of the
+  button that had just been pressed, and a long way down a form that is mostly
+  fields. Both are now directly under the button.
+- **A start time in the future stopped the save.** It warns now, the same
+  treatment 0004 V5 gives a long entry — a start in the future is _possible_,
+  and refusing to record it stopped people recording planned work at all.
+
 ## [0.3.0] - 2026-10-21
 
 Expected hours: say how many hours a week you expect to spend on a client, and see
