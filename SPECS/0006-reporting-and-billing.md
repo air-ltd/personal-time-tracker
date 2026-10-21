@@ -35,7 +35,9 @@ not rolling 7- and 30-day windows. People think in calendar weeks.
 
 **DR3** — Week start MUST be user-configurable, default Monday. Hard-coding
 Sunday-start would be wrong for most of the world, and guessing is worse than
-asking.
+asking. The setting is stored as `week-start` (0003 §Setting) and ships in
+schema 5 for the same reason as RD2.1: it is a value that is written once and
+then never needs another migration.
 
 **DR4** — Custom ranges MUST be selectable, inclusive of both endpoints by local
 calendar date.
@@ -123,10 +125,16 @@ available on hover or in the detail view.
 minutes is the conventional billing increment and is coarse enough that
 hand-checking an invoice is practical.
 
-**RD2.1** — The increment MUST be stored as a setting in `meta` so it can be made
-configurable later **without a schema or migration change**. The UI control is
-deliberately deferred rather than shipped now; the stored value exists from the
-first release so that adding the control later is a UI change only.
+**RD2.1** — The increment MUST be stored as a setting (`billable-rounding-increment`,
+0003 §Setting) so it can be made configurable later **without a schema or migration
+change**. The UI control is deliberately deferred rather than shipped now; the
+stored value exists from the first release so that adding the control later is a UI
+change only.
+
+The setting ships with the contract period in schema 5, rather than in the release
+that first needed it. The point of RD2.1 is to avoid a migration, and a migration
+is only avoided if the value is written before the schema moves on again.
+
 
 **RD2.2** — Changing the increment MUST NOT retroactively alter stored entries.
 Rounding is applied at read time (RD1), so a change affects all subsequent

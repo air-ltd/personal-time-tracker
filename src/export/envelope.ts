@@ -18,19 +18,68 @@ export const FORMAT = 'personal-time-tracker-backup'
 /** Bumped only on a breaking layout change (0008 J3). */
 export const FORMAT_VERSION = 1
 
+/**
+ * Where an envelope came from.
+ *
+ * The same format is the backup format and the sync wire format, so the same parse
+ * serves both — and the message it produces has to name the right thing. A syncing
+ * user told "Backup uses data schema 5" goes looking for a backup they never
+ * downloaded, and the artefact is not the problem: the file in Dropbox is.
+ *
+ * `'backup'` is the default, so a caller that does not say which it is gets the
+ * restore wording, which is the path that has a file picker in front of it.
+ */
+export type EnvelopeSource = 'backup' | 'sync'
+
+/** How each source is named in a message the user reads. */
+const SOURCE_LABELS: Record<EnvelopeSource, string> = {
+  backup: 'Backup',
+  sync: 'The file in Dropbox',
+}
+
 const isoInstant = z
   .string()
   .refine((v) => !Number.isNaN(Date.parse(v)), 'must be an ISO instant')
 const nullableIsoInstant = isoInstant.nullable()
 
+/*
+ * Bounds on the sizes a file may claim.
+ *
+ * A backup file arrives from outside — a file the user picked, or a blob in their
+ * Dropbox account — so its shape is not the app's to assume. Without these, a
+ * 64 MB file is accepted and then parsed, validated, merged and written in one
+ * synchronous pass on the main thread, which freezes the tab and then fails on a
+ * quota error. A file that is too large is *rejected*, which is a better answer than
+ * a browser that stops responding.
+ *
+ * The limits are generous compared with the confirmed volume — under a hundred
+ * entries a week, a few thousand in total — so they never bite on real data, and
+ * tight enough that a hostile file is refused rather than absorbed.
+ */
+
+/** A note, a label, or a name. The app's own limit is 2,000 characters (0004 V4). */
+const MAX_TEXT_LENGTH = 2_000
+
+/** An identifier. A UUID with room to spare. */
+const MAX_ID_LENGTH = 128
+
+/** Tags on one entry. A person does not tag an entry with fifty things. */
+const MAX_TAGS_PER_ENTRY = 64
+
+/** The weekdays in a work pattern. 0003 CT2 says exactly seven, and only seven. */
+const MAX_PATTERN_ENTRIES = 7
+
+/** Records in one table of a file. Roughly a decade of entries. */
+const MAX_RECORDS_PER_TABLE = 50_000
+
 export const entrySchema = z.object({
-  id: z.string().min(1),
-  projectId: z.string().nullable(),
-  tagIds: z.array(z.string()),
+  id: z.string().min(1).max(MAX_ID_LENGTH),
+  projectId: z.string().max(MAX_ID_LENGTH).nullable(),
+  tagIds: z.array(z.string().max(MAX_ID_LENGTH)).max(MAX_TAGS_PER_ENTRY),
   start: isoInstant,
   // Null only while running (0003 E4).
   end: nullableIsoInstant,
-  note: z.string(),
+  note: z.string().max(MAX_TEXT_LENGTH),
   billable: z.boolean(),
   rateOverrideMinor: z.number().int().nonnegative().nullable(),
   source: z.enum(['timer', 'manual']) satisfies z.ZodType<EntrySource>,
@@ -57,19 +106,57 @@ export const entrySchema = z.object({
 const deferredTable = z
   .array(
     z.looseObject({
-      id: z.string().min(1),
+      id: z.string().min(1).max(MAX_ID_LENGTH),
       updatedAt: isoInstant,
       deletedAt: nullableIsoInstant,
     }),
   )
+  .max(MAX_RECORDS_PER_TABLE)
   .default([])
 
+/**
+ * One weekday's contracted minutes (0003 CT2).
+ *
+ * `weekday` is Monday-first: 0 is Monday, 6 is Sunday (0013 K3).
+ */
+const dayPatternSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  minutes: z.number().int().nonnegative().max(1440),
+})
+
+/**
+ * A contract period (0003 §ContractPeriod).
+ *
+ * `looseObject` rather than `object`, for the same reason `deferredTable` uses it: a
+ * plain Zod object strips fields it does not know about, so a contract period written
+ * by a later build would silently lose whatever that build added. Validating the
+ * fields this build knows while passing the rest through means it can reject a
+ * malformed contract and still carry a newer one.
+ *
+ * `clientId` is required, because a contract with no client has no scope to be
+ * compared against (0003 CT9) — a record without one is not a contract.
+ */
+const contractPeriodSchema = z.looseObject({
+  id: z.string().min(1),
+  clientId: z.string().min(1),
+  effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  effectiveTo: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable(),
+  minutesPerWeek: z.number().int().nonnegative(),
+  workPattern: z.array(dayPatternSchema).max(MAX_PATTERN_ENTRIES),
+  createdAt: isoInstant,
+  updatedAt: isoInstant,
+  deletedAt: nullableIsoInstant,
+})
+
 const entityTables = {
-  entries: z.array(entrySchema),
+  entries: z.array(entrySchema).max(MAX_RECORDS_PER_TABLE),
   projects: deferredTable,
   clients: deferredTable,
   tags: deferredTable,
-  contractPeriods: deferredTable,
+  contractPeriods: z.array(contractPeriodSchema).default([]),
   nonWorkingDays: deferredTable,
   /*
    * Settings, as mergeable rows (SPECS/todo.md item 46).
@@ -87,11 +174,12 @@ const entityTables = {
   settings: z
     .array(
       z.looseObject({
-        id: z.string().min(1),
+        id: z.string().min(1).max(MAX_ID_LENGTH),
         updatedAt: isoInstant,
         deletedAt: nullableIsoInstant,
       }),
     )
+    .max(MAX_RECORDS_PER_TABLE)
     .optional(),
 }
 
@@ -125,7 +213,13 @@ export type ParseResult = { ok: true; snapshot: Snapshot } | { ok: false; error:
  * payload is never partially applied: validation completes or nothing happens
  * (0007 F-EXPORT-4).
  */
-export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): ParseResult {
+export function parseEnvelope(
+  raw: unknown,
+  supportedSchemaVersion: number,
+  source: EnvelopeSource = 'backup',
+): ParseResult {
+  const label = SOURCE_LABELS[source]
+
   const format = (raw as { format?: unknown } | null)?.format
   if (format !== FORMAT) {
     return {
@@ -139,7 +233,7 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     return {
       ok: false,
       error: new EnvelopeError(
-        `Backup format version ${version} is newer than this build supports (${FORMAT_VERSION}). Update the app before importing.`,
+        `${label} format version ${version} is newer than this build supports (${FORMAT_VERSION}). Update the app before importing.`,
       ),
     }
   }
@@ -149,7 +243,7 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     const issues = parsed.error.issues.map(
       (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
     )
-    return { ok: false, error: new EnvelopeError('Backup is not valid.', issues) }
+    return { ok: false, error: new EnvelopeError(`${label} is not valid.`, issues) }
   }
 
   // M9: refuse rather than interpret a newer data schema.
@@ -157,7 +251,7 @@ export function parseEnvelope(raw: unknown, supportedSchemaVersion: number): Par
     return {
       ok: false,
       error: new EnvelopeError(
-        `Backup uses data schema ${parsed.data.schemaVersion}, but this build understands ${supportedSchemaVersion}. Update the app.`,
+        `${label} uses data schema ${parsed.data.schemaVersion}, but this build understands ${supportedSchemaVersion}. Update the app.`,
       ),
     }
   }

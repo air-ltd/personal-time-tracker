@@ -10,6 +10,8 @@
  */
 
 /** Any stored entity that participates in sync. */
+import { validatePattern } from './capacity/contract'
+
 export interface Mergeable {
   id: string
   updatedAt: string
@@ -187,6 +189,79 @@ export function repairReferences(snapshot: Snapshot): Snapshot {
       }
     })
   }
+
+  /*
+   * Contract periods whose client is missing are dropped (0003 F7).
+   *
+  /*
+   * Contract periods are NOT dropped here.
+   *
+   * An orphaned contract *could* be dropped here — its content is "these hours are
+   * expected on that client", so a contract naming no client describes a scope that
+   * cannot be compared against anything, and unlike an entry it cannot be
+   * uncategorised and still mean something.
+   *
+   * It is not, because this function runs on the sync path as well as the import
+   * path, and the sync path *publishes* what it returns. Dropping here would let a
+   * sync permanently delete a contract from the remote file — the one path in the
+   * app where a record can be removed rather than tombstoned. The import path drops
+   * orphans deliberately, and reports the drop (0008 J13, 0003 F7); see
+   * `dropOrphanedContractPeriods`, which is called from there and nowhere else.
+   */
+
+  return { schemaVersion: snapshot.schemaVersion, entities }
+}
+
+/**
+ * Drop contract periods that cannot be used (0003 F7, CT3).
+ *
+ * Used by the import path only, and only after the merge has decided what the file
+ * contains. The drop is a repair of the *imported* data, not a rule about what the
+ * app publishes: a record the user cannot see, cannot attribute and cannot delete
+ * from the UI is a record they cannot get rid of, so it is better to drop it and say
+ * so than to leave it in place.
+ *
+ * Not tombstoned, because a tombstone would travel to the other devices as a
+ * deletion of something they may still hold.
+ *
+ * Two things make a contract unusable:
+ *
+ * - It names a client that is not in the file. A contract's whole content is "these
+ *   hours are expected on that client", so a contract naming no client describes a
+ *   scope that cannot be compared against anything, and unlike an entry it cannot be
+ *   uncategorised and still mean something.
+ * - Its work pattern does not agree with its own weekly total. 0003 CT3 requires the
+ *   pattern to sum exactly to `minutesPerWeek`, and a contract that breaks it makes
+ *   every expected-hours figure disagree with the contract it came from. Kept, it
+ *   would be a number that looks authoritative and is not.
+ */
+export function dropUnusableContractPeriods(snapshot: Snapshot): Snapshot {
+  const entities: EntityTable = { ...snapshot.entities }
+  const contractPeriods = entities['contractPeriods']
+  if (contractPeriods === undefined) {
+    return { schemaVersion: snapshot.schemaVersion, entities }
+  }
+
+  const clientIds = new Set((entities['clients'] ?? []).map((client) => client.id))
+  const hasClients = 'clients' in entities
+
+  entities['contractPeriods'] = contractPeriods.filter((record) => {
+    const contract = record as Mergeable & {
+      clientId?: string
+      minutesPerWeek?: number
+      workPattern?: { weekday: number; minutes: number }[]
+    }
+
+    // A record with no clientId at all is malformed rather than orphaned, and is
+    // dropped too: 0003 CT9 makes the client required.
+    if (typeof contract.clientId !== 'string') return false
+    if (hasClients && !clientIds.has(contract.clientId)) return false
+
+    // The pattern has to agree with the week it claims to describe.
+    if (typeof contract.minutesPerWeek !== 'number') return false
+    if (!Array.isArray(contract.workPattern)) return false
+    return validatePattern(contract.workPattern, contract.minutesPerWeek).ok
+  })
 
   return { schemaVersion: snapshot.schemaVersion, entities }
 }

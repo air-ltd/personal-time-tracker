@@ -33,6 +33,13 @@ export const DROPBOX = {
   tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
   uploadUrl: 'https://content.dropboxapi.com/2/files/upload',
   downloadUrl: 'https://content.dropboxapi.com/2/files/download',
+  /**
+   * The file's metadata, without its contents.
+   *
+   * Used by the polling check, so that asking "has it changed?" costs a small
+   * answer rather than a download of the user's whole history every ten seconds.
+   */
+  metadataUrl: 'https://api.dropboxapi.com/2/files/get_metadata',
 
   /**
    * Relative to the app folder. With App Folder access the file lives at

@@ -1,9 +1,48 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
-import { AboutPage } from './AboutPage'
+import { AboutPage, Changelog } from './AboutPage'
 import { NEW_ISSUE_URL, REPOSITORY_URL } from './repository'
 import changelog from '../../CHANGELOG.md?raw'
+
+/**
+ * The version numbers, and the notes that go with them, taken from the changelog.
+ *
+ * Derived rather than written out, because a test that hard-codes a release's marketing
+ * copy breaks at the next release — and it broke at 0.3.0 for that reason, having
+ * nothing to do with the behaviour it was checking.
+ */
+function versionNumbers(): string[] {
+  return changelog
+    .split('\n')
+    .filter((line) => /^## \[\d+\.\d+\.\d+\]/.test(line))
+    .map((line) => line.match(/\[([\d.]+)\]/)?.[1] ?? '')
+    .filter(Boolean)
+}
+
+/**
+ * A phrase from a version's own notes.
+ *
+ * The markdown markers are stripped, because the renderer strips them too: `**bold**`
+ * is rendered as `bold`, so a phrase taken from the raw file would not match the text
+ * on the page.
+ */
+function notesFor(version: string): RegExp {
+  const lines = changelog.split('\n')
+  const start = lines.findIndex((line) => line.startsWith(`## [${version}]`))
+  const body: string[] = []
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? ''
+    if (line.startsWith('## ')) break
+    body.push(line)
+  }
+  const text = body
+    .join(' ')
+    .replace(/[#*`_]/g, '')
+    .trim()
+  const words = text.split(' ').slice(0, 6).join(' ')
+  return new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+}
 
 /**
  * The About page and the changelog it renders.
@@ -34,13 +73,35 @@ describe('About', () => {
     render(<AboutPage />)
 
     // Without Keep a Changelog's brackets, which read as leftover syntax in a heading.
-    // `Unreleased` is the one that is *absent*: it is empty at every release cut, and a
-    // heading with nothing under it is dropped rather than rendered.
-    expect(screen.queryByRole('heading', { name: 'Unreleased' })).toBeNull()
     expect(screen.getByRole('heading', { name: 'Versioning' })).toBeInTheDocument()
     // The file's own title is dropped: the card already has a heading, and two h1s on one
     // page is an outline problem.
     expect(screen.queryByRole('heading', { name: 'Changelog' })).toBeNull()
+  })
+
+  /*
+   * An empty section is dropped rather than rendered as a heading over nothing.
+   *
+   * Tested against a fixture rather than against the real changelog, because the rule
+   * is about the *parser* and the real file's content changes at every release — the
+   * test used to break whenever a release added anything to `Unreleased`, and it was
+   * really asserting the state of the file rather than the behaviour.
+   */
+  it('drops an empty changelog section, and keeps a section with content', () => {
+    render(
+      <Changelog
+        source={[
+          '## [Unreleased]',
+          '',
+          '## [0.1.0] - 2026-01-01',
+          '',
+          'Something happened.',
+        ].join('\n')}
+      />,
+    )
+
+    expect(screen.queryByRole('heading', { name: 'Unreleased' })).toBeNull()
+    expect(screen.getByRole('heading', { name: /0\.1\.0/ })).toBeInTheDocument()
   })
 
   it('renders bullets and bold text', () => {
@@ -439,7 +500,7 @@ describe('collapsible versions under "What’s new" (item 69)', () => {
      * do: it matches hidden nodes too, so it finds the notes in a *closed* section and would
      * report the opposite of what a reader experiences.
      */
-    const notes = /Clients and their projects are one list/
+    const notes = notesFor(versionNumbers()[0] ?? '0.0.0')
     expect(bodyFor(first).hidden).toBe(true)
     expect(screen.getByText(notes)).not.toBeVisible()
 
@@ -474,10 +535,28 @@ describe('collapsible versions under "What’s new" (item 69)', () => {
       expect(body.className).toContain('changelog-version-body')
       expect(body.textContent?.trim()).not.toBe('')
     }
-    // Distinct bodies, each holding that version's own notes.
-    expect(bodies[0]?.textContent).toContain('Clients and their projects are one list')
-    expect(bodies[1]?.textContent).toContain('First release')
-    expect(bodies[0]?.textContent).not.toBe(bodies[1]?.textContent)
+    /*
+     * Distinct bodies, each holding that version's own notes.
+     *
+     * Looked up by the version on the toggle rather than by position, because a new
+     * release shifts every index — and the test broke at 0.3.0 for that reason, having
+     * nothing to do with the behaviour it was checking.
+     */
+    const versions = versionNumbers()
+    const bodyForVersion = (version: string) => {
+      const toggle = toggles().find((candidate) =>
+        (candidate.textContent ?? '').trim().startsWith(version),
+      )
+      if (!toggle) throw new Error(`no toggle for version ${version}`)
+      return bodyFor(toggle)
+    }
+
+    const newest = bodyForVersion(versions[0] ?? '0.0.0')
+    const oldest = bodyForVersion(versions[versions.length - 1] ?? '0.0.0')
+    // Each body holds its own version's notes, and not the same notes as the other.
+    expect(newest.textContent).toMatch(notesFor(versions[0] ?? '0.0.0'))
+    expect(oldest.textContent).toMatch(notesFor(versions[versions.length - 1] ?? '0.0.0'))
+    expect(newest.textContent).not.toBe(oldest.textContent)
   })
 
   it('gives the toggles a chevron and keeps the version text beside it', () => {

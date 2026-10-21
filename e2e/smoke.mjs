@@ -501,15 +501,15 @@ async function main() {
     // settings page, where there is room to explain what a backup is. Four items now —
     // About joined the three, and it keeps the same one-word-named rule.
     check(
-      'the menu holds four named buttons and no prose',
-      (await page.locator('.header-menu-panel .header-menu-item').count()) === 4 &&
+      'the menu holds five named buttons and no prose',
+      (await page.locator('.header-menu-panel .header-menu-item').count()) === 5 &&
         (await page.getByRole('heading', { name: /^Backup/ }).count()) === 0,
     )
     check(
       'the menu buttons are stacked vertically',
       await page.evaluate(() => {
         const items = [...document.querySelectorAll('.header-menu-panel .header-menu-item')]
-        if (items.length !== 4) return false
+        if (items.length !== 5) return false
         const tops = items.map((item) => item.getBoundingClientRect().top)
         return tops.every((top, index) => index === 0 || tops[index - 1] < top)
       }),
@@ -518,6 +518,7 @@ async function main() {
       'each menu button has its word beside the icon',
       (await page.getByTestId('header-menu-download').innerText()).trim() === 'download' &&
         (await page.getByTestId('header-menu-restore').innerText()).trim() === 'import' &&
+        (await page.getByTestId('header-menu-reports').innerText()).trim() === 'Reports' &&
         (await page.getByTestId('header-menu-about').innerText()).trim() === 'About',
     )
     check(
@@ -571,6 +572,140 @@ async function main() {
       'export reports what it saved',
       (await status.innerText()).includes('Saved'),
       await status.innerText().catch(() => ''),
+    )
+
+    /*
+     * Restoring a backup (0007 F-EXPORT-4–7).
+     *
+     * The release checklist has three items about the restore path, and the browser suite
+     * had none of them covered: the file input was never used. That is the gate that can
+     * only be taken in a browser — the import reads a file through a file picker, and
+     * jsdom has no file picker.
+     */
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    const fileInput = page.getByTestId('backup-file')
+
+    // A file that is not a backup at all is refused, and changes nothing.
+    const entriesBefore = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const count = await new Promise((resolve) => {
+        const g = db.transaction('entries', 'readonly').objectStore('entries').count()
+        g.onsuccess = () => resolve(g.result)
+        g.onerror = () => resolve(-1)
+      })
+      db.close()
+      return count
+    })
+
+    await fileInput.setInputFiles({
+      name: 'not-a-backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from('{"hello":"world"}'),
+    })
+    await page.getByTestId('backup-status').waitFor()
+    const refusal = await page.getByTestId('backup-status').innerText()
+    check(
+      'a file that is not a backup is refused with a reason',
+      /not imported|nothing was imported|not valid/i.test(refusal),
+      refusal,
+    )
+
+    const entriesAfterRefusal = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const count = await new Promise((resolve) => {
+        const g = db.transaction('entries', 'readonly').objectStore('entries').count()
+        g.onsuccess = () => resolve(g.result)
+        g.onerror = () => resolve(-1)
+      })
+      db.close()
+      return count
+    })
+    check(
+      'a refused file changes nothing',
+      entriesAfterRefusal === entriesBefore,
+      `${entriesBefore} -> ${entriesAfterRefusal}`,
+    )
+
+    // A real backup, taken here and restored over the top, keeps everything and adds
+    // the entry that was made after the backup was taken. A restore merges; it does not
+    // replace (0007 F-EXPORT-5).
+    const backup = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const read = (store) =>
+        new Promise((resolve, reject) => {
+          const g = db.transaction(store, 'readonly').objectStore(store).getAll()
+          g.onsuccess = () => resolve(g.result)
+          g.onerror = () => reject(g.error)
+        })
+      const snapshot = {
+        entries: await read('entries'),
+        projects: await read('projects'),
+        clients: await read('clients'),
+        tags: await read('tags'),
+      }
+      db.close()
+      return {
+        format: 'personal-time-tracker-backup',
+        formatVersion: 1,
+        schemaVersion: 5,
+        exportedAt: new Date().toISOString(),
+        counts: {
+          entries: snapshot.entries.length,
+          projects: snapshot.projects.length,
+          clients: snapshot.clients.length,
+          tags: snapshot.tags.length,
+        },
+        data: snapshot,
+      }
+    })
+
+    // Record something after the backup was taken, then restore the backup.
+    await page.goto(URL, { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: 'Start' }).click()
+    await page.waitForTimeout(300)
+    await page.getByRole('button', { name: 'Stop' }).click()
+    await page.waitForTimeout(600)
+
+    await page.goto(`${URL}#/settings`, { waitUntil: 'networkidle' })
+    await page.getByTestId('backup-file').setInputFiles({
+      name: 'backup.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(backup)),
+    })
+    await page.getByTestId('backup-status').waitFor()
+    const restored = await page.getByTestId('backup-status').innerText()
+    check('a backup restores and says what it restored', /restored/i.test(restored), restored)
+
+    const merged = await page.evaluate(async () => {
+      const request = indexedDB.open('personal-time-tracker')
+      const db = await new Promise((resolve, reject) => {
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+      const count = await new Promise((resolve) => {
+        const g = db.transaction('entries', 'readonly').objectStore('entries').count()
+        g.onsuccess = () => resolve(g.result)
+        g.onerror = () => resolve(-1)
+      })
+      db.close()
+      return count
+    })
+    check(
+      'restoring merges rather than replaces (0007 F-EXPORT-5)',
+      merged > entriesBefore,
+      `${entriesBefore} -> ${merged}`,
     )
 
     // 12. Taxonomy on an entry, end to end (0005 P1, N2, U1, T1, Phase 4 gate).
@@ -1593,11 +1728,27 @@ async function main() {
       bracketHeadings.length === 0,
       bracketHeadings.join(' | '),
     )
+    /*
+     * No changelog heading is left standing over nothing.
+     *
+     * Asserted as a property of the rendered page rather than as "the Unreleased
+     * heading is absent", which was only ever true because the section happened to be
+     * empty — and which broke every time a release added content to it. The rule is
+     * the one worth keeping: a bare heading over nothing is the first thing a reader
+     * would meet on this page.
+     */
+    const emptyChangelogHeadings = await page.evaluate(() =>
+      [...document.querySelectorAll('.changelog h3, .changelog h4')]
+        .filter((heading) => {
+          const next = heading.nextElementSibling
+          return next === null || (next.textContent ?? '').trim() === ''
+        })
+        .map((heading) => heading.textContent ?? ''),
+    )
     check(
-      'an empty changelog section shows no heading at all',
-      // `## [Unreleased]` is empty at every release cut; a bare heading over nothing is the
-      // first thing a reader would meet on this page.
-      (await page.getByRole('heading', { name: 'Unreleased', exact: true }).count()) === 0,
+      'no changelog heading stands over nothing',
+      emptyChangelogHeadings.length === 0,
+      emptyChangelogHeadings.join(' | '),
     )
 
     // Item 40: the suite runs against a local preview, which is a non-production origin, so
@@ -1607,6 +1758,142 @@ async function main() {
       'a non-production origin is marked dev in the title (item 40)',
       (await page.locator('.app-header .env-badge').count()) === 1,
     )
+
+    // 15. Expected hours: set a client's budget, and see it compared against what was
+    // actually tracked (0003 CT1-CT9, 0013 CR1-CR3).
+    //
+    // In a browser because the whole feature is a round trip: a form, an IndexedDB
+    // write, a read at render time, and a figure that depends on both. jsdom can check
+    // each half in isolation and would not catch the two halves disagreeing.
+    await page.goto(`${URL_BASE}/#/settings`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Expected hours' }).waitFor()
+
+    // A client with no expected hours has nothing to compare against, and says so.
+    const contractRows = page.locator('.contract-row')
+    check(
+      'each client has a row in the expected-hours panel',
+      (await contractRows.count()) > 0,
+      String(await contractRows.count()),
+    )
+    check(
+      'a client with no budget says so rather than showing a figure',
+      (await page.getByText('No expected hours set').count()) > 0,
+    )
+
+    // Set a budget for the first client.
+    await contractRows
+      .first()
+      .getByRole('button', { name: /Set hours|Edit hours/ })
+      .click()
+    const hoursField = page.getByLabel('Hours expected per week')
+    await hoursField.waitFor()
+    await hoursField.fill('20')
+    await page.getByRole('button', { name: 'Save expected hours' }).click()
+
+    // The row now shows the hours, and the figure survives a reload — which is the
+    // claim that actually matters, because the number is computed at read time from
+    // what is in the database rather than from what was in the form.
+    await page.getByText('20 hours a week').waitFor()
+    check('a saved budget is shown on the client row', true)
+
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Expected hours' }).waitFor()
+    check('the budget survives a reload', (await page.getByText('20 hours a week').count()) > 0)
+
+    // The report: expected against actual, for the same client.
+    await page.goto(`${URL_BASE}/#/reports`, { waitUntil: 'networkidle' })
+    await page.getByRole('heading', { name: 'Expected against actual' }).waitFor()
+    // The entry-only reports are on the same screen and the same period.
+    await page.getByRole('heading', { name: 'Time tracked' }).waitFor()
+
+    /*
+     * The breakdown reconciles with its total (0006 RP2).
+     *
+     * Checked on the rendered page rather than in the unit tests, because the thing
+     * that matters is that the *screen* shows a total equal to the sum of its rows —
+     * the unit tests prove the arithmetic, and this proves the arithmetic reached the
+     * screen.
+     */
+    /*
+     * The charts, and their table equivalents (0006 C3, 0010 AC4–AC5).
+     *
+     * Checked in a browser because the whole point is what a browser does: a
+     * focusable mark, a keyboard-reachable toggle, and a table that holds the same
+     * figures. jsdom has no layout, no focus ring and no accessibility tree, so it
+     * could not tell a chart that works from one that is a picture of a chart.
+     */
+    const chartToggle = page.getByRole('button', { name: 'Show table' }).first()
+    await chartToggle.waitFor()
+    check('a chart offers a table equivalent', true)
+
+    // The toggle is a real button, so it is reachable and activatable by keyboard.
+    await chartToggle.focus()
+    const focused = await page.evaluate(
+      () => document.activeElement?.tagName.toLowerCase() ?? '',
+    )
+    check('the chart/table toggle can take focus', focused === 'button', focused)
+
+    // The bars are focusable and carry their value, rather than hiding it in a
+    // hover tooltip (0002 CH4, 0006 C4, 0010 AC5).
+    const barName = await page.locator('.chart-bar').first().getAttribute('aria-label')
+    check(
+      'a chart bar carries its value to assistive technology',
+      barName !== null && /\d/.test(barName),
+      String(barName),
+    )
+
+    // And the table holds the same figures.
+    await chartToggle.click()
+    const chartTableRows = await page.locator('.chart-frame table tbody tr').count()
+    check('the table equivalent has rows', chartTableRows > 0, String(chartTableRows))
+    await page.getByRole('button', { name: 'Show chart' }).first().click()
+
+    const breakdownTotal = await page.locator('.capacity-table tfoot tr').first().innerText()
+    const breakdownRows = await page.locator('.capacity-table tbody tr').count()
+    check(
+      'the breakdown has a total row',
+      breakdownTotal.includes('Total') && breakdownRows > 0,
+      `${breakdownTotal} / ${breakdownRows} rows`,
+    )
+    const capacityRow = page.locator('.capacity-table tbody tr').first()
+    await capacityRow.waitFor()
+
+    const rowText = await capacityRow.innerText()
+    const cells = await capacityRow.locator('td').allInnerTexts()
+
+    // The expected figure is the contract's week: 20 hours, so 1,200 minutes.
+    check(
+      'the report shows the expected hours for a client with a budget',
+      cells[0]?.trim() === '20h',
+      rowText,
+    )
+    check('the report shows a utilisation figure', /\d+(\.\d+)?%|—/.test(rowText), rowText)
+
+    // The tracked figure is minutes, not milliseconds. A unit slip here produces a
+    // number thousands of times too large, and it still looks like a plausible
+    // duration — so the check is on the magnitude, not on the presence of a figure.
+    const trackedCell = cells[1]?.trim() ?? ''
+    const trackedHours = /^(?:([\d.]+)h)?\s*(?:([\d.]+)m)?$/.exec(trackedCell)
+    const totalHours =
+      trackedHours === null
+        ? Number.NaN
+        : Number(trackedHours[1] ?? 0) + Number(trackedHours[2] ?? 0) / 60
+    check(
+      'the tracked figure is in minutes rather than milliseconds',
+      Number.isFinite(totalHours) && totalHours < 1000,
+      trackedCell,
+    )
+
+    // A client with no budget has no denominator, so its utilisation is unknown and
+    // renders as a dash rather than as 0% (0013 CP-A6). The em dash is the character
+    // the spec names, and it must not be confused with zero.
+    const dashCount = await page
+      .locator('.capacity-table tbody tr td')
+      .filter({
+        hasText: /^—$/,
+      })
+      .count()
+    check('a client with no contract shows an unknown utilisation, not zero', dashCount > 0)
 
     check('no console errors overall', consoleErrors.length === 0, consoleErrors.join(' | '))
     check('no failed requests overall', failedRequests.length === 0, failedRequests.join(' | '))

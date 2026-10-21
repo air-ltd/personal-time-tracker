@@ -315,6 +315,10 @@ describe('duration in seconds (item 30)', () => {
 
     render(<EntryForm now={new Date('2026-10-13T10:00:00.000Z')} entry={stored} />)
 
+    // The edit form opens on an end time (item 77), so the duration field is one radio
+    // away rather than on the screen. The rule this test protects — that a short entry
+    // keeps its seconds — is about the field, wherever it is.
+    await user.click(await screen.findByRole('radio', { name: 'Enter a duration' }))
     expect(await screen.findByLabelText('Duration')).toHaveValue('00:00:25')
   })
 
@@ -326,7 +330,25 @@ describe('duration in seconds (item 30)', () => {
 
     render(<EntryForm now={new Date('2026-10-13T11:00:00.000Z')} entry={stored} />)
 
+    await user.click(await screen.findByRole('radio', { name: 'Enter a duration' }))
     expect(await screen.findByLabelText('Duration')).toHaveValue('01:30')
+  })
+
+  it('carries the seconds on the start and end fields', async () => {
+    // The fields are `step="1"`, so the browser offers seconds, and the value has to
+    // carry them: a seconds field that is not in the value is a field that cannot be
+    // filled in.
+    const start = new Date('2026-10-13T09:00:25.000Z')
+    const stored = await putEntry(entry({ start, end: new Date(start.getTime() + 25_000) }))
+
+    render(<EntryForm now={new Date('2026-10-13T10:00:00.000Z')} entry={stored} />)
+
+    const startField = await screen.findByLabelText<HTMLInputElement>('Start')
+    const endField = await screen.findByLabelText<HTMLInputElement>('End')
+    expect(startField.getAttribute('step')).toBe('1')
+    expect(endField.getAttribute('step')).toBe('1')
+    expect(startField.value).toMatch(/T\d{2}:\d{2}:\d{2}$/)
+    expect(endField.value).toMatch(/T\d{2}:\d{2}:\d{2}$/)
   })
 
   it('saves a short entry without changing its length', async () => {
@@ -340,6 +362,20 @@ describe('duration in seconds (item 30)', () => {
       const saved = await getEntry(stored.id)
       expect(Date.parse(saved?.end ?? '')).toBe(start.getTime() + 25_000)
     })
+
+    /*
+     * The assertion above passes whether or not the form saved anything, because the
+     * entry already had that end. This is the half that catches a refusal: the form
+     * truncates the times to the minute, so a 25-second entry's start and end become
+     * the same minute, the end is no longer after the start, and the form says "Enter
+     * how long this took" and saves nothing — leaving the original exactly as it was.
+     *
+     * The end time carries seconds for the same reason: without them, the seconds of
+     * a short entry cannot be typed and cannot survive a save.
+     */
+    const saved = await getEntry(stored.id)
+    expect(saved?.updatedAt).not.toBe(stored.updatedAt)
+    expect(screen.queryByTestId('form-errors')).toBeNull()
   })
 })
 
@@ -408,6 +444,7 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     const stored = await running()
 
     render(<EntryForm now={LATER} entry={stored} />)
+    await user.click(await screen.findByRole('radio', { name: 'Enter a duration' }))
     await user.type(await screen.findByLabelText('Duration'), '30')
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
@@ -421,7 +458,7 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     const stored = await running()
 
     render(<EntryForm now={LATER} entry={stored} />)
-    await user.click(await screen.findByRole('radio', { name: 'Enter an end time' }))
+    // The edit form opens on an end time (item 77), so no radio needs choosing here.
     // `user.type` is unreliable on a datetime-local input — it types characters rather
     // than filling segments — so the value is set the way a browser would.
     //
@@ -429,7 +466,9 @@ describe('editing a running entry (0004 ED1, ED2)', () => {
     // on this date, and an end equal to the start is rejected by 0004 V1 rather than
     // saved as a zero-length entry.
     fireEvent.change(await screen.findByLabelText('End'), {
-      target: { value: '2026-10-13T11:00' },
+      // With seconds, because that is what the control carries now — a
+      // `datetime-local` with `step="1"` expects them.
+      target: { value: '2026-10-13T11:00:00' },
     })
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 

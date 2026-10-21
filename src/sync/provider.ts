@@ -55,6 +55,15 @@ export interface RemoteFile {
 
 export interface ProviderStatus {
   authenticated: boolean
+  /**
+   * The provider's account id, when the provider knows it.
+   *
+   * Optional because not every provider can answer cheaply, and because an
+   * account that cannot be identified must not be treated as a different one — a
+   * guard that blocked every sync because it could not read an id would be worse
+   * than the thing it prevents.
+   */
+  accountId?: string
 }
 
 export interface SyncProvider {
@@ -74,6 +83,20 @@ export interface SyncProvider {
    * distinct from an error: a first run and a failed fetch must not look alike.
    */
   pull(path: string): Promise<RemoteFile | null>
+  /**
+   * The remote file's revision, without downloading the file.
+   *
+   * Optional, and the reason polling is affordable. A poll that pulled the whole
+   * blob would download the user's entire history every ten seconds; this asks the
+   * provider for the file's revision, which is a small answer, and the blob is only
+   * fetched when the revision has actually moved.
+   *
+   * A provider that cannot answer cheaply returns null — meaning "I do not know" —
+   * and the caller falls back to a full pull. The distinction is deliberate: null
+   * must not mean "unchanged", or a provider that failed to answer would silently
+   * stop the app from ever seeing a change.
+   */
+  peek?(path: string): Promise<{ rev: string } | null>
   /**
    * Write the blob, enforcing `expectedRev` so a concurrent write is rejected
    * rather than silently overwritten (0012 SY6, C5).

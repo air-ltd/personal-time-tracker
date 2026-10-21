@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { DownloadIcon, InfoIcon, MenuIcon, RestoreIcon, SettingsIcon } from '../../app/Icons'
+import {
+  ChartIcon,
+  DownloadIcon,
+  InfoIcon,
+  MenuIcon,
+  RestoreIcon,
+  SettingsIcon,
+} from '../../app/Icons'
 import { BackupFileInput, BackupStatus } from '../backup/BackupParts'
 import { useBackup } from '../backup/useBackup'
 
@@ -36,6 +43,8 @@ import { useBackup } from '../backup/useBackup'
 export interface HeaderMenuProps {
   /** Where "Settings" goes. Item 15 makes the title the home link instead. */
   settingsHref: string
+  /** Where "Reports" goes. Passed for the same reason as `settingsHref`. */
+  reportsHref: string
   /**
    * Where "About" goes.
    *
@@ -46,7 +55,7 @@ export interface HeaderMenuProps {
   aboutHref: string
 }
 
-export function HeaderMenu({ settingsHref, aboutHref }: HeaderMenuProps) {
+export function HeaderMenu({ settingsHref, reportsHref, aboutHref }: HeaderMenuProps) {
   const [open, setOpen] = useState(false)
   const container = useRef<HTMLDivElement>(null)
   const button = useRef<HTMLButtonElement>(null)
@@ -150,6 +159,21 @@ export function HeaderMenu({ settingsHref, aboutHref }: HeaderMenuProps) {
             to go; download and import are things to do, and a destructive-sounding pair
             reads better together and away from navigation.
           */}
+          {/*
+            Reports, before About. A place to go, like Settings — and the answer to
+            "how much of the week did I actually spend on this client?", which is the
+            question the expected-hours feature exists to answer.
+          */}
+          <a
+            className="header-menu-item"
+            href={reportsHref}
+            onClick={() => setOpen(false)}
+            data-testid="header-menu-reports"
+          >
+            <ChartIcon />
+            <span>Reports</span>
+          </a>
+
           <a
             className="header-menu-item"
             href={aboutHref}

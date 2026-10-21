@@ -85,24 +85,50 @@ export function isValidDayKey(value: string): boolean {
 }
 
 /**
- * Half-open `[start, end)` window for the local week containing `key`, starting Monday.
+ * Half-open `[start, end)` window for the local week containing `key`.
  *
  * Constructed from local components rather than by adding milliseconds, for the same DST
  * reason as `localDayBounds`: a week is not always 604,800,000 ms.
+ *
+ * The week starts on the day the user chose (0006 DR3), which defaults to Monday. This
+ * is the only place a week boundary is computed: 0013 K3 requires Monday-first
+ * indexing to be handled in exactly one place in `domain/` and never inline, because
+ * `getDay()` is Sunday-first and a second spelling of the conversion is a second
+ * chance to be off by one.
  */
-export function localWeekBounds(key: string): { start: Date; end: Date } {
-  const start = startOfLocalDay(localDayBounds(key).start)
-  // `getDay()` is 0 for Sunday, so Monday-based weeks need Sunday mapped to 7 rather than
-  // 0 — otherwise a Sunday would report itself as the *previous* week's last day and
-  // every week would be eight days long.
-  const weekday = start.getDay() === 0 ? 7 : start.getDay()
-  const monday = addLocalDays(start, 1 - weekday)
-  return { start: monday, end: addLocalDays(monday, 7) }
+export function localWeekBounds(
+  key: string,
+  weekStart: WeekStart = 'monday',
+): { start: Date; end: Date } {
+  const day = startOfLocalDay(localDayBounds(key).start)
+  const index = mondayFirstWeekday(day)
+  // The first day of the week is `firstIndex`, so the week's start is that many days
+  // back. One formula covers both week starts, and the modulo keeps it inside the week
+  // rather than walking into the neighbouring one.
+  const firstIndex = weekStart === 'sunday' ? 6 : 0
+  const offset = (index - firstIndex + 7) % 7
+  const first = addLocalDays(day, -offset)
+  return { start: first, end: addLocalDays(first, 7) }
+}
+
+/** Which day a week begins on (0006 DR3). Monday is the default. */
+export type WeekStart = 'monday' | 'sunday'
+
+/**
+ * The local day as a Monday-first weekday index: 0 = Monday … 6 = Sunday.
+ *
+ * `Date.getDay()` is 0 for Sunday, so Sunday must be mapped to 6 rather than 0 —
+ * otherwise every Sunday lands eight days early and every week is one day too long
+ * (0013 K3). This is the only conversion in the codebase.
+ */
+export function mondayFirstWeekday(value: Date): number {
+  const sundayFirst = value.getDay()
+  return sundayFirst === 0 ? 6 : sundayFirst - 1
 }
 
 /** The Monday of the local week containing `value`, as a day key. */
-export function weekKey(value: Date): string {
-  return dayKey(localWeekBounds(dayKey(value)).start)
+export function weekKey(value: Date, weekStart: WeekStart = 'monday'): string {
+  return dayKey(localWeekBounds(dayKey(value), weekStart).start)
 }
 
 /**
@@ -113,7 +139,7 @@ export function weekKey(value: Date): string {
  * spelling of the same idea. The `null` is for keys that came from outside — a corrupt
  * grouping key — because `weekKey` cannot express "not a day key".
  */
-export function weekKeyFromDayKey(key: string): string | null {
+export function weekKeyFromDayKey(key: string, weekStart: WeekStart = 'monday'): string | null {
   if (!isValidDayKey(key)) return null
-  return dayKey(localWeekBounds(key).start)
+  return dayKey(localWeekBounds(key, weekStart).start)
 }

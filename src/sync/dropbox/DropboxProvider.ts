@@ -423,7 +423,13 @@ export class DropboxProvider implements SyncProvider {
   }
 
   async status(): Promise<ProviderStatus> {
-    return { authenticated: await this.hasUsableToken() }
+    const tokens = toTokens(await this.storage.read())
+    return {
+      authenticated: await this.hasUsableToken(),
+      // The account the token belongs to. Read from the stored token rather than
+      // asked for again, so the answer costs nothing.
+      ...(tokens?.accountId === undefined ? {} : { accountId: tokens.accountId }),
+    }
   }
 
   async pull(path: string): Promise<RemoteFile | null> {
@@ -453,6 +459,57 @@ export class DropboxProvider implements SyncProvider {
     })
     if (detail.kind === 'not-found') return null
     throw detail.error
+  }
+
+  /**
+   * The remote file's revision, without downloading it.
+   *
+   * This is what makes polling affordable. `files/get_metadata` answers with a small
+   * JSON object naming the file and its revision; `files/download` answers with the
+   * entire history. A poll that downloaded would move the user's whole dataset every
+   * ten seconds, so the poll asks this instead and only pulls when the revision has
+   * actually moved.
+   *
+   * Returns null when the file does not exist, and null when the provider cannot
+   * answer — the caller must treat both as "do not know" and fall back to a pull,
+   * because treating a failure as "unchanged" would silently stop the app from ever
+   * seeing another device's work.
+   */
+  async peek(path: string): Promise<{ rev: string } | null> {
+    const arg = { path: normalizePath(path) }
+
+    try {
+      const response = await this.authenticated((accessToken) =>
+        this.fetchImpl(DROPBOX.metadataUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(arg),
+        }),
+      )
+
+      if (!response.ok) {
+        // A missing file is not an error; it means there is nothing to compare
+        // against, and the caller will pull and find the same thing.
+        const detail = await describeFailure(response, {
+          op: `get_metadata ${arg.path}`,
+          args: arg,
+        })
+        if (detail.kind === 'not-found') return null
+        throw detail.error
+      }
+
+      const parsed = (await response.json()) as { rev?: string }
+      return parsed.rev === undefined ? null : { rev: parsed.rev }
+    } catch (problem) {
+      if (problem instanceof SyncError) throw problem
+      // Anything else — a network blip, a malformed answer — is "I do not know",
+      // and the caller falls back to a full pull rather than assuming nothing
+      // changed.
+      return null
+    }
   }
 
   async push(path: string, body: string, expectedRev: string | null): Promise<{ rev: string }> {

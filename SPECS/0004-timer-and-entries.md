@@ -143,6 +143,14 @@ time, since that is how people actually recall work ("about three hours, started
 after lunch"). A raw end-time field MUST also be available. Both MUST normalise to
 the same stored `start`/`end` pair.
 
+*Amended:* the primary input is a duration for a **new** entry and an end time for
+an **existing** one. A new entry has no known end, and "about three hours" is how
+people recall work. An existing entry does have a known end, and asking for a
+duration there asks the user to convert a time they already have into a length
+before they can change it — a step with no answer, which can be got wrong
+silently. The end time remains available for a new entry, and the duration for an
+existing one.
+
 **M4** — A manual entry MUST NOT be created while a timer is running. The UI MUST
 prompt to stop the timer first, since 0003 E4 allows only one open-ended entry.
 The app MUST NOT silently stop the running timer on the user's behalf.

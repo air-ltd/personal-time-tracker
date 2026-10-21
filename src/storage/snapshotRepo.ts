@@ -31,8 +31,19 @@ import type { Mergeable, Snapshot } from '../domain/merge'
  * `settings` is here (SPECS/todo.md item 46) and `meta` is not, which is the whole point of
  * having split them: `meta` holds `lastRev` and `lastSyncAt`, which belong to the device
  * doing the syncing and would make two devices fight over them forever.
+ *
+ * `contractPeriods` is here because a client's expected hours are the denominator of
+ * every capacity figure, and a device that received entries without them would compute
+ * a utilisation of "unknown" against a contract the user never entered (0008 J2.1).
  */
-const TABLES = ['entries', 'projects', 'clients', 'tags', 'settings'] as const
+const TABLES = [
+  'entries',
+  'projects',
+  'clients',
+  'tags',
+  'settings',
+  'contractPeriods',
+] as const
 
 export async function readSnapshot(): Promise<Snapshot> {
   const db = getDb()

@@ -16,7 +16,7 @@
  * mutation gate's 11/11 claim quietly depended on the outcome of a lint.
  */
 
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dirname, extname } from 'node:path'
@@ -58,6 +58,41 @@ const SCANNED_NAMES = new Set(['.env.example', 'README.md'])
  */
 const SECRET_NAME = /VITE_[A-Z0-9_]*(SECRET|PASSWORD|PRIVATE_KEY|TOKEN|CREDENTIAL)[A-Z0-9_]*/g
 
+/**
+ * The `VITE_` variables this project is allowed to use at all.
+ *
+ * An allowlist rather than a blocklist of secret-looking names, because a name is not
+ * the only thing that makes a value sensitive — and because a *blocklist* of names says
+ * nothing about a variable the blocklist has not heard of.
+ *
+ * Both of these are public by construction:
+ *
+ * - `VITE_DROPBOX_APP_KEY` is an OAuth **client id**, which is not a secret and is
+ *   meant to be seen by the browser (0011 AR6).
+ * - `VITE_BASE_PATH` is the sub-path the site is served from, read at build time.
+ *
+ * Anything else named `VITE_` is inlined into the shipped JavaScript, whether or not
+ * the source refers to it — Vite writes the whole environment into the `import.meta.env`
+ * object literal, so a variable present only in the build environment still ships. A
+ * blocklist of secret-ish names cannot catch that; an allowlist can.
+ */
+const ALLOWED_VITE_NAMES = new Set(['VITE_DROPBOX_APP_KEY', 'VITE_BASE_PATH'])
+
+/** Every `VITE_` name mentioned, whether or not it looks like a secret. */
+const ANY_VITE_NAME = /VITE_[A-Z0-9_]+/g
+
+/**
+ * Whether a line is a comment.
+ *
+ * A comment is never inlined into the bundle, so a commented-out reference is
+ * documentation — this file names the pattern to describe it, and `.env.example`
+ * names it to forbid it. Skipping comments is a rule about what can reach a user,
+ * not a rule about what may be written down.
+ */
+function isCommentLine(text) {
+  return /^(\/\/|\/\*|\*|#)/.test(text.trim())
+}
+
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue
@@ -78,17 +113,42 @@ function* walk(dir) {
   }
 }
 
+/**
+ * Every file under a directory, ignoring nothing.
+ *
+ * Used for the built output, where the point is to read the files that were actually
+ * produced — so the source scan's skip list does not apply. `node_modules` is still
+ * skipped, because a dependency's own environment handling is not this project's to
+ * police, and a bundled dependency is not where a `VITE_` value from *this* build
+ * would be written.
+ */
+function* walkDir(dir) {
+  for (const entry of readdirSync(dir)) {
+    if (entry === 'node_modules' || entry === '.git') continue
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory()) {
+      yield* walkDir(path)
+    } else {
+      yield path
+    }
+  }
+}
+
 const findings = []
+const unlisted = []
+
 for (const path of walk(ROOT)) {
+  // This file names the patterns on purpose, so scanning it would find its own
+  // regular expressions. The built output is still scanned — that is where a value
+  // would actually ship.
+  if (path === fileURLToPath(import.meta.url)) continue
+
   const lines = readFileSync(path, 'utf8').split('\n')
   lines.forEach((text, index) => {
+    const trimmed = text.trim()
+    if (isCommentLine(text)) return
+
     for (const match of text.matchAll(SECRET_NAME)) {
-      // A comment is never inlined into the bundle, so a commented-out reference is
-      // documentation — this file names the pattern to describe it, and
-      // `.env.example` names it to forbid it. Skipping comments is a rule about
-      // what can reach a user, not a rule about what may be written down.
-      const trimmed = text.trim()
-      if (/^(\/\/|\/\*|\*|#)/.test(trimmed)) continue
       // `const FOO = 'VITE_X_SECRET'` is a string literal rather than a real
       // environment read; still worth seeing, but not the same as a declaration.
       const isDeclaration = new RegExp(
@@ -101,13 +161,47 @@ for (const path of walk(ROOT)) {
         declared: isDeclaration,
       })
     }
+
+    // Every `VITE_` name, whatever it is called, must be on the allowlist.
+    for (const match of text.matchAll(ANY_VITE_NAME)) {
+      if (ALLOWED_VITE_NAMES.has(match[0])) continue
+      unlisted.push({ file: relative(ROOT, path), line: index + 1, name: match[0] })
+    }
   })
 }
 
-console.log('\nBundled-secret gate — no VITE_* variable may name a secret\n')
+/*
+ * The built output, when it exists.
+ *
+ * This is the half that catches the case a source scan cannot: a `VITE_` variable that
+ * is present in the *build environment* and referred to by no source file. Vite writes
+ * the whole environment into the `import.meta.env` object literal, so such a variable
+ * ships in the bundle even though nothing in the repository mentions it.
+ *
+ * The scan runs on the built files rather than on the source, because that is where
+ * the value actually is.
+ */
+const distFindings = []
+const distDir = join(ROOT, 'dist')
+if (existsSync(distDir)) {
+  for (const path of walkDir(distDir)) {
+    if (!/\.(js|mjs|cjs|html|json)$/.test(path)) continue
+    const text = readFileSync(path, 'utf8')
+    for (const match of text.matchAll(ANY_VITE_NAME)) {
+      if (ALLOWED_VITE_NAMES.has(match[0])) continue
+      distFindings.push({ file: relative(ROOT, path), name: match[0] })
+    }
+  }
+}
 
-if (findings.length === 0) {
-  console.log('  ok   no VITE_* secret is declared or referenced\n')
+console.log('\nBundled-secret gate — only allowlisted VITE_* variables may exist\n')
+
+if (findings.length === 0 && unlisted.length === 0 && distFindings.length === 0) {
+  console.log('  ok   no VITE_* secret is declared or referenced')
+  console.log(
+    `  ok   every VITE_* variable is allowlisted (${[...ALLOWED_VITE_NAMES].join(', ')})`,
+  )
+  console.log('  ok   the built output contains no other VITE_* variable\n')
   process.exit(0)
 }
 
@@ -121,6 +215,22 @@ for (const finding of findings) {
     )
   }
 }
+
+for (const finding of unlisted) {
+  console.log(`  BAD  ${finding.file}:${finding.line}`)
+  console.log(`       ${finding.name}`)
+  console.log('       Not on the allowlist, and Vite inlines every VITE_* variable.')
+}
+
+for (const finding of distFindings) {
+  console.log(`  BAD  ${finding.file}`)
+  console.log(`       ${finding.name}`)
+  console.log(
+    '       Present in the built output. Vite inlines every VITE_* variable in the ' +
+      'build environment, whether or not the source refers to it.',
+  )
+}
+
 console.log(
   '\nA static site cannot keep a secret. If this is genuinely needed, it does not ' +
     'belong in a VITE_ variable.\n',

@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type { TimeEntry } from '../domain/entries/types'
 import type { Client, Project, Tag } from '../domain/taxonomy/types'
+import type { ContractPeriod } from '../domain/capacity/types'
 
 /**
  * Database schema (0003 V1, 0007 S1–S4).
@@ -16,12 +17,13 @@ import type { Client, Project, Tag } from '../domain/taxonomy/types'
  *   2 — secrets, for sync credentials (Phase 2B)
  *   3 — projects, clients, tags, for the taxonomy (Phase 4)
  *   4 — settings, so preferences follow the user across devices (SPECS/todo.md item 46)
+ *   5 — contractPeriods, for client-scoped contracted hours (Phase 6)
  *
  * Adding a store needs no backfill: absent rows correctly mean "no contract
  * configured" and "not connected", so there is no data to invent (0003 V2).
  */
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 export interface MetaRecord {
   key: string
@@ -75,6 +77,8 @@ export class AppDb extends Dexie {
   clients!: Dexie.Table<Client, string>
   tags!: Dexie.Table<Tag, string>
   settings!: Dexie.Table<SettingRecord, string>
+  /** Client-scoped contracted hours (0003 §ContractPeriod). */
+  contractPeriods!: Dexie.Table<ContractPeriod, string>
 
   constructor(name = 'personal-time-tracker') {
     super(name)
@@ -146,6 +150,28 @@ export class AppDb extends Dexie {
           await settings.put({ id: key, value: row.value, updatedAt: now, deletedAt: null })
         }
       })
+    /*
+     * v5: additive only, like v2 and v3. The contract periods table starts empty, and
+     * an absent row correctly means "no budget set for this client" (0003 V2).
+     *
+     * No row is moved and no row is rewritten, so there is nothing to lose. The two
+     * settings that travel with it — `week-start` and the billable rounding increment —
+     * are *not* backfilled either, and that is deliberate: 0006 RD2.1 and DR3 both
+     * require the value to be absent rather than stored-as-default, so that a later
+     * change of default does not rewrite an explicit choice (0003 SET2). Absent means
+     * "the default applies", which is the same answer a stored default would give
+     * today, and a different one if the default ever changes.
+     */
+    this.version(5).stores({
+      entries: 'id, start, projectId, end, deletedAt',
+      meta: 'key',
+      secrets: 'key',
+      projects: 'id, clientId, archived, deletedAt',
+      clients: 'id, archived, deletedAt',
+      tags: 'id, deletedAt',
+      settings: 'id, updatedAt',
+      contractPeriods: 'id, clientId, effectiveFrom, deletedAt',
+    })
   }
 }
 

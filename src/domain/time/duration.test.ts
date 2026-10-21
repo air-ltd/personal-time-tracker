@@ -198,7 +198,11 @@ describe('duration input', () => {
 
 describe('local input values', () => {
   it('formats to a datetime-local value', () => {
-    expect(toLocalInputValue(new Date(2026, 9, 13, 9, 5, 0))).toBe('2026-10-13T09:05')
+    // Seconds are carried, because an entry whose seconds cannot be typed cannot be
+    // saved: the start and the end truncate to the same minute and the end is no
+    // longer after the start.
+    expect(toLocalInputValue(new Date(2026, 9, 13, 9, 5, 0))).toBe('2026-10-13T09:05:00')
+    expect(toLocalInputValue(new Date(2026, 9, 13, 9, 5, 25))).toBe('2026-10-13T09:05:25')
   })
 
   // 0006 DT7: a bare value is local wall-clock, never UTC.

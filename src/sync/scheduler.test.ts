@@ -829,3 +829,276 @@ describe('the last observed revision', () => {
     scheduler.stop()
   })
 })
+
+/**
+ * Polling for another device's work (item 75).
+ *
+ * The thing worth protecting here is the cost. A poll that pulled the whole remote
+ * file would move the user's entire history every ten seconds, so a poll asks the
+ * provider for the file's *revision* and only downloads when that has moved. The
+ * tests below are about which of those two things happens, and about the app not
+ * spending anything while nobody is looking at it.
+ */
+class PollingProvider implements SyncProvider {
+  readonly id = 'polling'
+  pulls = 0
+  peeks = 0
+  /** The revision the remote is at. The poll compares against it. */
+  rev = 'r1'
+  /** The revision the app last saw. */
+  seenRev: string | null = 'r1'
+  peekFails = false
+
+  ensureAuth(): Promise<void> {
+    return Promise.resolve()
+  }
+  signOut(): Promise<void> {
+    return Promise.resolve()
+  }
+  status(): Promise<ProviderStatus> {
+    return Promise.resolve({ authenticated: true, account: null })
+  }
+  pull(): Promise<RemoteFile | null> {
+    this.pulls += 1
+    return Promise.resolve(null)
+  }
+  push(): Promise<{ rev: string }> {
+    return Promise.resolve({ rev: this.rev })
+  }
+  peek(): Promise<{ rev: string } | null> {
+    this.peeks += 1
+    if (this.peekFails) return Promise.resolve(null)
+    return Promise.resolve({ rev: this.rev })
+  }
+}
+
+function buildPolling(provider: PollingProvider, pollIntervalMs: number) {
+  const statuses: SyncStatus[] = []
+  const snapshot: Snapshot = { schemaVersion: 1, entities: { entries: [] } }
+  const scheduler = new SyncScheduler({
+    provider,
+    path: 'data.json',
+    pollIntervalMs,
+    now: () => new Date('2026-10-13T09:00:00.000Z'),
+    onStatus: (status) => statuses.push(status),
+    readLocal: () => Promise.resolve(snapshot),
+    writeLocal: () => Promise.resolve(),
+    readLastRev: () => Promise.resolve(provider.seenRev),
+    writeLastRev: (rev) => {
+      provider.seenRev = rev
+      return Promise.resolve()
+    },
+    writeLastSyncAt: () => Promise.resolve(),
+    readLastSyncAt: () => Promise.resolve(null),
+  })
+  return { scheduler, statuses }
+}
+
+describe('polling for another device', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    // The tab is visible, so a poll is due.
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('does not poll at all when the interval is zero', async () => {
+    const provider = new PollingProvider()
+    const { scheduler } = buildPolling(provider, 0)
+    await scheduler.start()
+    provider.pulls = 0
+    provider.peeks = 0
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(provider.peeks).toBe(0)
+    expect(provider.pulls).toBe(0)
+    scheduler.stop()
+  })
+
+  it('asks for the revision rather than downloading the file', async () => {
+    const provider = new PollingProvider()
+    const { scheduler } = buildPolling(provider, 10_000)
+    await scheduler.start()
+    provider.pulls = 0
+    provider.peeks = 0
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    // Three polls, three cheap checks, and no downloads: the revision had not moved.
+    expect(provider.peeks).toBe(3)
+    expect(provider.pulls).toBe(0)
+    scheduler.stop()
+  })
+
+  it('downloads only once the revision has moved', async () => {
+    const provider = new PollingProvider()
+    const { scheduler } = buildPolling(provider, 10_000)
+    await scheduler.start()
+    provider.pulls = 0
+    provider.peeks = 0
+
+    // Another device recorded something.
+    provider.rev = 'r2'
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(provider.peeks).toBe(1)
+    expect(provider.pulls).toBe(1)
+    scheduler.stop()
+  })
+
+  it('falls back to a download when the provider cannot say', async () => {
+    const provider = new PollingProvider()
+    provider.peekFails = true
+    const { scheduler } = buildPolling(provider, 10_000)
+    await scheduler.start()
+    provider.pulls = 0
+    provider.peeks = 0
+
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    // "I do not know" is not "nothing has changed" — treating it as such would stop
+    // the app from ever seeing another device's work.
+    expect(provider.pulls).toBe(1)
+    scheduler.stop()
+  })
+
+  it('does not poll while the tab is hidden', async () => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'hidden',
+    })
+    const provider = new PollingProvider()
+    const { scheduler } = buildPolling(provider, 10_000)
+    await scheduler.start()
+    provider.peeks = 0
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(provider.peeks).toBe(0)
+    scheduler.stop()
+  })
+
+  it('stops polling when it is stopped', async () => {
+    const provider = new PollingProvider()
+    const { scheduler } = buildPolling(provider, 10_000)
+    await scheduler.start()
+    scheduler.stop()
+    provider.peeks = 0
+
+    await vi.advanceTimersByTimeAsync(60_000)
+
+    expect(provider.peeks).toBe(0)
+  })
+
+  it('can be turned off while running, and turned back on', async () => {
+    const provider = new PollingProvider()
+    const { scheduler } = buildPolling(provider, 10_000)
+    await scheduler.start()
+    provider.peeks = 0
+
+    scheduler.setPollInterval(0)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(provider.peeks).toBe(0)
+
+    scheduler.setPollInterval(10_000)
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(provider.peeks).toBe(1)
+    scheduler.stop()
+  })
+})
+
+/**
+ * The account the local data belongs to.
+ *
+ * Signing out leaves the local data behind (0012 AU7), so the data outlives the
+ * connection. Connect a different account and the engine's first run finds an empty
+ * remote and publishes everything into it — the previous account's work history,
+ * handed over without a word of warning.
+ *
+ * So the cycle stops before anything moves, and the user is told.
+ */
+describe('a different Dropbox account', () => {
+  function buildWithAccounts(bound: string | null, connected: string | null) {
+    const provider = new StubProvider()
+    const statuses: SyncStatus[] = []
+    const snapshot: Snapshot = { schemaVersion: 1, entities: { entries: [] } }
+    let written: string | null = null
+
+    const scheduler = new SyncScheduler({
+      provider,
+      path: 'data.json',
+      now: () => new Date('2026-10-13T09:00:00.000Z'),
+      onStatus: (status) => statuses.push(status),
+      readLocal: () => Promise.resolve(snapshot),
+      writeLocal: () => Promise.resolve(),
+      readLastRev: () => Promise.resolve(null),
+      writeLastRev: () => Promise.resolve(),
+      writeLastSyncAt: () => Promise.resolve(),
+      readLastSyncAt: () => Promise.resolve(null),
+      readBoundAccountId: () => Promise.resolve(bound),
+      writeBoundAccountId: (accountId) => {
+        written = accountId
+        return Promise.resolve()
+      },
+      readConnectedAccountId: () => Promise.resolve(connected),
+    })
+
+    return { scheduler, statuses, bound: () => written }
+  }
+
+  it('stops the cycle and says so when the account differs', async () => {
+    const { scheduler, statuses } = buildWithAccounts('dbid:account-a', 'dbid:account-b')
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).toBe('blocked')
+    expect(last?.message).toMatch(/different Dropbox account/i)
+    scheduler.stop()
+  })
+
+  it('does not stop the cycle when the account is the same', async () => {
+    const { scheduler, statuses } = buildWithAccounts('dbid:account-a', 'dbid:account-a')
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).not.toBe('blocked')
+    scheduler.stop()
+  })
+
+  it('does not stop the cycle when there is no binding yet', async () => {
+    // A first run has no binding, and refusing to sync a device that has never
+    // synced would be the opposite of helpful.
+    const { scheduler, statuses } = buildWithAccounts(null, 'dbid:account-b')
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).not.toBe('blocked')
+    scheduler.stop()
+  })
+
+  it('does not stop the cycle when the account cannot be identified', async () => {
+    // A provider that cannot say which account it is must not be treated as a
+    // different one: a guard that blocked every sync would be the worse failure.
+    const { scheduler, statuses } = buildWithAccounts('dbid:account-a', null)
+    await scheduler.start()
+
+    const last = statuses[statuses.length - 1]
+    expect(last?.lastOutcome?.status).not.toBe('blocked')
+    scheduler.stop()
+  })
+
+  it('binds the data to the account it was published to', async () => {
+    const { scheduler, bound } = buildWithAccounts(null, 'dbid:account-b')
+    await scheduler.start()
+    expect(bound()).toBe('dbid:account-b')
+    scheduler.stop()
+  })
+})

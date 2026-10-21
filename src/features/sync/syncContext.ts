@@ -29,6 +29,21 @@ export interface SyncState {
   syncNow: () => void
   /** Re-read the app key after the setup panel configures one. */
   recheckKey: () => void
+  /**
+   * Share this device's data with the connected account, even though it was last
+   * shared with a different one.
+   *
+   * The way past a block, and it is deliberately explicit: the data ends up in
+   * both accounts, and only the user can say that is what they want.
+   */
+  shareWithThisAccount: () => void
+  /**
+   * Why the last attempt to share with this account failed, if it did.
+   *
+   * Separate from `authError`, which is the Dropbox authorisation's own error and is
+   * consumed once on arrival.
+   */
+  shareError: string | null
 }
 
 export const SyncContext = createContext<SyncState | null>(null)

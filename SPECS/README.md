@@ -38,18 +38,19 @@ below use it.
 | --- | --- | --- |
 | 0001 Product overview | `Accepted` | Product decisions only; nothing to implement. |
 | 0002 Architecture | `Implemented` | Phase 1. Two amendments recorded in-file (directory tree, and the `script-src` shape of N5's sibling TH3). |
-| 0003 Data model | `Implemented` | Phases 1–4. All entity invariants hold. |
-| 0004 Timer and entries | `Implemented` | Phase 2A, plus M4 and ED1 closed in review. O3/L3/W2 remain (see §Known limitations). |
+| 0003 Data model | `Implemented` | Phases 1–4. All entity invariants hold. **Amended in Phase 6**: `ContractPeriod` is scoped to a client (CT9), the `NonWorkingDay` entity is deferred, and the `Setting` entity is now specified. |
+| 0004 Timer and entries | `Implemented` | Phase 2A, plus M4 and ED1 closed in review. O3/L3/W2 remain (see §Known limitations). L3 lands in Phase 6. |
 | 0005 Taxonomy | `Implemented` | Phase 4. |
-| 0006 Reporting and billing | `Draft` | Phase 6. Not started. The pure aggregation half exists because `0003`/`0004` need day totals; the view half does not. |
+| 0006 Reporting and billing | `Draft` | Phase 5. The aggregation, the charts, the report screens and the invoice are built and tested (R1–R7, I1–I6, DR1–DR5, RD1–RD5, L3, O3). |
 | 0007 Persistence and data safety | `Accepted` | Phases 2B–3. F-EXPORT-5 amended to merge-only. **E-ERASE-1–4 is a MUST, is not built, and is assigned to Phase 8** (0014) — see §Known limitations. |
-| 0008 Export formats | `Accepted` | JSON envelope shipped (Phase 2B). CSV writers are Phase 6. |
+| 0008 Export formats | `Accepted` | JSON envelope shipped (Phase 2B). CSV writers are Phase 7. |
 | 0009 Deployment | `Implemented` | Phase 1. |
 | 0010 Testing and quality | `Accepted` | Cross-cutting. Q5 (coverage thresholds), Q6 and Q10 (pre-commit hook) are open — see §Known limitations. |
 | 0011 Privacy and security | `Accepted` | Phases 2B and 8. N5 (Content Security Policy) now ships. |
-| 0012 Cross-device sync | `Implemented` | Phase 2B. SY6 amended (see in-file). |
-| 0013 Capacity | `Draft` | Phases 6–7. Not started. |
-| 0014 Development plan | `Implemented` | Phases 1–4 complete. |
+| 0012 Cross-device sync | `Implemented` | Phase 2B. SY6 amended (see in-file). M2.3 amended in Phase 6 to judge overlap within a client. |
+| 0013 Capacity | `Draft` | Phase 6. **Built**, with the scope narrowed while it was built: scoped to a client, and the non-working-day entity deferred. |
+| 0014 Development plan | `Implemented` | Phases 1–4 complete. Phases 5 and 6 are partly built — the plan says which parts, so a half-built phase does not look like a whole one. |
+
 
 ## Index
 
@@ -93,13 +94,13 @@ Recorded here so the specs stay the source of truth.
 | Stack | TypeScript, React, Vite, IndexedDB via Dexie, Zod, Vitest | [0002](0002-architecture.md) |
 | Charting | Hand-rolled SVG. Chart.js only as a documented escape hatch | [0002 §Charts](0002-architecture.md) |
 | Sync provider | Dropbox first, behind a `SyncProvider` interface so a second can be added | [0012](0012-sync.md) |
-| When sync runs | On app open, debounced after local writes, on tab focus and `pagehide`, plus a manual button. No polling | [0012 C1–C7](0012-sync.md) |
+| When sync runs | On app open, debounced after local writes, on tab focus and `pagehide`, plus a manual button — and, while the tab is visible, a poll every 10s by default. The poll asks for the file's revision and only downloads when it has moved | [0012 C1–C7, C6.2](0012-sync.md) |
 | Sync encryption | Provider-side only, no app-level passphrase | [0011 §Accepted risks](0011-privacy-and-security.md) |
 | Data at rest locally | Unencrypted; relies on OS and browser profile | [0011 R1](0011-privacy-and-security.md) |
 | Conflict resolution | Union by `id`, last-write-wins on `updatedAt`, deterministic tiebreak | [0012 §Merge](0012-sync.md) |
 | Shared backend | Rejected. No backend this project operates, no app login, no app accounts | [Below](#considered-and-rejected) |
 | Timer on tab close | Warn, then **continue running**. Leaving never stops the timer | [0004 §Closing the tab](0004-timer-and-entries.md) |
-| Billable rounding | 15 minutes. Stored as a setting now, UI control deferred | [0006 RD2–RD2.2](0006-reporting-and-billing.md) |
+| Billable rounding | 15 minutes. The increment is stored as a setting in schema 5, UI control deferred | [0006 RD2–RD2.2](0006-reporting-and-billing.md) |
 | Currency | App-wide default, overridable per client and per project. No conversion | [0003 CU1–CU7](0003-data-model.md) |
 | Invoice document | Not in this version. Totals and CSV line items only | [0006 §Invoicing](0006-reporting-and-billing.md) |
 | Theme | Light, dark, or follow the system. `system` is the default | [0002 §Theming](0002-architecture.md) |
@@ -109,8 +110,9 @@ Recorded here so the specs stay the source of truth.
 | Absence modelling | One `NonWorkingDay` entity, not an entry kind and not two entities. See 0013 CP2 | [0013](0013-capacity.md) |
 | Leave allowance | Out of scope. Contracted hours only; no entitlement tracking | [0013 §Deferred](0013-capacity.md) |
 | Non-working day labels | Free text. No enum, no privacy control, no warning | [0003 NW1](0003-data-model.md) |
-| Overlapping non-working days | Permitted. Idempotent, since there is no quantity to double-count | [0003 NW5](0003-data-model.md) |
-| Contracted hours | Effective-dated periods. Confirmed: hours do change over time | [0003](0003-data-model.md), [0013 K1](0013-capacity.md) |
+| Overlapping non-working days | Deferred with the entity. Permitted and idempotent when built | [0003 NW5](0003-data-model.md) |
+| Contracted hours | Effective-dated periods, **scoped to a client**. The user calls this a "budget" | [0003](0003-data-model.md), [0013 K1](0013-capacity.md) |
+| Contract scope | The client, not the project. A project's hours are already a subset of its client's | [0003 CT9](0003-data-model.md) |
 | `.ics` import | Deferred, not now | [0013 §Deferred](0013-capacity.md) |
 | Holiday import from official sources | Deferred. Manual entry is the supported path | [0013 §Deferred](0013-capacity.md) |
 | Holiday recurrence | Fixed-date annual only. No RRULE, no nth-weekday | [0003 NW7–NW8](0003-data-model.md) |
@@ -127,6 +129,8 @@ they stay visible, and each is a contained addition at the point it is picked up
 | --- | --- |
 | Rounding increment UI | The 15-minute default is stored from day one, so exposing a control needs no migration. [0006 RD2.1](0006-reporting-and-billing.md) |
 | Printable invoices | A rendering of existing line items; no data model change. [0006 I1](0006-reporting-and-billing.md) |
+| The `NonWorkingDay` entity | Deferred in Phase 6. Absence is carried as an ordinary client-less project instead; the cost is stated in [0013 CP2](0013-capacity.md). [0003](0003-data-model.md) |
+| Project-level contracts | The scope is the client. A project-level contract would double-count against its own client. [0003 CT9](0003-data-model.md) |
 | `.ics` import | Needs a real parser and a date-time model that does not exist yet. [0013](0013-capacity.md) |
 | Holiday import from official sources | Public data the user fetches; adds one origin to `connect-src`. [0013](0013-capacity.md), [0011 N6](0011-privacy-and-security.md) |
 | Leave allowance and entitlement | Would be a new entity and new reports, not an extension. [0013](0013-capacity.md) |

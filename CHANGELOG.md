@@ -16,6 +16,128 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+Expected hours: say how many hours a week you expect to spend on a client, and see
+what was actually tracked against them. This is the capacity half of Phase 6 in
+[`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md), and the scope
+changed while it was being written — the details are below, because two of them
+change what the feature is.
+
+### Added — expected hours
+
+- **A budget per client.** Settings has a new panel, "Expected hours", where each
+  client gets the hours you expect to spend on them in a week and the days you expect
+  to work. The scope is the client rather than the project, because a project's hours
+  are already a subset of its client's, and a project-level budget would double-count
+  against its own client.
+- **Expected against actual**, on its own screen. A table per client: expected hours,
+  hours tracked, the difference, and a utilisation figure. The expected hours are per
+  week as well as per range, because a month-long total hides which week went short.
+- **An unknown is not a zero.** A client with no expected hours, or a range the
+  contract does not cover, shows a dash rather than 0%. A dash means "not known" and
+  a zero means "none expected", and they are different answers.
+- **A report and a list filter.** The entry list can be filtered by project, client,
+  tag, billable state, source and free text, and overlapping entries are marked so a
+  deliberate double-booking is distinguishable from a mistake.
+
+### Added — charts
+
+- **A bar chart of time by day, and a share bar for the breakdown.** Hand-rolled SVG
+  rather than a charting library, because the data is a handful of numbers and a
+  charting library would be the largest dependency in the project for no benefit.
+- **Every chart has a table with the same figures, and a button to switch between
+  them.** A chart alone fails a reader who cannot see it, and fails a screen reader
+  outright — so the table is a real sibling of the chart rather than a description of
+  it.
+- **The bars can be reached with the keyboard and say what they are.** Each bar's
+  accessible name is its label and its value, so the figure is not hidden behind a
+  hover that a keyboard user cannot make.
+- **The colours are the app's own.** A project or client has the same colour in a
+  chart as it has in a list.
+
+- **An invoice, for one client at a time.** The line items are your billable work
+  grouped by project, with the rate that actually applied — an entry with its own
+  rate bills at that rate, and the line shows it. The line totals add up to the
+  total exactly, which holds because the duration is rounded once, before the rate
+  is multiplied. Nothing is stored: the invoice is worked out from your entries
+  each time, so it can be regenerated later and compared, and changing a rate
+  changes an old invoice.
+
+### Before you update a second device
+
+- **Update every device at once.** This release is data schema 5; 0.2.0 was schema 4.
+  Once one device is on 0.3.0 the file in Dropbox is schema 5 — and a device still
+  on 0.2.0 will **refuse to sync** rather than guess, saying that it does not
+  understand the schema.
+
+  That refusal is deliberate (0012 M9): reading a file whose shape you cannot
+  interpret is how data gets corrupted. The cost is a rollout one, and it is the
+  only thing in this release a user can hit through no action of their own. If you
+  have two devices, bring both up to date before relying on sync again.
+
+  Your data is not at risk — nothing is written by the device that refuses — but it
+  will stop moving until it is updated. The refusal is one-way: 0.3.0 reads a
+  0.2.0 file without complaint, so you can update one device first, and the other
+  will only start failing once the first has published.
+
+### Changed — the schema
+
+- **Schema 5** adds a store for the expected hours. The upgrade is additive: no row
+  is moved and none is invented, and a client with no expected hours correctly means
+  "no budget set" rather than "a budget of zero".
+- **Two settings ship with it**: the day the week starts on, and the billable rounding
+  increment. Both are values written once and then never needing another migration, so
+  they are written in the same increment that was going to happen anyway rather than
+  costing one later.
+
+### Changed — sync
+
+- **The app now checks Dropbox for another device's work every ten seconds, and the
+  rate is a setting.** This reverses a recorded decision that the app would not poll
+  at all. The cost that decision was protecting against is bounded rather than
+  avoided: a check asks Dropbox for the file's _revision_, which is a small answer,
+  and the file is downloaded only when that revision has actually moved. A hidden tab
+  is not checked at all — it is not being read, and the app already syncs when the
+  tab comes back into view. Setting the rate to "off" turns the check off without
+  turning syncing off: the app still syncs when it opens, when you change something,
+  and when you come back to it.
+
+### Deferred — non-working days
+
+- **Leave and public holidays are not modelled as their own records.** Absence is
+  carried as an ordinary project instead — a client-less project named for leave or
+  non-work hours, with the time recorded against it as usual. The cost is real and is
+  stated in the specs rather than left to be found: the leave project's time counts as
+  worked time in every total, because nothing excludes it; and a client whose own
+  office closes for a fortnight has no way to have that fortnight excused from its
+  expectation, so the utilisation figure simply says the expectation went unmet.
+
+### Security
+
+- **A secret gate that cannot be fooled by a rename.** The gate that checks nothing
+  sensitive is bundled now allows only the two `VITE_` variables this project
+  actually uses, and reads the built output as well as the source. That second half
+  matters: Vite inlines every `VITE_` variable present in the build environment into
+  the shipped JavaScript, whether or not any source file refers to it, so a variable
+  that existed only in the build environment was previously invisible to the gate and
+  shipped anyway.
+- **A colour from an imported file cannot become a URL.** `background` is a CSS
+  shorthand, and `background: url(...)` is a valid value for it. Colours are now
+  checked where they become CSS, so a colour arriving from a hand-edited backup
+  cannot ask the browser to fetch something. The Content Security Policy already
+  blocked that; this does not rely on the policy continuing to.
+- **Restoring a backup no longer keeps a contract that cannot be used.** A contract
+  naming a client that is not in the file, or whose working days do not add up to the
+  week it claims, is dropped and the drop is counted and reported.
+- **A sync can no longer delete a contract from the remote file.** The repair that
+  drops an unusable contract runs on the import path only. It used to run on the sync
+  path as well, which publishes what it repairs — the one place in the app where a
+  record could be removed rather than tombstoned.
+- **A file with impossible sizes in it is rejected rather than absorbed.** A backup's
+  records are now bounded, so a large or malformed file is refused instead of being
+  parsed, validated and written in one pass on the main thread.
+
 ## [0.2.0] - 2026-10-13
 
 Settings rebuilt around one list, the timer card reduced to one control per client,

@@ -404,7 +404,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     heading, so the section keeps its place in the page outline and the panel's
     `aria-labelledby` still resolves — a bare button styled like a heading looks the same and
     vanishes from the outline.
-73. [ ] **a sync user hitting a newer schema is told about a *backup* they never had.**
+73. [x] **a sync user hitting a newer schema is told about a *backup* they never had.**
     Deferred deliberately, so 0.2.0 can ship: the sync fixes are worth more to a user than
     this wording is worth delaying them by. Traced end to end while validating the version
     bump — a 0.2.0 device pulling a file published by a future schema-5 build gets:
@@ -422,20 +422,31 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     `"Remote data uses schema 5; this build understands 4. Not syncing."` on the merge
     branch, but `parseEnvelope` refuses first.
 
-    *Fix, when it is worth doing:* give `parseEnvelope` a source label — "Backup" for a
-    restore, "The file in Dropbox" for a sync — or have the engine rewrite the message it
-    forwards. Add a regression test asserting a syncing user is never told about a backup,
-    since that is the shape which would have caught it.
+    *Done.* `parseEnvelope` now takes the source it is parsing for, and the message
+    names it: "Backup" for a restore, "The file in Dropbox" for a sync. The refusal is
+    unchanged — the same file, the same refusal, the same advice to update the app.
 
-74. [ ] **a corrupt sync file surfaces a raw JSON parse error.** Same deferral, same reason.
+    The regression test asserts a syncing user is never told about a backup, which is
+    the shape that would have caught it.
+
+74. [x] **a corrupt sync file surfaces a raw JSON parse error.** Same deferral, same reason.
     If the remote body is not valid JSON, `JSON.parse` throws and the catch-all in
     `src/sync/engine.ts` forwards `error.message` unedited, so the user sees something like
     `Unexpected token '}' in JSON at position 412` — an internal parser error naming neither
     Dropbox, nor their data, nor anything they could act on. Should say what happened and
     what it means for their work, in the same place the schema message is rendered.
 
-    Note when fixing: this path is also reachable with a *non-schema* parse failure, so it
-    is wider than the schema case above and worth covering separately.
+    *Done.* The remote body is parsed in its own step, so a file that is not JSON at
+    all is reported as what it is: "The file in Dropbox could not be read, so it may have
+    been corrupted. Nothing has been changed." The outcome is `corrupt-remote`, which is
+    distinct from `unsupported-schema` because the advice is different — a schema
+    mismatch is fixed by updating the app, and a corrupt file is not — and because a
+    corrupt remote is not overwritten.
+
+    The wider case is covered too: the catch-all no longer forwards an internal error's
+    message to the user at all. A `SyncError`'s message is written for the user; anything
+    else gets a sentence the user can act on, with the detail going to the log where it
+    is useful and nobody has to read it.
 
 72. [x] **found and fixed a false claim in my own migration test.** It asserted a 0.1.0 device
     could read what we publish, while checking only `schemaVersion >= 3` — which 4 satisfies.
@@ -474,6 +485,160 @@ Numbered, not bulleted. Ordered roughly by when they came up.
     silent either way. A broken upgrade resets a billing currency and an entry period with
     the app still looking healthy; a tombstone dropped by the merge resurrects a project the
     user deleted three versions ago and republishes it.
+75. [x] **dropbox sync should auto check/refresh every 5-10 seconds to ensure consistency
+    with what is in dropbox (user likely to work with multiple devices). The rate of this
+    polling should be configurable with default at 10s.** Done, and it reverses 0012 C6,
+    which said the app would not poll on a background interval at all. The reason C6 gave
+    was that a timer moves the user's whole history and keeps the device awake, so the
+    cost is bounded rather than avoided:
+    - A poll asks the provider for the remote file's **revision**, which is a small
+      answer, and downloads the file only when that revision has moved. The provider
+      gained a `peek` for this, and it is optional: a provider that cannot answer
+      cheaply falls back to a full pull, because "I do not know" and "nothing has
+      changed" are different answers.
+    - Nothing is polled while the tab is hidden. A background tab is not being read,
+      the browser throttles its timers anyway, and `visibilitychange` already syncs
+      when the tab comes back — so the change is picked up on the way back rather than
+      ten seconds late.
+    - The rate is a setting, ten seconds by default, with "off" offered. Turning it off
+      does not turn syncing off: the app still syncs on open, on edit and on tab focus.
+
+    0012 C6 is amended to C6.2 rather than deleted, and the amendment says what the
+    poll must not do as well as what it must.
+76. [x] **touch targets for start/stop should be larger on mobile screen.** Done. The timer
+    card's start and stop controls were 2.35rem — about 38px — and are now 2.75rem, which is
+    44px, on a coarse pointer. Scoped to `(pointer: coarse)` rather than to a narrow
+    viewport, because "on a phone" and "on a narrow screen" are different questions: a
+    small window on a desktop is usually driven by a mouse, and a touchscreen laptop is a
+    coarse pointer whatever its size.
+    The idle placeholder slot grows with them, because the slot exists to stop the row
+    resizing when the timer starts (item 35) and a slot left at the old size would
+    defeat it.
+77. [x] **on edit screen default to enter end time rather than hours worked. Also
+    save/cancel delete should be at the top of the edit card, not the bottom.** Done.
+    The end time is now the default *when editing*; a new entry still opens on a
+    duration, because "about three hours" is how people recall work and there is no
+    known end to offer. 0004 M3 is amended to say so, rather than the code quietly
+    disagreeing with it.
+    The three buttons moved to the top of the card. At the bottom they were at the end
+    of a long scroll, and on a phone that is the worst place to put the control the
+    user came to press. Save first, then Cancel, then Delete — Delete last, because it
+    is the only one of the three that is not undoable from there.
+78. [x] **when a timer is running, rather than having a delete option beside it, do an
+    edit option (pencil icon) that open edit sheet.** Done, in all three places a
+    running timer offered one: the client row, the project row, and the running-timer
+    panel.
+    The reasoning is that a running entry is a *real* entry. There is something to
+    correct — a project picked wrongly, a note to add — and a discard threw that away.
+    The pencil opens the entry's own sheet, where the same Delete button is available
+    for the times the entry really should not have been recorded at all, so nothing was
+    lost: the capability moved rather than disappeared.
+    The pencil is deliberately *not* the danger colour the bin had. A control that
+    opens a sheet is not destructive, and a red control next to the timer is the last
+    thing that should look like a warning.
+79. [x] **a concept of the number of hours expected to work.** Decided and written into the
+    specs, and it is the Phase 6 capacity feature. Three decisions were made, and each one
+    is a narrowing of what the spec originally said:
+    - **The scope is the client, not the project.** A `ContractPeriod` names one client
+      (0003 CT9) and says how many hours a week are expected on them and what shape that
+      week has. Project-level contracts are not built: a project's hours are already a
+      subset of its client's, so a project-level contract would double-count against its
+      own client.
+    - **The spec says "contracted hours"; the user says "budget".** The spec's wording is
+      kept, and a note in 0003 records that the two mean the same thing.
+    - **There is no global scope.** Every contract belongs to a client, so "expected hours"
+      is always "expected hours for that client". Client scopes are disjoint, which is what
+      makes a range total across clients well defined.
+80. [x] **the `NonWorkingDay` entity is deferred.** Leave and public holidays were to be
+    records that reduce a contracted day's expected minutes to zero. The user has chosen to
+    carry absence as an ordinary project instead — a client-less project named for leave or
+    non-work hours, with the time recorded against it as usual.
+    The cost is real and is recorded in 0013 CP2 rather than left to be discovered: the
+    leave project's time counts as *worked* time in every total, because nothing excludes
+    it; and a client whose own office closes for a fortnight has no way to have that
+    fortnight removed from its expectation, so the utilisation figure simply says the
+    expectation went unmet.
+    A day's absence is therefore indistinguishable from a day's idleness. That is the
+    trade, and it was chosen.
+81. [x] **`week-start` and the billable rounding increment ship with schema 5.** Both are
+    values written once and then never needing another migration (0006 DR3, RD2.1), so
+    they are written in the same increment as the contract period rather than in the one
+    that first needs them.
+    This also corrects a false claim: `SPECS/README.md` said the rounding increment was
+    "stored as a setting now", and it was not — `settingsRepo.ts` held three keys and none
+    of them was the increment. The same class of defect as item 72.
+83. [x] **a test coverage review of the Phase 5 and 6 work.** Written up in
+    `review/test_coverage_phase6.md`. Coverage went from 84.52% of statements to
+    89.18%, and from 78.22% of branches to 81.75% — but the numbers are the least
+    interesting part of it.
+
+    **The review found two requirements that were implemented in the domain and
+    never shown to the user.** 0013 CR3 asks for billable utilisation as well as
+    hour utilisation, and `billableUtilisation` had no caller anywhere — the
+    coverage report showed it as 0% covered, and the reason was that it was dead
+    code. 0006 RD5 asks for the raw duration beside the rounded one, and
+    `roundingDifference` had no caller either. Both are now surfaced: the capacity
+    report has a *Billable* column, and the billable summary shows the unrounded
+    figure where it differs from the rounded one.
+
+    **And the new component tests found two defects the arithmetic tests could
+    not**, because the arithmetic was right and the screen was not. A client with
+    a budget and no time tracked did not appear in the capacity report at all —
+    so "no time tracked" looked exactly like "no expectation set", and the report
+    hid its own most interesting row. And the breakdown's total percentage was a
+    hard-coded `100.0%` rather than the sum of the groups' own shares, which is a
+    claim rather than a calculation.
+
+    0010 Q5 asks for coverage to be *measured*, and it is; 0010 Q6 rejects a
+    numeric target, and there is none. What is automated is the thing a percentage
+    cannot express: the silent-failure gate introduces 26 specific bugs and
+    requires the suite to fail, and five of them were added in this phase because
+    the arithmetic they break now exists.
+
+82. [x] **a security review, and the two things it found that are still open.**
+    A review of the whole app against `0011` was carried out, and the fixes it turned up
+    are in this branch. Most of what it confirmed is worth recording, because it is the
+    answer to "is this safe?" and the answer is mostly yes: no HTML injection sink exists
+    anywhere, the sync payload and the backup file cannot carry a credential (the
+    `secrets` table is excluded structurally, not by a filter), prototype pollution was
+    ruled out against the installed Zod, the OAuth flow cannot be redirected, the CSP's
+    script hash matches the script it describes, and every action is pinned to a full
+    SHA.
+
+    Two things remain open, and one of them is a decision rather than a bug:
+
+    - ~~**Local data can be pushed into a second Dropbox account.**~~ **Fixed.** The
+      local data is now bound to the account it was last published to, and a cycle
+      against a different account stops before anything is pulled or published.
+
+      The binding lives in `meta`, so it is device-local and never travels — it is a
+      fact about *this device's* data, and a binding that were copied to another device
+      would be the wrong thing to copy. The account id is the one Dropbox already
+      returns on the token, which was being stored and never compared to anything.
+
+      The way past the block is explicit rather than silent: the sync panel says what
+      would happen and offers "Share with this account too", and the data ends up in
+      both accounts. A guard that stopped every sync because it could not read an
+      account id would be the worse of the two failures, so an account that cannot be
+      identified is not treated as a different one.
+    - ~~**The import path bypasses the domain's own rules.**~~ **Fixed.** The app
+      enforces its rules when you type something — an entry cannot be longer than a day
+      (0004 V2), a note has a length limit (0004 V4), a client's name has one too
+      (0003 Client), two clients cannot share a name — and enforced none of them when a
+      *file* said so. So a restored backup could contain a three-day entry, a note of
+      fifty thousand characters, or two clients with the same name, and the app would
+      accept all of it and then behave oddly.
+
+      The split follows the spec's own two rules. The **file** is validated as a whole
+      (0007 F-EXPORT-4): a file that is not a valid document is not applied at all. A
+      **record inside a valid file** that breaks the rules is dropped, and the drop is
+      reported (0008 J13) — refusing the whole file because one record is wrong would
+      be the worst possible answer to somebody trying to recover their work.
+
+      Repairing the records was considered and not done: a restore is a recovery
+      action, and silently rewriting somebody's backup while recovering it is a
+      modification they did not ask for and cannot see.
+
 
 # Where the branches are
 
@@ -484,7 +649,10 @@ Numbered, not bulleted. Ordered roughly by when they came up.
   branches from the previous phase's head.
 - `phase-4` — taxonomy. Merged as PR #4 and **released as 0.1.0**. Deployed and verified
   live: `/package.json` 404s, so Pages is on Actions rather than branch source (0009 MP1).
-- `phase-5` — reports and charts. **Current branch.** Local only, see item 1 below.
+- `phase-5` — review remediation: settings and timer rebuilt, Dropbox token handling,
+  schema migrations, About page. Merged as PR #5 and **released as 0.2.0**.
+- `phase-6` — **current branch.** Capacity: client-scoped contracted hours, and the reports
+  and charts that go with them.
 
 ## Outstanding on `phase-2b` and `phase-3`
 
@@ -492,8 +660,13 @@ Numbered, not bulleted. Ordered roughly by when they came up.
    worked over SSH all along — it was never blocked on a token, only undone — and 30-odd
    commits of `phase-4` did sit on one machine until the release, so the cost of leaving it
    was measured and paid.
-2. [ ] **`phase-2b` is still local only.** It reached `main` via `phase-4`, so nothing is
-   lost by leaving it, but it is the one branch in this list with no remote copy at all.
+2. [x] **`phase-2b` was still local only.** Now pushed, so every branch in this list
+   has a remote copy. It reached `main` via `phase-4`, so nothing was lost by leaving
+   it — but it was the one branch with no remote at all, and a branch with no remote
+   is a branch that exists only on the machine it was built on.
+
+   `phase-6` is also pushed, and is now redundant: `phase-7` contains all of it. It can
+   be deleted from the remote whenever that stops being confusing.
 3. [ ] **Partly verified against real Dropbox.** The scopes are granted — re-verified
    5 October 2026 against the live authorize endpoint, where both apps now reach consent for
    both content scopes and previously answered `scope_not_granted`. Recorded in
@@ -546,11 +719,26 @@ Per `0014-development-plan.md`. Not started.
 
 ## Notes worth keeping
 
-1. [ ] The six silent failures that cannot be checked yet — rounding, float drift,
-   utilisation divide-by-zero, weekday off-by-one, breakdown reconciliation and CSV
-   quoting — all need Phase 6 arithmetic that does not exist. `scripts/check-silent-failures.mjs`
-   lists them as pending with the phase that introduces them. Run
-   `npm run check:silent` after touching anything in `domain/`, `storage/` or `sync/`.
+1. [x] **The six silent failures that could not be checked yet.** Five of the six are
+   checked now, because the Phase 6 arithmetic they were waiting for exists:
+   rounding applied before multiplying by the rate, float drift in money, utilisation
+   divide-by-zero, weekday off-by-one, and a breakdown that does not reconcile to its
+   total. `scripts/check-silent-failures.mjs` introduces each bug deliberately and
+   requires the suite to fail; all five are caught.
+
+   **The sixth is still pending** — CSV quoting — because the CSV writers are Phase 7
+   and there is no code to break yet. It is the only one left on that list.
+
+   Two things came out of writing the mutations. The float-drift mutation was **not**
+   caught at first, which is the gate doing its job: with a 15-minute increment and a
+   round rate the amount is always a whole number of minor units, so no test had ever
+   exercised a fractional one. There is one now, at a rate that is not a multiple of
+   four. And the `entity-table-forgotten` mutation had gone stale, because the
+   bridge's table list is no longer on one line — which is the gate's own warning
+   that the code moved and the script had not.
+
+   Run `npm run check:silent` after touching anything in `domain/`, `storage/` or
+   `sync/`.
 2. [x] `npm run test:e2e` is still **not** part of `npm run verify` — it needs a browser, so
    it stays a deliberate step. Playwright's browsers need installing once with
    `npx playwright install chromium`. It now really does build first, rather than only

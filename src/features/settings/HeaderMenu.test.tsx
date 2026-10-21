@@ -26,18 +26,18 @@ beforeEach(() => {
 
 /** Open the menu and return its panel, which is unmounted while closed. */
 async function open(): Promise<HTMLElement> {
-  render(<HeaderMenu settingsHref="#/settings" aboutHref="#/about" />)
+  render(<HeaderMenu settingsHref="#/settings" reportsHref="#/reports" aboutHref="#/about" />)
   await user.click(screen.getByTestId('header-menu-toggle'))
   return screen.getByTestId('header-menu-panel')
 }
 
 describe('the header menu', () => {
-  it('holds settings, the two backup actions and About', async () => {
+  it('holds settings, reports, the two backup actions and About', async () => {
     const panel = await open()
 
     expect(
       [...panel.querySelectorAll('.header-menu-item')].map((item) => item.textContent?.trim()),
-    ).toEqual(['Settings', 'download', 'import', 'About'])
+    ).toEqual(['Settings', 'download', 'import', 'Reports', 'About'])
   })
 
   it('names each action with the word beside its icon, not an aria-label', async () => {
@@ -45,7 +45,7 @@ describe('the header menu', () => {
 
     // A control whose visible text and accessible name differ is announced twice and
     // confuses voice-control users. The word on the control is the name.
-    for (const name of ['Settings', 'download', 'import', 'About']) {
+    for (const name of ['Settings', 'download', 'import', 'Reports', 'About']) {
       const item = within(panel).getByText(name).closest('.header-menu-item')
       expect(item, `no control labelled ${name}`).not.toBeNull()
       expect(item?.getAttribute('aria-label')).toBeNull()
@@ -55,7 +55,13 @@ describe('the header menu', () => {
   it('carries an icon on every action', async () => {
     const panel = await open()
 
-    expect(panel.querySelectorAll('.header-menu-item svg')).toHaveLength(4)
+    expect(panel.querySelectorAll('.header-menu-item svg')).toHaveLength(5)
+  })
+
+  it('points Reports at the route it was given, rather than a hard-coded path', async () => {
+    await open()
+
+    expect(screen.getByTestId('header-menu-reports')).toHaveAttribute('href', '#/reports')
   })
 
   it('points About at the route it was given, rather than a hard-coded path', async () => {
@@ -87,7 +93,7 @@ describe('the header menu', () => {
      * can drift back to owning its own ref. Nothing about the ref crossing a module
      * boundary is visible to the type system here, so it needs a test rather than a type.
      */
-    render(<HeaderMenu settingsHref="#/settings" aboutHref="#/about" />)
+    render(<HeaderMenu settingsHref="#/settings" reportsHref="#/reports" aboutHref="#/about" />)
     await user.click(screen.getByTestId('header-menu-toggle'))
     const input = document.querySelector<HTMLInputElement>('[data-testid="backup-file"]')
     if (!input) throw new Error('no file input')
@@ -108,7 +114,7 @@ describe('the header menu', () => {
   })
 
   it('renders nothing but the toggle while closed', () => {
-    render(<HeaderMenu settingsHref="#/settings" aboutHref="#/about" />)
+    render(<HeaderMenu settingsHref="#/settings" reportsHref="#/reports" aboutHref="#/about" />)
 
     // Mounting the whole panel to keep it out of the DOM would run the backup reads on
     // every page load, which is the thing item 26 moved the panel out of.
@@ -117,7 +123,7 @@ describe('the header menu', () => {
   })
 
   it('closes when the hash changes without a click', async () => {
-    render(<HeaderMenu settingsHref="#/settings" aboutHref="#/about" />)
+    render(<HeaderMenu settingsHref="#/settings" reportsHref="#/reports" aboutHref="#/about" />)
     // The two menu links close themselves on click, which covers every route the menu
     // offers and nothing else. Back, forward, or a typed URL change the hash with no click,
     // and the panel used to survive — an absolutely-positioned overlay on the page the user

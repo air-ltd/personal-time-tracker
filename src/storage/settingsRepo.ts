@@ -1,27 +1,21 @@
 import { getDb } from './db'
 import { bumpRevision } from './events'
 import { CURRENCY_CODES } from '../domain/taxonomy/currencies'
+import type { WeekStart } from '../domain/time/days'
 
 /**
  * App-wide preferences (0003 CU4).
  *
- * Stored in `meta` rather than `localStorage`: 0011 R5 allows localStorage only for
+ * Stored in IndexedDB rather than `localStorage`: 0011 R5 allows localStorage only for
  * non-sensitive UI state, and the theme is the sole permitted key. A billing currency
  * is user data, so it belongs in IndexedDB alongside everything else.
  *
- * **These settings do not sync.** `meta` is deliberately excluded from the snapshot
- * bridge — it holds sync bookkeeping (`LAST_REV_KEY`, `LAST_SYNC_KEY`), which is
- * per-device by nature, and 0008 S2 keeps credentials and device state out of a backup
- * file. The cost is that a default currency set on one device does not follow the user
- * to another.
- *
- * That is a real limitation rather than a settled answer. A default that differs per
- * device means an uncategorised entry shows a different currency depending on which
- * machine it was viewed on, which is confusing in exactly the multi-device case this
- * app is built for. The fix is a synced singleton record, and it is not a small one:
- * two devices setting different defaults at the same time is a genuine conflict with
- * no obvious merge rule, so it deserves its own decision rather than being folded into
- * a phase about projects and clients. Recorded in `todo.md`.
+ * **These settings do sync.** They live in their own `settings` table rather than in
+ * `meta`, so the split between "the user's preferences" and "this device's sync
+ * bookkeeping" is structural rather than a filter someone has to remember (SPECS/todo.md
+ * item 46). The theme stays in `localStorage` — 0002 TH4 needs it before first paint,
+ * which IndexedDB cannot do — and the Dropbox app key stays device-local, because it is
+ * chosen by host.
  */
 
 /*
@@ -37,9 +31,9 @@ import { CURRENCY_CODES } from '../domain/taxonomy/currencies'
  * union-by-id, last-write-wins path: a setting is one value under a stable key, so
  * "whichever device changed it most recently wins" is both the rule and the correct one.
  *
- * Two settings are deliberately absent. The theme stays in localStorage because 0002 TH4
- * needs it readable before first paint, which IndexedDB cannot do. The Dropbox app key is
- * chosen by host, so syncing it would let a local build inherit the deployed app's identity.
+ * A setting that has never been chosen is *absent*, not stored-as-default (0003 SET2).
+ * Absent and default are different answers, and collapsing them would mean a later
+ * change of default silently rewrote a value the user had explicitly chosen.
  */
 /**
  * Writes one setting, stamping the merge identity.
@@ -155,5 +149,107 @@ export async function readEntryPeriod(): Promise<'day' | 'week' | 'all'> {
 /** Remember the chosen period. */
 export async function writeEntryPeriod(period: 'day' | 'week' | 'all'): Promise<void> {
   await putSetting(ENTRY_PERIOD_KEY, period)
+  bumpRevision()
+}
+
+const WEEK_START_KEY = 'week-start'
+
+/**
+ * The day the week starts on (0006 DR3).
+ *
+ * Monday by default, because most of the world starts the working week on Monday and
+ * guessing Sunday would be wrong for most of them. It is a setting rather than a
+ * constant because the report's week boundaries depend on it (0006 DT8, 0013 K3), and
+ * a week that starts on the wrong day puts every weekly figure a day out.
+ *
+ * Read as `monday` when nothing is stored, or when the stored value is not one of the
+ * two days: a corrupted preference must not leave the week boundaries undefined.
+ */
+export async function readWeekStart(): Promise<WeekStart> {
+  const record = await getDb().settings.get(WEEK_START_KEY)
+  const value = record?.value
+  return value === 'sunday' ? 'sunday' : 'monday'
+}
+
+/** Remember the day the week starts on. */
+export async function writeWeekStart(weekStart: WeekStart): Promise<void> {
+  await putSetting(WEEK_START_KEY, weekStart)
+  bumpRevision()
+}
+
+const ROUNDING_INCREMENT_KEY = 'billable-rounding-increment'
+
+/** The default billable rounding increment, in minutes (0006 RD2). */
+export const DEFAULT_ROUNDING_INCREMENT_MINUTES = 15
+
+/**
+ * The billable rounding increment, in minutes (0006 RD2, RD2.1).
+ *
+ * Fifteen minutes is the conventional billing increment, and it is coarse enough that
+ * an invoice can be checked by hand.
+ *
+ * The value is stored rather than hard-coded because 0006 RD2.1 requires the stored
+ * value to exist *before* a control for it is added, so that adding the control is a
+ * UI change and not a migration. It ships in the same schema increment as the contract
+ * periods, which is the last moment a migration can be avoided for free.
+ *
+ * Read as the default when nothing is stored, or when the stored value is not a
+ * positive whole number of minutes: a corrupted preference must not produce a
+ * rounding increment of zero, which would round every billable duration to nothing.
+ */
+export async function readRoundingIncrementMinutes(): Promise<number> {
+  const record = await getDb().settings.get(ROUNDING_INCREMENT_KEY)
+  const value = record?.value
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    return DEFAULT_ROUNDING_INCREMENT_MINUTES
+  }
+  return value
+}
+
+/**
+ * Remember the billable rounding increment.
+ *
+ * Changing it MUST NOT alter anything already stored (0006 RD2.2): the increment is
+ * applied at read time, so entries keep their own durations and only the figures
+ * computed from them change.
+ */
+export async function writeRoundingIncrementMinutes(minutes: number): Promise<void> {
+  await putSetting(ROUNDING_INCREMENT_KEY, minutes)
+  bumpRevision()
+}
+
+const SYNC_POLL_INTERVAL_KEY = 'sync-poll-interval-seconds'
+
+/** The default poll interval, in seconds (item 75). */
+export const DEFAULT_SYNC_POLL_INTERVAL_SECONDS = 10
+
+/**
+ * How often the app checks the remote for another device's work, in seconds.
+ *
+ * Ten seconds by default, which is what the user asked for. The value is a setting
+ * because a poll costs something, and the right cost depends on how the app is being
+ * used — a phone on a metered connection and a desktop with two monitors are not the
+ * same question.
+ *
+ * Zero means "do not poll", which turns the check off entirely. The app still syncs
+ * when the tab becomes visible and after a local change, so turning polling off does
+ * not mean never syncing.
+ *
+ * Read as the default when nothing is stored, or when the stored value is not a
+ * whole number of seconds that is not negative: a corrupted preference must not
+ * produce a poll every millisecond, or none at all when the user asked for one.
+ */
+export async function readSyncPollIntervalSeconds(): Promise<number> {
+  const record = await getDb().settings.get(SYNC_POLL_INTERVAL_KEY)
+  const value = record?.value
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    return DEFAULT_SYNC_POLL_INTERVAL_SECONDS
+  }
+  return value
+}
+
+/** Remember the poll interval. Zero turns polling off. */
+export async function writeSyncPollIntervalSeconds(seconds: number): Promise<void> {
+  await putSetting(SYNC_POLL_INTERVAL_KEY, seconds)
   bumpRevision()
 }

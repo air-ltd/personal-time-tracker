@@ -177,7 +177,15 @@ export async function updateProject(
     ...current,
     name,
     clientId: patch.clientId === undefined ? current.clientId : patch.clientId,
-    colour: patch.colour ?? current.colour,
+    /*
+     * Validated on update as well as on create. The create path checked the colour
+     * because the picker could be half-typed; the update path did not, so a colour
+     * arriving from an import or a hand-edited file went straight to the `background`
+     * CSS shorthand. A bad colour degrades to the record's own previous colour rather
+     * than to nothing, because a project with no colour is a project the list cannot
+     * show properly.
+     */
+    colour: checkedColour(patch.colour) ?? current.colour,
     defaultRateMinor:
       patch.defaultRateMinor === undefined ? current.defaultRateMinor : patch.defaultRateMinor,
     currency: patch.currency === undefined ? current.currency : patch.currency,
@@ -208,7 +216,15 @@ export async function updateClient(id: string, patch: ClientPatch, now: Date): P
   const updated: Client = {
     ...current,
     name,
-    colour: patch.colour ?? current.colour,
+    /*
+     * Validated on update as well as on create. The create path checked the colour
+     * because the picker could be half-typed; the update path did not, so a colour
+     * arriving from an import or a hand-edited file went straight to the `background`
+     * CSS shorthand. A bad colour degrades to the record's own previous colour rather
+     * than to nothing, because a project with no colour is a project the list cannot
+     * show properly.
+     */
+    colour: checkedColour(patch.colour) ?? current.colour,
     defaultRateMinor:
       patch.defaultRateMinor === undefined ? current.defaultRateMinor : patch.defaultRateMinor,
     currency: patch.currency ?? current.currency,
@@ -234,7 +250,15 @@ export async function updateTag(
   const updated: Tag = {
     ...current,
     name,
-    colour: patch.colour ?? current.colour,
+    /*
+     * Validated on update as well as on create. The create path checked the colour
+     * because the picker could be half-typed; the update path did not, so a colour
+     * arriving from an import or a hand-edited file went straight to the `background`
+     * CSS shorthand. A bad colour degrades to the record's own previous colour rather
+     * than to nothing, because a project with no colour is a project the list cannot
+     * show properly.
+     */
+    colour: checkedColour(patch.colour) ?? current.colour,
     updatedAt: iso(now),
   }
   await db().tags.put(updated)

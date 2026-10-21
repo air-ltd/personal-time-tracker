@@ -4,6 +4,8 @@ import { SyncPanel } from '../sync/SyncPanel'
 import { BackupPanel } from '../backup/BackupPanel'
 import { TaxonomySettings } from '../taxonomy/TaxonomySettings'
 import { CurrenciesPanel } from './CurrenciesPanel'
+import { ContractSettings } from '../capacity/ContractSettings'
+import { useTaxonomy } from '../taxonomy/useTaxonomy'
 
 /**
  * The settings page (items 9, 10 and 13 of `SPECS/todo.md`).
@@ -27,6 +29,11 @@ export interface SettingsPageProps {
 }
 
 export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
+  // The clients, for the expected-hours panel. Read here rather than inside the panel
+  // so the panel and the taxonomy section below it are looking at the same read, and
+  // cannot disagree about which clients exist.
+  const { clients } = useTaxonomy()
+
   return (
     <>
       <section className="panel" aria-labelledby="appearance-heading">
@@ -39,6 +46,15 @@ export function SettingsPage({ now, theme, onThemeChange }: SettingsPageProps) {
       </section>
 
       <TaxonomySettings now={now} />
+
+      {/*
+        Expected hours, after the clients and projects they refer to.
+
+        A budget is scoped to a client (0003 CT9), so the panel that sets them belongs
+        after the list of clients — otherwise the reader meets a form naming a client
+        they have not met yet.
+      */}
+      <ContractSettings clients={clients} now={now} />
 
       {/*
         A real `<h2>` like every other panel on this page.

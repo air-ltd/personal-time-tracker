@@ -854,22 +854,48 @@ code {
   min-width: 2.35rem;
 }
 
-/* The discard cross, in the one colour that says "this throws the work away". */
 /*
- * The discard cross, in the colour that says "this throws the work away".
+ * The edit control beside a running timer (item 78).
  *
- * Extends `.button-danger`, which already carries that colour for text buttons, rather than
- * restating the token: the hover wash is the part that had to be spelled out, because the
- * base rule has no hover of its own.
+ * Deliberately *not* the danger colour it inherited from the discard button it
+ * replaced. A pencil that opens an entry's sheet is not destructive, and painting it
+ * red says otherwise — and a red control next to the timer is the last thing that
+ * should look like a warning.
  */
-.timer-discard {
-  color: var(--danger);
-  border-color: var(--danger);
+.timer-edit:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
-.timer-discard:hover {
-  background: var(--danger);
-  color: var(--surface);
+/*
+ * Larger tap targets on a touch device (item 76).
+ *
+ * The timer card's start and stop controls are the ones pressed most often and most
+ * quickly, and 2.35rem is about 38px — under the 44px that is the accepted minimum for
+ * a finger, and under the size at which a tap starts landing next to the control
+ * rather than on it.
+ *
+ * Scoped to a coarse pointer rather than to a narrow viewport, because "on a phone" is
+ * not the same question as "on a narrow screen": a small window on a desktop is
+ * usually being driven by a mouse, and a touchscreen laptop is a coarse pointer
+ * whatever its size. The media query is also not a preference, so a device that
+ * reports no pointer at all keeps the smaller target rather than being guessed at.
+ *
+ * The slot has to grow with the button, because the slot exists to stop the row
+ * resizing when the timer starts (item 35) — and a slot that stayed the old size
+ * would defeat it.
+ */
+@media (pointer: coarse) {
+  .timer-client-actions .button {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    padding: 0.6rem 0;
+  }
+
+  .timer-action-slot {
+    width: 2.75rem;
+    min-width: 2.75rem;
+  }
 }
 
 /* The orphan row's controls, icon-sized for the same reason the client rows' are. */
@@ -1877,4 +1903,187 @@ code {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   vertical-align: middle;
+}
+
+/*
+ * Expected hours (0013 CR1–CR3, 0003 CT1–CT9).
+ *
+ * The client row is a summary line with its edit control at the end, so the common
+ * case — reading which clients have a budget — costs one line each and no interaction.
+ */
+
+.contract-list {
+  list-style: none;
+  margin: 0.75rem 0 0;
+  padding: 0;
+}
+
+.contract-row {
+  border-top: 1px dotted var(--border);
+  padding: 0.5rem 0;
+}
+
+.contract-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.contract-name {
+  font-weight: 500;
+}
+
+.contract-days {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/*
+ * The label wraps the checkbox so the whole day is the hit target, not just the box.
+ * The visible text is the short name and the full name is for screen readers, so the
+ * two are not read out as "Mon Monday".
+ */
+.contract-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.contract-per-day {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.capacity-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75rem 0;
+}
+
+.capacity-table th,
+.capacity-table td {
+  text-align: start;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.capacity-table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.capacity-weeks {
+  margin-top: 0.75rem;
+}
+
+.capacity-week-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.capacity-week-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px dotted var(--border);
+}
+
+.capacity-week {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+/*
+ * Charts (0002 CH1–CH4, 0006 C1–C7).
+ *
+ * Hand-rolled SVG on a small shared set of primitives, because the data is a handful
+ * of numbers and a charting library would be the largest dependency in the project for
+ * no benefit (0002 CH1).
+ *
+ * The colours come from the shared palette rather than from here (0002 CH3), so a
+ * colour means the same thing in a chart as it does in a list.
+ */
+.chart-frame {
+  margin: 1rem 0;
+}
+
+.chart-frame-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  max-width: 40rem;
+  overflow: visible;
+}
+
+.chart-axis line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-axis text,
+.chart-share text {
+  fill: var(--fg-muted);
+  font-size: 0.7rem;
+}
+
+/*
+ * A focusable bar.
+ *
+ * The focus ring is drawn rather than left to the browser's default, because the
+ * default ring on an SVG element is a rectangle around the whole `<svg>` in some
+ * browsers and nothing at all in others. The bar is the thing being reached, so the
+ * ring goes on the bar (0010 AC5).
+ */
+.chart-bar {
+  outline: none;
+}
+
+.chart-bar:focus-visible rect {
+  stroke: var(--focus-ring);
+  stroke-width: 2;
+}
+
+.chart-bar:hover rect,
+.chart-bar:focus-visible rect {
+  filter: brightness(0.92);
+}
+
+.chart-share-track {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+/*
+ * The chart and the table are both in the document; one of them is hidden at a time.
+ *
+ * `display: none` is not used for the chart when the table is showing, because it
+ * would take the bars out of the tab order — and a reader who has tabbed to a bar
+ * that then vanishes has been dropped somewhere they cannot see. The chart is hidden
+ * from assistive technology instead, and the bars are made unfocusable by the same
+ * `aria-hidden`.
+ */
+.chart-hidden {
+  display: none;
+}
+
+/* The unrounded figure beside the rounded one (0006 RD5). */
+.capacity-raw {
+  color: var(--fg-muted);
+  font-size: 0.85em;
 }

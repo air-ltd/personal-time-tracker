@@ -192,10 +192,18 @@ The entries below should narrow to that client. Press it again to clear.
 
 ## 9. Edit what you recorded
 
-Press **Edit** on your entry. Change the duration and the note, and save.
+Press **Edit** on your entry. Change the note and save.
+
+The form should open on the **end time**, not on a duration — an entry you have
+already recorded already knows when it ended, so that is the thing you are most
+likely to want to change. Switch to **Enter a duration** if you would rather.
+
+The **Save changes**, **Cancel** and **Delete** buttons are at the *top* of the card,
+not the bottom.
 
 > **What to look for.** Did your cursor go where you needed it without you having to hunt?
-> After saving, did the change show straight away, or did you have to reload?
+> After saving, did the change show straight away, or did you have to reload? Were the
+> buttons where you expected them, or did you have to scroll to find them?
 
 ---
 
@@ -341,6 +349,109 @@ delete one. Then turn the network back on and reload.
 > **What to look for.** The app should keep working with no connection at all — it is local
 > first. Nothing should be lost or blocked. When the network returns, the header should
 > eventually show **Synced** without you doing anything.
+
+---
+
+## 17. Expected hours — set a budget and see it compared
+
+Go to **Settings -> Expected hours**. Each client has a row. Press **Set hours** on
+one of them.
+
+Enter the hours you expect to spend on that client in a week, and tick the days you
+expect to work. Press **Save expected hours**.
+
+Now open **Reports** from the menu at the top right. You should see a table: the
+client, the hours expected, the hours actually tracked, the difference, and a
+utilisation figure.
+
+> **What to look for.** A client with no expected hours should show a **dash** (`—`)
+> rather than `0%` — a dash means "not known" and a zero means "none expected", and
+> they are different answers. The expected hours should be a whole number of hours per
+> week, not a per-day average.
+
+Try an uneven week. Set the hours to 37.5 and untick Friday — the form should say
+the week does not divide evenly and ask you for the hours for each day instead of
+quietly rounding.
+
+> **What to look for.** It should refuse rather than round. If it accepts 37.5 hours
+> over four days by picking 9.375 hours a day, that is a finding: the days would no
+> longer add up to the week.
+
+**Leave alone.** The app does not have a way to record leave as leave, so if you take
+a day off, the time you did not work simply shows as time you did not work. There is
+no way to excuse it from a client's expected hours. That is a known limitation, not a
+bug to report — but it is worth knowing about before you rely on the numbers.
+
+---
+
+## 18. Editing a running timer
+
+Start a timer. The button beside it should be a **pencil**, not a bin, and it should
+open the running entry's own form.
+
+Change the note, save, and check the timer is still running.
+
+> **What to look for.** The pencil should open the entry that is running — the one
+> whose time is counting up — and not a blank form. If you cannot get rid of a running
+> timer that you want to abandon, the **Delete** button in that form is where it is
+> now; that is a change from before, and worth saying out loud if it surprises you.
+
+---
+
+## 19. Two devices, one account — the new part
+
+With the app connected to Dropbox on both devices, and the polling rate left at ten
+seconds, record something on device A. Within a few seconds it should appear on
+device B **without** you doing anything.
+
+Then record something on device B and look at device A.
+
+If it does not appear on its own, check **Settings -> Sync -> Check for other devices**
+and make sure it is not set to **Off**. Turning it off does not stop the app syncing
+when you open it, when you change something, or when you come back to the tab — it
+only stops the automatic check.
+
+> **What to look for.** How long did it take? Was there anything on screen that
+> explained the wait, or did it look like nothing was happening? If you left a tab
+> open and idle for a while, did it keep working, or did it stop?
+
+---
+
+## 20. The charts, and the table behind them
+
+On the **Reports** screen, scroll past the tables to the charts.
+
+Press **Show table** on a chart. It should swap to a table with the same figures.
+
+Then press **Show chart** to go back.
+
+> **What to look for.** Does the table show the same numbers as the chart? Is the
+> button easy to find and obvious about what it will do? If you use only the keyboard:
+> can you reach the button, and can you reach the bars themselves — and does
+> focusing a bar tell you what it is?
+
+> **A note on what the charts are for.** A chart is a picture of the data, not the
+> data itself. The table is the data, and it is the one a screen reader reads. If a
+> chart and its table ever disagree, that is a serious finding — please write it down.
+
+---
+
+## 21. An invoice
+
+On the **Reports** screen, under **Invoice**, choose a client and press **Show the
+invoice**.
+
+The lines should be your billable work, grouped by project, with the rate charged
+and the amount.
+
+> **What to look for.** Do the line amounts add up to the total exactly? Is the rate
+> on each line the rate you actually charged — including an entry where you set your
+> own rate rather than using the project's? Is a non-billable entry left out, and an
+> entry with no rate at all?
+
+If you change a rate and come back, the invoice changes with it. That is on
+purpose — nothing about an invoice is stored — but it is worth knowing before you
+rely on an old figure.
 
 ---
 

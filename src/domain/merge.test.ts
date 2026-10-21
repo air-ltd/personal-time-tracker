@@ -3,6 +3,7 @@ import {
   canonicalStringify,
   countRecords,
   mergeSnapshots,
+  dropUnusableContractPeriods,
   repairReferences,
   type Mergeable,
   type Snapshot,
@@ -14,6 +15,28 @@ function record(id: string, updatedAt: string, extra: Record<string, unknown> = 
 
 function snap(schemaVersion: number, entities: Record<string, Mergeable[]>): Snapshot {
   return { schemaVersion, entities }
+}
+
+/** A contract period with a valid work pattern, for the import-repair tests. */
+function contract(
+  id: string,
+  updatedAt: string,
+  extra: Record<string, unknown> = {},
+): Mergeable {
+  return record(id, updatedAt, {
+    clientId: 'c1',
+    minutesPerWeek: 2400,
+    workPattern: [
+      { weekday: 0, minutes: 480 },
+      { weekday: 1, minutes: 480 },
+      { weekday: 2, minutes: 480 },
+      { weekday: 3, minutes: 480 },
+      { weekday: 4, minutes: 480 },
+      { weekday: 5, minutes: 0 },
+      { weekday: 6, minutes: 0 },
+    ],
+    ...extra,
+  })
 }
 
 const entries = (list: Mergeable[]) => ({ entries: list })
@@ -452,5 +475,84 @@ describe('repairReferences is pure', () => {
     const input = withDanglingRef()
     const once = repairReferences(input)
     expect(canonicalStringify(repairReferences(once))).toBe(canonicalStringify(once))
+  })
+})
+
+/**
+ * Contract periods whose client is missing (0003 F7).
+ *
+ * An entry can be uncategorised and still mean something — it is time the user
+ * worked. A contract period cannot: its content is "these hours are expected on that
+ * client", so a contract naming no client describes a scope that cannot be compared
+ * against anything.
+ */
+describe('dropUnusableContractPeriods — unusable contract periods (0003 F7, CT3)', () => {
+  it('drops a contract period naming a client that does not exist', () => {
+    const snapshot = snap(1, {
+      clients: [record('c1', '2026-10-13T09:00:00.000Z')],
+      contractPeriods: [
+        contract('cp1', '2026-10-13T09:00:00.000Z', { clientId: 'ghost' }),
+        contract('cp2', '2026-10-13T09:00:00.000Z', { clientId: 'c1' }),
+      ],
+    })
+
+    const repaired = dropUnusableContractPeriods(snapshot)
+    const periods = repaired.entities.contractPeriods ?? []
+    expect(periods).toHaveLength(1)
+    expect((periods[0] as unknown as { clientId: string }).clientId).toBe('c1')
+  })
+
+  it('drops a contract period with no client at all', () => {
+    const snapshot = snap(1, {
+      clients: [record('c1', '2026-10-13T09:00:00.000Z')],
+      contractPeriods: [contract('cp1', '2026-10-13T09:00:00.000Z', { clientId: null })],
+    })
+
+    const repaired = dropUnusableContractPeriods(snapshot)
+    expect(repaired.entities.contractPeriods ?? []).toHaveLength(0)
+  })
+
+  it('drops a contract whose work pattern disagrees with its own week (0003 CT3)', () => {
+    const snapshot = snap(1, {
+      clients: [record('c1', '2026-10-13T09:00:00.000Z')],
+      contractPeriods: [
+        // Three weekdays that do not add up to the 2,400 minutes claimed.
+        contract('cp1', '2026-10-13T09:00:00.000Z', {
+          workPattern: [
+            { weekday: 0, minutes: 480 },
+            { weekday: 1, minutes: 480 },
+            { weekday: 2, minutes: 480 },
+          ],
+        }),
+      ],
+    })
+
+    const repaired = dropUnusableContractPeriods(snapshot)
+    expect(repaired.entities.contractPeriods ?? []).toHaveLength(0)
+  })
+
+  it('leaves contract periods alone when there is no clients table to check against', () => {
+    const snapshot = snap(1, {
+      contractPeriods: [contract('cp1', '2026-10-13T09:00:00.000Z')],
+    })
+
+    const repaired = dropUnusableContractPeriods(snapshot)
+    expect(repaired.entities.contractPeriods ?? []).toHaveLength(1)
+  })
+
+  /*
+   * The sync path publishes what it repairs, so dropping a contract there would let a
+   * sync permanently delete it from the remote file — the one path in the app where a
+   * record can be removed rather than tombstoned. The drop belongs to the import
+   * path alone.
+   */
+  it('is NOT applied by repairReferences, which the sync path publishes', () => {
+    const snapshot = snap(1, {
+      clients: [record('c1', '2026-10-13T09:00:00.000Z')],
+      contractPeriods: [contract('cp1', '2026-10-13T09:00:00.000Z', { clientId: 'ghost' })],
+    })
+
+    const repaired = repairReferences(snapshot)
+    expect(repaired.entities.contractPeriods ?? []).toHaveLength(1)
   })
 })

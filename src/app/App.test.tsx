@@ -121,18 +121,23 @@ describe('recording a timer (Phase 2A gate)', () => {
   })
 
   // 0004 T6
-  it('discarding leaves no active entry', async () => {
+  it('offers to edit a running timer rather than to discard it (item 78)', async () => {
     const user = userEvent.setup()
     render(<App />)
 
     await user.click(screen.getByRole('button', { name: 'Start' }))
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Discard the timer' })).toBeInTheDocument(),
+      expect(screen.getByRole('link', { name: 'Edit the timer' })).toBeInTheDocument(),
     )
-    await user.click(screen.getByRole('button', { name: 'Discard the timer' }))
 
-    await waitFor(() => expect(screen.getByTestId('empty-state')).toBeInTheDocument())
-    expect(await listEntries()).toHaveLength(0)
+    // The link opens the running entry's own sheet, where the Delete button is.
+    const edit = screen.getByRole('link', { name: 'Edit the timer' })
+    expect(edit.getAttribute('href')).toMatch(/^#\/entries\//)
+
+    // There is no way to throw the running timer away from here any more, and the
+    // running entry is still running.
+    expect(screen.queryByRole('button', { name: 'Discard the timer' })).toBeNull()
+    expect(await listEntries()).toHaveLength(1)
   })
 })
 

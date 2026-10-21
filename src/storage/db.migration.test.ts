@@ -2,7 +2,13 @@ import 'fake-indexeddb/auto'
 import Dexie from 'dexie'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AppDb, setDbForTests, type MetaRecord } from './db'
-import { readDefaultCurrency, readEntryPeriod, readVisibleCurrencies } from './settingsRepo'
+import {
+  readDefaultCurrency,
+  readEntryPeriod,
+  readRoundingIncrementMinutes,
+  readVisibleCurrencies,
+  readWeekStart,
+} from './settingsRepo'
 
 /**
  * The v3 → v4 upgrade, which every existing device runs exactly once (item 46, SPECS/todo.md
@@ -218,5 +224,131 @@ describe('the v3 to v4 upgrade', () => {
     expect(await readDefaultCurrency()).toBeNull()
     expect(await readEntryPeriod()).toBe('all')
     db.close()
+  })
+})
+
+/**
+ * The v4 → v5 upgrade, which every device on 0.2.0 runs exactly once.
+ *
+ * v5 is additive: it adds the `contractPeriods` store and backfills nothing. The
+ * failure that matters is not a crash but a *wrong answer*: a contract table that
+ * somehow held invented rows would give every client an expected-hours figure the
+ * user never entered, and a utilisation computed from it.
+ */
+class V4Db extends Dexie {
+  meta!: Dexie.Table<MetaRecord, string>
+  entries!: Dexie.Table<Record<string, unknown>, string>
+  projects!: Dexie.Table<Record<string, unknown>, string>
+  clients!: Dexie.Table<Record<string, unknown>, string>
+  settings!: Dexie.Table<Record<string, unknown>, string>
+
+  constructor(name: string) {
+    super(name)
+    // Copied from `db.ts`'s v4 declaration. If that ever changes, this is the place that
+    // should fail loudly rather than quietly testing the wrong shape.
+    this.version(4).stores({
+      entries: 'id, start, projectId, end, deletedAt',
+      meta: 'key',
+      secrets: 'key',
+      projects: 'id, clientId, archived, deletedAt',
+      clients: 'id, archived, deletedAt',
+      tags: 'id, deletedAt',
+      settings: 'id, updatedAt',
+    })
+  }
+}
+
+const V4_SETTINGS: readonly Record<string, unknown>[] = [
+  {
+    id: 'app-default-currency',
+    value: 'GBP',
+    updatedAt: '2026-10-05T09:00:00.000Z',
+    deletedAt: null,
+  },
+  {
+    id: 'visible-currencies',
+    value: ['GBP'],
+    updatedAt: '2026-10-05T09:00:00.000Z',
+    deletedAt: null,
+  },
+  { id: 'entry-period', value: 'week', updatedAt: '2026-10-05T09:00:00.000Z', deletedAt: null },
+]
+
+async function seedV4(name: string): Promise<void> {
+  const old = new V4Db(name)
+  await old.open()
+  await old.settings.bulkPut([...V4_SETTINGS])
+  await old.entries.put({ ...ENTRY })
+  old.close()
+}
+
+describe('the v4 to v5 upgrade', () => {
+  const v4Name = `${NAME}-v4`
+
+  afterEach(async () => {
+    await Promise.resolve(Dexie.delete(v4Name))
+  })
+
+  it('adds the contract periods table, empty', async () => {
+    await seedV4(v4Name)
+    const db = new AppDb(v4Name)
+    setDbForTests(db)
+    await db.open()
+
+    // Empty is the correct state: an absent contract correctly means "no budget set"
+    // (0003 V2). Inventing rows here would give a client expected hours nobody entered.
+    expect(await db.contractPeriods.count()).toBe(0)
+    db.close()
+  })
+
+  it('keeps the settings that already existed', async () => {
+    await seedV4(v4Name)
+    const db = new AppDb(v4Name)
+    setDbForTests(db)
+    await db.open()
+
+    expect(await readDefaultCurrency()).toBe('GBP')
+    expect(await readEntryPeriod()).toBe('week')
+    expect(await db.entries.count()).toBe(1)
+    db.close()
+  })
+
+  it('leaves the two new settings absent rather than storing the default', async () => {
+    await seedV4(v4Name)
+    const db = new AppDb(v4Name)
+    setDbForTests(db)
+    await db.open()
+
+    /*
+     * Absent and stored-as-default are different answers (0003 SET2). The readers
+     * resolve absent to the same behaviour today, but a stored default would be
+     * indistinguishable from a value the user chose — and a later change of default
+     * would then rewrite a choice that was never made.
+     */
+    const ids = (await db.settings.toArray()).map((row) => row.id).sort()
+    expect(ids).toEqual(['app-default-currency', 'entry-period', 'visible-currencies'])
+    expect(ids).not.toContain('week-start')
+    expect(ids).not.toContain('billable-rounding-increment')
+
+    // And the readers still give the right answers.
+    expect(await readWeekStart()).toBe('monday')
+    expect(await readRoundingIncrementMinutes()).toBe(15)
+    db.close()
+  })
+
+  it('is safe to run twice', async () => {
+    await seedV4(v4Name)
+    const first = new AppDb(v4Name)
+    setDbForTests(first)
+    await first.open()
+    first.close()
+
+    const second = new AppDb(v4Name)
+    setDbForTests(second)
+    await second.open()
+
+    expect(await readDefaultCurrency()).toBe('GBP')
+    expect(await second.contractPeriods.count()).toBe(0)
+    second.close()
   })
 })

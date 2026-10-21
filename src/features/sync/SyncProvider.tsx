@@ -6,6 +6,8 @@ import {
   REMOTE_PATH,
 } from '../../sync/providerFactory'
 import { describeKeySource, readAppKey } from '../../sync/appKey'
+import { readSyncPollIntervalSeconds } from '../../storage/settingsRepo'
+import { readBoundAccountId, writeBoundAccountId } from '../../storage/syncBindingRepo'
 import { beginAuthCallback, takeAuthError } from '../../sync/oauthCallback'
 import { SyncContext, type Connection } from './syncContext'
 
@@ -43,6 +45,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   // Read once at mount: a one-shot value left behind by the redirect, consumed during
   // initialisation rather than in an effect so it does not cause a cascading render.
   const [authError] = useState<string | null>(() => takeAuthError())
+  const [shareError, setShareError] = useState<string | null>(null)
   const schedulerRef = useRef<SyncScheduler | null>(null)
 
   const provider = indexedDbDropboxProvider()
@@ -82,9 +85,29 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
           if (!result.authenticated) setConnection('disconnected')
         })
       },
+      // The account this device's data belongs to, and the account the token belongs
+      // to. The scheduler compares them before anything is published.
+      readBoundAccountId,
+      writeBoundAccountId,
+      readConnectedAccountId: async () => {
+        const result = await provider.status()
+        return result.accountId ?? null
+      },
     })
     schedulerRef.current = scheduler
     void scheduler.start()
+    /*
+     * The poll interval is a preference, so it is read rather than assumed — but it is
+     * read *after* the scheduler has started, because the first cycle should not wait
+     * on a preference read. The scheduler takes the interval as it is set, so the two
+     * orders do not have to agree.
+     */
+    void readSyncPollIntervalSeconds()
+      .then((seconds) => scheduler.setPollInterval(seconds * 1000))
+      .catch(() => {
+        // A failed read leaves the scheduler's default, which is no polling. The app
+        // still syncs when the tab becomes visible and after a local change.
+      })
     return () => {
       scheduler.stop()
       schedulerRef.current = null
@@ -119,6 +142,31 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     void Promise.resolve(schedulerRef.current?.syncNow()).finally(() => setBusy(false))
   }, [])
 
+  /**
+   * Share the local data with the connected account, explicitly.
+   *
+   * The binding is the only thing standing between the user and a copy of their work
+   * history appearing in an account they did not mean to put it in. So the way past
+   * it is a deliberate act, and this is that act.
+   */
+  const shareWithThisAccount = useCallback(() => {
+    setBusy(true)
+    setShareError(null)
+    void provider
+      .status()
+      .then((result) => {
+        if (result.accountId === undefined) {
+          throw new Error('Dropbox did not say which account this is.')
+        }
+        return writeBoundAccountId(result.accountId)
+      })
+      .then(() => schedulerRef.current?.syncNow())
+      .catch((problem: unknown) => {
+        setShareError(problem instanceof Error ? problem.message : String(problem))
+      })
+      .finally(() => setBusy(false))
+  }, [provider])
+
   const recheckKey = useCallback(() => {
     // The cached provider holds the previous key, so rebuild it or OAuth would fail
     // confusingly against a stale client id.
@@ -137,6 +185,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         authError,
         connect,
         disconnect,
+        shareWithThisAccount,
+        shareError,
         syncNow,
         recheckKey,
       }}

@@ -17,6 +17,7 @@ import {
 import { FALLBACK_CURRENCY, resolveCurrency } from '../../domain/taxonomy/money'
 import { currencyLabel, formatMinor } from '../../domain/taxonomy/currencies'
 import type { Client, Project, Tag } from '../../domain/taxonomy/types'
+import { backgroundColour } from '../../domain/taxonomy/colour'
 
 /**
  * Taxonomy settings (0005 P1, A1–A5, T4, X1–X6).
@@ -659,7 +660,7 @@ function ProjectRow({
       <span className="taxonomy-name">
         <span
           className="taxonomy-swatch"
-          style={{ background: project.colour }}
+          style={{ background: backgroundColour(project.colour) }}
           aria-hidden="true"
         />
         {/*
@@ -899,7 +900,7 @@ function TagRow({
       <span className="taxonomy-name">
         <span
           className="taxonomy-swatch"
-          style={{ background: tag.colour }}
+          style={{ background: backgroundColour(tag.colour) }}
           aria-hidden="true"
         />
         {tag.name}

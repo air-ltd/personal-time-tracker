@@ -1,6 +1,7 @@
 import { useSync, type Connection } from './syncContext'
 import { CloudIcon } from '../../app/Icons'
 import { DropboxSetup } from './DropboxSetup'
+import { SyncPollRate } from './SyncPollRate'
 
 /**
  * Sync detail (0012 C8, AU8; item 10 of `SPECS/todo.md`).
@@ -26,6 +27,8 @@ export function SyncPanel() {
     disconnect,
     syncNow,
     recheckKey,
+    shareWithThisAccount,
+    shareError,
   } = useSync()
 
   if (!hasKey) {
@@ -132,6 +135,49 @@ export function SyncPanel() {
       )}
 
       <SyncStatusLine status={status} connection={connection} authError={authError} />
+
+      {/*
+        The way past a different-account block.
+
+        The local data is bound to the account it was last published to, and the
+        connected account is a different one. Publishing would put the user's whole
+        work history there as well — client names, notes, hours — so the cycle stops
+        and says so.
+
+        The button is the way past it, and it is deliberately a separate, named act:
+        the data ends up in both accounts, and only the user can say that is what
+        they meant.
+      */}
+      {status?.lastOutcome?.status === 'blocked' &&
+        status.lastOutcome.reason === 'different-account' && (
+          <div
+            className="alert alert-warning"
+            role="status"
+            data-testid="sync-account-mismatch"
+          >
+            <p>{status.lastOutcome.message}</p>
+            <p className="hint">
+              To share this device&apos;s data with this account as well, press the button
+              below. Your work history will be in both accounts from then on.
+            </p>
+            <button
+              type="button"
+              className="button"
+              onClick={shareWithThisAccount}
+              disabled={busy}
+            >
+              Share with this account too
+            </button>
+            {shareError !== null && <p className="alert alert-error">{shareError}</p>}
+          </div>
+        )}
+
+      {/*
+        The poll rate, only while connected. There is nothing to poll when there is no
+        connection, and offering a rate for a check that cannot happen would be a
+        control that does nothing.
+      */}
+      {connection === 'connected' && <SyncPollRate />}
 
       <p className="hint">
         Your data stays in this browser. Syncing copies one file to the Dropbox account you
