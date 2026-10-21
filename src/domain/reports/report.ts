@@ -336,9 +336,10 @@ export function dailyTotals(
  * hours worked.
  */
 export interface BillableSummary {
-  billableMs: number | null
-  nonBillableMs: number | null
-  totalMs: number | null
+  /** Minutes, like every other figure on the reports screen. */
+  billableMinutes: number | null
+  nonBillableMinutes: number | null
+  totalMinutes: number | null
   /**
    * The billable time *before* rounding, in milliseconds.
    *
@@ -347,7 +348,7 @@ export interface BillableSummary {
    * one. It is not a second policy: it is the same time, unrounded, so a reader can
    * see what the rounding changed.
    */
-  rawBillableMs: number | null
+  rawBillableMinutes: number | null
   /** The total monetary value, per currency. Never summed across currencies. */
   amountByCurrency: Map<string, number>
 }
@@ -382,11 +383,19 @@ export function billableSummary(ranged: readonly RangedEntry[]): BillableSummary
     }
   }
 
+  /*
+   * Minutes, not milliseconds.
+   *
+   * These figures are shown beside the other reports, which are in minutes, and they
+   * were in milliseconds — so five hours of work read as "300000h". The figure was
+   * never wrong about the *amount*; it was wrong about the unit, and a unit error in
+   * a number that is otherwise plausible is the worst kind.
+   */
   return {
-    billableMs: unknown ? null : billable,
-    nonBillableMs: unknown ? null : nonBillable,
-    totalMs: unknown ? null : total,
-    rawBillableMs: unknown ? null : rawBillable,
+    billableMinutes: unknown ? null : billable / 60_000,
+    nonBillableMinutes: unknown ? null : nonBillable / 60_000,
+    totalMinutes: unknown ? null : total / 60_000,
+    rawBillableMinutes: unknown ? null : rawBillable / 60_000,
     amountByCurrency,
   }
 }

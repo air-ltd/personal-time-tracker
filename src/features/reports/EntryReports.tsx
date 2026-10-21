@@ -90,9 +90,9 @@ export function EntryReports({ ranged, mode, onModeChange }: EntryReportsProps) 
 
   /** Whether rounding changed the billable figure (0006 RD5). */
   const rawDiffers =
-    billable.billableMs !== null &&
-    billable.rawBillableMs !== null &&
-    billable.billableMs !== billable.rawBillableMs
+    billable.billableMinutes !== null &&
+    billable.rawBillableMinutes !== null &&
+    billable.billableMinutes !== billable.rawBillableMinutes
 
   return (
     <section className="panel" aria-labelledby="entry-reports-heading">
@@ -190,17 +190,19 @@ export function EntryReports({ ranged, mode, onModeChange }: EntryReportsProps) 
             <li>
               <span>Billable time</span>
               <span>
-                {billable.billableMs === null ? '—' : formatMinutes(billable.billableMs)}
+                {billable.billableMinutes === null
+                  ? '—'
+                  : formatMinutes(Math.round(billable.billableMinutes))}
                 {/*
                   0006 RD5: where the rounded figure and the raw one differ, both are
                   shown. A billable number that quietly differs from the time actually
                   worked is the kind of number that makes an invoice look wrong, and
                   the only way to settle it is to see both.
                 */}
-                {rawDiffers && billable.rawBillableMs !== null && (
+                {rawDiffers && billable.rawBillableMinutes !== null && (
                   <span className="capacity-raw">
                     {' '}
-                    ({formatMinutes(billable.rawBillableMs)} unrounded)
+                    ({formatMinutes(billable.rawBillableMinutes)} unrounded)
                   </span>
                 )}
               </span>
@@ -208,7 +210,9 @@ export function EntryReports({ ranged, mode, onModeChange }: EntryReportsProps) 
             <li>
               <span>Non-billable time</span>
               <span>
-                {billable.nonBillableMs === null ? '—' : formatMinutes(billable.nonBillableMs)}
+                {billable.nonBillableMinutes === null
+                  ? '—'
+                  : formatMinutes(Math.round(billable.nonBillableMinutes))}
               </span>
             </li>
           </ul>
