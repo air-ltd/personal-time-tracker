@@ -19,6 +19,14 @@ function iso(value: Date): string {
   return value.toISOString()
 }
 
+function updatedAtAfter(now: Date, previous: string): string {
+  const nowMs = now.getTime()
+  const previousMs = Date.parse(previous)
+  return iso(
+    new Date(Number.isFinite(previousMs) && nowMs <= previousMs ? previousMs + 1 : nowMs),
+  )
+}
+
 /** Build a complete record. `end: null` means running (0003 E4). */
 export function makeEntry(input: {
   start: Date
@@ -140,7 +148,11 @@ export async function stopTimer(id: string, now: Date): Promise<TimeEntry | unde
     const entry = await getEntry(id)
     if (!entry || entry.deletedAt !== null) return undefined
     if (entry.end !== null) return entry
-    const stopped: TimeEntry = { ...entry, end: iso(now), updatedAt: iso(now) }
+    const stopped: TimeEntry = {
+      ...entry,
+      end: iso(now),
+      updatedAt: updatedAtAfter(now, entry.updatedAt),
+    }
     await putEntry(stopped)
     return stopped
   })
@@ -151,7 +163,11 @@ export async function discardTimer(id: string, now: Date): Promise<void> {
   await db().transaction('rw', db().entries, async () => {
     const entry = await getEntry(id)
     if (!entry) return
-    await db().entries.put({ ...entry, deletedAt: iso(now), updatedAt: iso(now) })
+    await db().entries.put({
+      ...entry,
+      deletedAt: iso(now),
+      updatedAt: updatedAtAfter(now, entry.updatedAt),
+    })
   })
   bumpRevision()
 }
@@ -206,7 +222,11 @@ export async function updateEntry(
   return db().transaction('rw', db().entries, async () => {
     const entry = await getEntry(id)
     if (!entry || entry.deletedAt !== null) return undefined
-    const updated: TimeEntry = { ...entry, ...patch, updatedAt: iso(now) }
+    const updated: TimeEntry = {
+      ...entry,
+      ...patch,
+      updatedAt: updatedAtAfter(now, entry.updatedAt),
+    }
     await putEntry(updated)
     return updated
   })
@@ -220,7 +240,11 @@ export async function softDeleteEntry(id: string, now: Date): Promise<TimeEntry 
   return db().transaction('rw', db().entries, async () => {
     const entry = await getEntry(id)
     if (!entry || entry.deletedAt !== null) return undefined
-    const deleted: TimeEntry = { ...entry, deletedAt: iso(now), updatedAt: iso(now) }
+    const deleted: TimeEntry = {
+      ...entry,
+      deletedAt: iso(now),
+      updatedAt: updatedAtAfter(now, entry.updatedAt),
+    }
     await putEntry(deleted)
     return deleted
   })
@@ -231,7 +255,11 @@ export async function restoreEntry(id: string, now: Date): Promise<TimeEntry | u
   return db().transaction('rw', db().entries, async () => {
     const entry = await getEntry(id)
     if (!entry || entry.deletedAt === null) return undefined
-    const restored: TimeEntry = { ...entry, deletedAt: null, updatedAt: iso(now) }
+    const restored: TimeEntry = {
+      ...entry,
+      deletedAt: null,
+      updatedAt: updatedAtAfter(now, entry.updatedAt),
+    }
     await putEntry(restored)
     return restored
   })

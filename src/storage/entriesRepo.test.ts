@@ -106,6 +106,20 @@ describe('editing', () => {
     expect(updated?.createdAt).toBe(created.createdAt)
   })
 
+  it('advances updatedAt when an edit shares the previous write timestamp', async () => {
+    const now = at('2026-10-13T10:00:00.000Z')
+    const created = await createManualEntry({
+      start: at('2026-10-13T09:00:00Z'),
+      end: now,
+      note: 'before',
+      now,
+    })
+
+    const updated = await updateEntry(created.id, { note: 'after' }, now)
+
+    expect(updated?.updatedAt).toBe('2026-10-13T10:00:00.001Z')
+  })
+
   // 0004 ED1: a running entry can be edited, including its start.
   it('re-anchors a running entry when its start is edited', async () => {
     const started = await startTimer(at('2026-10-13T09:00:00Z'))

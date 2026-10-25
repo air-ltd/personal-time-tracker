@@ -1,7 +1,7 @@
 import { getDb, SCHEMA_VERSION } from './db'
 import { bumpRevision } from './events'
 import type { Table } from 'dexie'
-import type { Mergeable, Snapshot } from '../domain/merge'
+import { mergeSnapshots, type Mergeable, type Snapshot } from '../domain/merge'
 
 /**
  * Snapshot bridge between the database and the sync engine.
@@ -68,8 +68,9 @@ export async function readSnapshot(): Promise<Snapshot> {
 /**
  * Replace local data with a merged snapshot.
  *
- * Applies as a single transaction (0007 S6). A partial write here is the one place
- * that could genuinely lose data, since the merge result is authoritative.
+ * Applies as a single transaction (0007 S6). The snapshot may have been read before
+ * a slow Dropbox round trip, so merge it with the current rows inside the transaction
+ * rather than letting an older copy overwrite a local edit made in the meantime.
  *
  * Unknown tables are dropped rather than written blindly: a newer device may sync
  * tables this build does not understand, and writing them nowhere is safer than
@@ -80,13 +81,13 @@ export async function writeSnapshot(snapshot: Snapshot): Promise<void> {
 
   // Work out what will actually be written before opening the transaction, so the
   // transaction can be given every table it needs rather than one at a time.
-  const writes: { table: Table; records: unknown[] }[] = []
+  const writes: { name: (typeof TABLES)[number]; table: Table }[] = []
   for (const name of TABLES) {
     const table = db.tables.find((candidate) => candidate.name === name)
     if (!table) continue
     const records = snapshot.entities[name]
     if (!Array.isArray(records)) continue
-    writes.push({ table, records })
+    writes.push({ name, table })
   }
 
   if (writes.length === 0) return
@@ -99,17 +100,33 @@ export async function writeSnapshot(snapshot: Snapshot): Promise<void> {
   // the tables not yet written — with no error anywhere, because every individual write
   // did succeed.
   //
-  // `bulkPut` is an upsert, not a replace: records absent from the snapshot are left
-  // alone. That is safe here and deliberate. Both callers pass a merge result, which is
-  // a union containing every record that exists on either side, so there is nothing to
-  // remove; and clearing the table first would turn a truncated or hostile snapshot into
-  // a way to delete a user's history. Tombstones are retained by the merge in any case
-  // (0012 M6), so deletions arrive as records rather than as absences.
+  // Re-merge with the current rows in this transaction. `readSnapshot` may have run
+  // before network activity, while an entry was edited or stopped; using only that
+  // stale copy here would undo the user's newer write. The normal merge rule preserves
+  // the latest updatedAt, including tombstones, while still applying remote changes.
   await db.transaction(
     'rw',
     writes.map((write) => write.table),
     async () => {
-      for (const write of writes) await write.table.bulkPut(write.records)
+      const currentEntities: Snapshot['entities'] = {}
+      for (const write of writes) {
+        currentEntities[write.name] = (await write.table.toArray()) as Mergeable[]
+      }
+
+      const outcome = mergeSnapshots(
+        { schemaVersion: SCHEMA_VERSION, entities: currentEntities },
+        snapshot,
+        SCHEMA_VERSION,
+      )
+      if (!outcome.ok) {
+        throw new Error(
+          `Cannot write snapshot schema ${outcome.remoteSchemaVersion}; this build understands ${SCHEMA_VERSION}.`,
+        )
+      }
+
+      for (const write of writes) {
+        await write.table.bulkPut(outcome.merged.entities[write.name] ?? [])
+      }
     },
   )
 
