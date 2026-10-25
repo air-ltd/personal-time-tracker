@@ -7,8 +7,17 @@ function commit(ref: string): string {
   }).trim()
 }
 
-describe('main branch checkout', () => {
-  it('is running at the current main HEAD commit', () => {
-    expect(commit('HEAD')).toBe(commit('main'))
+function versionAt(ref: string): string {
+  const packageJson = execFileSync('git', ['show', `${ref}:package.json`], {
+    encoding: 'utf8',
+  })
+  return (JSON.parse(packageJson) as { version: string }).version
+}
+
+describe('release version on feature branches', () => {
+  it('requires a version bump before merging changes into main', () => {
+    if (commit('HEAD') === commit('main')) return
+
+    expect(versionAt('HEAD')).not.toBe(versionAt('main'))
   })
 })
