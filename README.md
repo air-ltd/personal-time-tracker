@@ -6,10 +6,13 @@ optionally syncs to your own Dropbox.
 
 ## Status
 
-**Released as 0.3.1** (21 October 2026), covering Phases 1 to 6: reports, charts, an
+**Released as 0.3.2** (26 October 2026), covering Phases 1 to 6: reports, charts, an
 invoice, and expected hours per client. See
 [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md) for the phase
 sequence and each phase's gate.
+
+0.3.2 fixes a race where Dropbox sync could overwrite an event edited locally while
+the sync request was in flight.
 
 What changed in 0.3.0: you can say how many hours a week you expect to spend on a
 client and see what was actually tracked against them; there is a reports screen with
