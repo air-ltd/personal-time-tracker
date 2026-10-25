@@ -16,6 +16,18 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-26
+
+A fix for a race that could lose an event edited while Dropbox sync was in progress.
+
+### Fixed
+
+- **A local event edit could be lost during Dropbox sync.** Sync now merges its
+  incoming snapshot with the current database rows in the same transaction as the
+  write, preserving edits made while the network request was in flight. Entry
+  updates also advance their modification time when two writes happen within the
+  same millisecond, so the merge can reliably identify the newer change.
+
 ## [0.3.1] - 2026-10-21
 
 Five fixes to 0.3.0, the first of which made a number on the reports screen
