@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { AppDb, setDbForTests, SCHEMA_VERSION } from './db'
 import { getRevision, resetRevisionForTests, subscribe } from './events'
 import { readSnapshot, writeSnapshot } from './snapshotRepo'
+import { updateEntry } from './entriesRepo'
 import { mergeSnapshots } from '../domain/merge'
 import type { Mergeable, Snapshot } from '../domain/merge'
 import type { TimeEntry } from '../domain/entries/types'
@@ -328,6 +329,23 @@ describe('writeSnapshot is atomic', () => {
     // so contains everything; clearing first would make a truncated snapshot a way to
     // delete a user's history.
     expect((await db.entries.toArray()).map((r) => r.id).sort()).toEqual(['added', 'kept'])
+  })
+
+  it('does not overwrite an event edited after the sync snapshot was read', async () => {
+    const beforeSync = entry('event')
+    await db.entries.put(beforeSync)
+
+    // Simulate a local edit completing while sync is waiting on Dropbox.
+    const edited = await updateEntry(
+      beforeSync.id,
+      { note: 'updated while syncing' },
+      new Date(beforeSync.updatedAt),
+    )
+
+    await writeSnapshot(snapshotOf([beforeSync, entry('from-dropbox')]))
+
+    expect(await db.entries.get('event')).toEqual(edited)
+    expect(await db.entries.get('from-dropbox')).toEqual(entry('from-dropbox'))
   })
 
   it('writes nothing at all when the snapshot carries no known tables', async () => {

@@ -1,0 +1,15 @@
+{
+  "name": "Time Tracker",
+  "short_name": "Time Tracker",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f5fbf",
+  "icons": [
+    {
+      "src": "./favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
