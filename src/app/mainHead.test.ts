@@ -16,8 +16,8 @@ function versionAt(ref: string): string {
 
 describe('release version on feature branches', () => {
   it('requires a version bump before merging changes into main', () => {
-    if (commit('HEAD') === commit('main')) return
+    if (commit('HEAD') === commit('origin/main')) return
 
-    expect(versionAt('HEAD')).not.toBe(versionAt('main'))
+    expect(versionAt('HEAD')).not.toBe(versionAt('origin/main'))
   })
 })
