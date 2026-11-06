@@ -8,6 +8,7 @@ import {
 import { describeKeySource, readAppKey } from '../../sync/appKey'
 import { readSyncPollIntervalSeconds } from '../../storage/settingsRepo'
 import { readBoundAccountId, writeBoundAccountId } from '../../storage/syncBindingRepo'
+import { readSyncConnectionLost, writeSyncConnectionLost } from '../../storage/syncWarningRepo'
 import { beginAuthCallback, takeAuthError } from '../../sync/oauthCallback'
 import { SyncContext, type Connection } from './syncContext'
 
@@ -38,6 +39,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   const [connection, setConnection] = useState<Connection>('checking')
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [busy, setBusy] = useState(false)
+  const [connectionLost, setConnectionLost] = useState(false)
+  const [warningError, setWarningError] = useState<string | null>(null)
   // Read at runtime rather than from a module constant: the app key can be entered in
   // the browser, which is the point of item 6 in SPECS/todo.md.
   const [hasKey, setHasKey] = useState(() => readAppKey() !== '')
@@ -57,8 +60,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     // authorisation that in fact worked.
     void beginAuthCallback()
       .then(() => provider.status())
-      .then((result) => {
-        if (!cancelled) setConnection(result.authenticated ? 'connected' : 'disconnected')
+      .then(async (result) => {
+        if (cancelled) return
+        setConnection(result.authenticated ? 'connected' : 'disconnected')
+        const lost = await readSyncConnectionLost()
+        if (cancelled) return
+        setConnectionLost(!result.authenticated && lost)
+        if (result.authenticated && lost) await writeSyncConnectionLost(false)
+      })
+      .catch((problem: unknown) => {
+        if (!cancelled) {
+          setWarningError(problem instanceof Error ? problem.message : String(problem))
+        }
       })
     return () => {
       cancelled = true
@@ -81,9 +94,22 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
        * would fix it never appeared.
        */
       onAuthLost: () => {
-        void provider.status().then((result) => {
-          if (!result.authenticated) setConnection('disconnected')
-        })
+        void provider
+          .status()
+          .then((result) => {
+            if (!result.authenticated) {
+              setConnection('disconnected')
+              setConnectionLost(true)
+              void writeSyncConnectionLost(true)
+                .then(() => setWarningError(null))
+                .catch((problem: unknown) => {
+                  setWarningError(problem instanceof Error ? problem.message : String(problem))
+                })
+            }
+          })
+          .catch((problem: unknown) => {
+            setWarningError(problem instanceof Error ? problem.message : String(problem))
+          })
       },
       // The account this device's data belongs to, and the account the token belongs
       // to. The scheduler compares them before anything is published.
@@ -131,10 +157,20 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = useCallback(() => {
     setBusy(true)
-    void provider.signOut().then(() => {
-      setBusy(false)
-      setConnection('disconnected')
-    })
+    void provider
+      .signOut()
+      .then(() => {
+        setBusy(false)
+        setConnection('disconnected')
+        setStatus(null)
+        setConnectionLost(false)
+        return writeSyncConnectionLost(false)
+      })
+      .then(() => setWarningError(null))
+      .catch((problem: unknown) => {
+        setBusy(false)
+        setWarningError(problem instanceof Error ? problem.message : String(problem))
+      })
   }, [provider])
 
   const syncNow = useCallback(() => {
@@ -181,6 +217,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         status,
         busy,
         hasKey,
+        connectionLost,
+        warningError,
         keyInfo,
         authError,
         connect,

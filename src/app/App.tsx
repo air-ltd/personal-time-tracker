@@ -14,6 +14,7 @@ import { EntryForm } from '../features/entries/EntryForm'
 import { UndoBar, type PendingDelete } from '../features/entries/UndoBar'
 import { SyncIndicator } from '../features/sync/SyncIndicator'
 import { SyncProvider } from '../features/sync/SyncProvider'
+import { SyncWarning } from '../features/sync/SyncWarning'
 import { SettingsPage } from '../features/settings/SettingsPage'
 import { AboutPage } from './AboutPage'
 import { HeaderMenu } from '../features/settings/HeaderMenu'
@@ -203,6 +204,8 @@ export function App() {
             <HeaderMenu settingsHref="#/settings" reportsHref="#/reports" aboutHref="#/about" />
           </div>
         </header>
+
+        <SyncWarning />
 
         <main className="app-main">
           {match?.route.path === '/' && (

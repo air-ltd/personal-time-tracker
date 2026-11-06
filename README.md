@@ -6,10 +6,13 @@ optionally syncs to your own Dropbox.
 
 ## Status
 
-**Released as 0.3.2** (26 October 2026), covering Phases 1 to 6: reports, charts, an
+**Released as 0.3.3** (7 November 2026), covering Phases 1 to 6: reports, charts, an
 invoice, and expected hours per client. See
 [`SPECS/0014-development-plan.md`](SPECS/0014-development-plan.md) for the phase
 sequence and each phase's gate.
+
+0.3.3 shows a prominent warning when a connected Dropbox session stops syncing, with
+a reconnect or retry action and a five-hour dismissal that stays on this device.
 
 0.3.2 fixes a race where Dropbox sync could overwrite an event edited locally while
 the sync request was in flight.
