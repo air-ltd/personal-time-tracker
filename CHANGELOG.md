@@ -16,6 +16,23 @@ breaks, and the patch digit for fixes within that.
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-07
+
+A visible warning when a connected Dropbox session stops syncing, so a failure is no
+longer silent.
+
+### Added
+
+- **A warning when Dropbox sync needs attention.** If a previously connected Dropbox
+  session can no longer sync — the token expired or was revoked, or a sync cycle failed —
+  the app now shows a prominent notice below the header, on every screen. It says that
+  entries are still safe in this browser but may not reach other devices, and offers the
+  action that fits the state: **Reconnect Dropbox** when the connection is gone, or
+  **Try again now** when the last sync failed. **Hide for 5 hours** dismisses the warning
+  for this browser only; the dismissal is device-local and is never synced to other
+  devices. The lost-connection marker is also device-local and is cleared when the app
+  reconnects or the user disconnects.
+
 ## [0.3.2] - 2026-10-26
 
 A fix for a race that could lose an event edited while Dropbox sync was in progress.
