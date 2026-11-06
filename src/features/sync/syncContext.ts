@@ -21,6 +21,10 @@ export interface SyncState {
   busy: boolean
   /** False when no Dropbox app key is configured at all. */
   hasKey: boolean
+  /** True when a previously working Dropbox connection expired or was revoked. */
+  connectionLost: boolean
+  /** A problem reading or updating the device-local connection warning state. */
+  warningError: string | null
   keyInfo: ReturnType<typeof describeKeySource>
   authError: string | null
   /** Starts the Dropbox authorisation redirect. Leaves the page on success. */

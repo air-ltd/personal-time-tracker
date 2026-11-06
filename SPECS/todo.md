@@ -641,6 +641,7 @@ Numbered, not bulleted. Ordered roughly by when they came up.
 
 84. [ ] When use opens two browsers concurrently they can start up two times in sync - they have to try hard to do this. In future we should build method to highlight overlapping timers.
 85. [ ] What do I want to reports related to expected hours.
+86. [x] if a browser has been connected to the storage (dropbox) and there is trouble connecting and updating there should be a significant display on the screen to indicate that the connection is not working. user should have ability to clear this for a time period (next 5 hours) or try to reconnect now.
 
 # Where the branches are
 
